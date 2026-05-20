@@ -1,0 +1,34 @@
+{
+  "name": "env-lane",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CLI for env-lane dotenv injection and development vault helpers.",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "env-lane": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean && tsup src/cli.ts --format esm --clean false --banner:js '#!/usr/bin/env node'",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@env-lane/core": "workspace:*",
+    "@env-lane/vault": "workspace:*",
+    "commander": "^14.0.3"
+  }
+}
