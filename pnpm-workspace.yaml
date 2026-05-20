@@ -1,7 +1,7 @@
 packages:
   - packages/*
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
 minimumReleaseAgeExclude:
   - '@types/node@25.9.1'
   - '@vitest/expect@4.1.7'

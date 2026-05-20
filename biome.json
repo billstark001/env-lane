@@ -1,0 +1,47 @@
+{
+  "files": {
+    "includes": [
+      "packages/*/src/**/*",
+      "packages/*/test/**/*",
+      "packages/*/tests/**/*",
+      "scripts/**/*",
+      "package.json",
+      "packages/*/package.json",
+      "tsconfig*.json",
+      "packages/*/tsconfig.json",
+      "vitest.config.ts",
+      ".vscode/**/*.json"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "noNonNullAssertion": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noPrototypeBuiltins": "off",
+        "noTemplateCurlyInString": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded",
+      "trailingCommas": "all"
+    }
+  },
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  }
+}

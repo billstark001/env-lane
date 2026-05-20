@@ -1,6 +1,4 @@
-import { defineConfig } from '@env-lane/core';
-
-export default defineConfig({
+export default {
   selector: {
     envKey: 'ENV_BUILD',
     defaultBuild: 'local',
@@ -23,4 +21,4 @@ export default defineConfig({
     disableUnsafeWarning: false,
     configFile: 'env-lane.vault.json'
   }
-});
+};

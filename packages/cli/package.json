@@ -21,10 +21,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean && tsup src/cli.ts --format esm --clean false --banner:js '#!/usr/bin/env node'",
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean && tsup src/cli.ts --format esm --clean false",
     "dev": "tsx src/cli.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "biome check ."
   },
   "dependencies": {
     "@env-lane/core": "workspace:*",
