@@ -45,6 +45,26 @@ describe('@env-lane/core', () => {
     })
   })
 
+  it('rejects ambiguous workspace target aliases', async () => {
+    const root = path.join(tmpdir(), `env-lane-ambiguous-${Date.now()}`)
+    mkdirSync(path.join(root, 'apps/api'), { recursive: true })
+    mkdirSync(path.join(root, 'packages/api'), { recursive: true })
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
+    writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n  - packages/*\n')
+    writeFileSync(path.join(root, 'apps/api/package.json'), JSON.stringify({ name: '@acme/api' }))
+    writeFileSync(
+      path.join(root, 'packages/api/package.json'),
+      JSON.stringify({ name: '@acme/api-tools' }),
+    )
+
+    await expect(resolveTargetPackage('api', { cwd: root })).rejects.toThrow(
+      /Ambiguous target 'api'/,
+    )
+    await expect(resolveTargetPackage('apps/api', { cwd: root })).resolves.toMatchObject({
+      relativeDir: 'apps/api',
+    })
+  })
+
   it('lists files and resolves injected env in order', async () => {
     const root = fixture()
     const files = await listEnvFiles({ cwd: root, target: 'api', build: 'production' })

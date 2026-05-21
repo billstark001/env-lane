@@ -32,12 +32,13 @@ importers:
       '@env-lane/core':
         specifier: workspace:*
         version: link:../core
-      '@env-lane/vault':
-        specifier: workspace:*
-        version: link:../vault
       commander:
         specifier: ^14.0.3
         version: 14.0.3
+    devDependencies:
+      '@env-lane/vault':
+        specifier: workspace:*
+        version: link:../vault
 
   packages/core:
     dependencies:

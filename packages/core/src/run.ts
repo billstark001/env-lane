@@ -1,5 +1,4 @@
 import { execa } from 'execa'
-import { loadEnvLaneConfig } from './config.js'
 import { resolveInjectedEnv } from './dotenv.js'
 
 export async function runWithInjectedEnv(options: {
@@ -12,11 +11,10 @@ export async function runWithInjectedEnv(options: {
   quiet?: boolean
 }): Promise<number> {
   if (!options.command.length) throw new Error('Missing command.')
-  const config = await loadEnvLaneConfig(options)
   const resolved = await resolveInjectedEnv(options)
   const cwd =
     options.runCwd === 'root'
-      ? config.rootDir
+      ? resolved.rootDir
       : !options.runCwd || options.runCwd === 'target'
         ? resolved.target.dir
         : options.runCwd

@@ -95,6 +95,21 @@ const ENV_ENTRY_RE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
 const COMMENTED_ENV_ENTRY_RE = /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
 const PREVIEW_VALUE_LIMIT = 160
 
+type PicomatchMatcher = ReturnType<typeof picomatch>
+
+interface CompiledExcludeRule {
+  fileMatch: PicomatchMatcher
+  keyMatch: PicomatchMatcher
+}
+
+interface ManagedFileAlias {
+  filePath: string
+  relativePath: string
+}
+
+const excludeRuleCache = new WeakMap<VaultConfig, CompiledExcludeRule[]>()
+const managedFileAliasCache = new WeakMap<VaultConfig, ManagedFileAlias[]>()
+
 function portable(file: string): string {
   return file.replace(/\\/g, '/').replaceAll(path.sep, '/')
 }
@@ -106,11 +121,20 @@ function emitStructuredChange(
   console.log(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
 }
 
+function getCompiledExcludeRules(config: VaultConfig): CompiledExcludeRule[] {
+  const cached = excludeRuleCache.get(config)
+  if (cached) return cached
+  const compiled = config.exclude.map((rule) => ({
+    fileMatch: picomatch(rule.files, { dot: true }),
+    keyMatch: picomatch(rule.keys, { dot: true }),
+  }))
+  excludeRuleCache.set(config, compiled)
+  return compiled
+}
+
 function isExcluded(config: VaultConfig, filePath: string, key: string): boolean {
   const rel = portable(path.relative(config.baseDir, filePath))
-  for (const rule of config.exclude) {
-    const fileMatch = picomatch(rule.files, { dot: true })
-    const keyMatch = picomatch(rule.keys, { dot: true })
+  for (const { fileMatch, keyMatch } of getCompiledExcludeRules(config)) {
     if ((fileMatch(rel) || fileMatch(path.basename(filePath))) && keyMatch(key)) return true
   }
   return false
@@ -121,13 +145,17 @@ function isNewerRecord(candidate: VaultRecord, existing: VaultRecord): boolean {
   return (candidate.order ?? 0) > (existing.order ?? 0)
 }
 
-function buildManagedFileAliases(config: VaultConfig) {
-  return [...new Set(config.envFiles.map((filePath) => path.resolve(filePath)))].map(
+function getManagedFileAliases(config: VaultConfig): ManagedFileAlias[] {
+  const cached = managedFileAliasCache.get(config)
+  if (cached) return cached
+  const aliases = [...new Set(config.envFiles.map((filePath) => path.resolve(filePath)))].map(
     (filePath) => ({
       filePath,
       relativePath: portable(path.relative(config.baseDir, filePath)),
     }),
   )
+  managedFileAliasCache.set(config, aliases)
+  return aliases
 }
 
 function remapManagedStoreFilePath(
@@ -135,7 +163,7 @@ function remapManagedStoreFilePath(
   config: VaultConfig,
 ): { filePath: string; aliased: boolean } {
   const resolvedFilePath = path.resolve(filePath)
-  const aliases = buildManagedFileAliases(config)
+  const aliases = getManagedFileAliases(config)
   if (aliases.some((alias) => alias.filePath === resolvedFilePath)) {
     return { filePath: resolvedFilePath, aliased: false }
   }
@@ -188,7 +216,7 @@ function validateStoreRecord(decoded: unknown, order: number): VaultRecord {
 function readStore(
   config: VaultConfig,
   key: Buffer,
-  options: { allowMissing?: boolean } = {},
+  options: { allowMissing?: boolean; ignoreCorruptRecords?: boolean } = {},
 ): StoreReadResult {
   const state = new Map<string, Map<string, VaultRecord>>()
   if (!existsSync(config.storePath)) {
@@ -221,6 +249,11 @@ function readStore(
   })
   if (lines.length > 0 && parsedRecords === 0) {
     throw new Error(`No readable vault records found in ${config.storePath}. Check the key file.`)
+  }
+  if (failedRecords > 0 && !options.ignoreCorruptRecords) {
+    throw new Error(
+      `Vault store contains ${failedRecords} unreadable record(s) in ${config.storePath}. Refusing to continue from partial state; pass ignoreCorruptRecords only after inspecting the store.`,
+    )
   }
   return { state, failedRecords, parsedRecords, rawRecords: lines.length, aliasedRecords }
 }
@@ -531,14 +564,17 @@ function applyRestoreFile(
 export async function encryptEnvFiles(
   configPath: string,
   keyFilePath: string,
-  options: { disableUnsafeWarning?: boolean } = {},
+  options: { disableUnsafeWarning?: boolean; ignoreCorruptRecords?: boolean } = {},
 ) {
   const config = loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
   const key = deriveVaultKey(keyFilePath)
-  const store = readStore(config, key, { allowMissing: true })
+  const store = readStore(config, key, {
+    allowMissing: true,
+    ignoreCorruptRecords: options.ignoreCorruptRecords,
+  })
   const state = store.state
   let setRecordsWritten = 0
   let deleteRecordsWritten = 0
@@ -577,13 +613,13 @@ export async function encryptEnvFiles(
     }
     if (config.trackDeletions) {
       for (const [keyName, old] of prev.entries()) {
+        if (isExcluded(config, filePath, keyName)) continue
         if (old.op === 'set' && !current.has(keyName)) {
           append(config, key, { f: filePath, k: keyName, op: 'delete', t: Date.now() })
           emitStructuredChange('encrypt', {
             action: 'delete',
             filePath: portable(filePath),
             key: keyName,
-            excluded: isExcluded(config, filePath, keyName) || undefined,
           })
           deleteRecordsWritten++
         }
@@ -611,27 +647,35 @@ export async function encryptEnvFiles(
 export async function buildRestorePlan(
   configPath: string,
   keyFilePath: string,
-  options: { disableUnsafeWarning?: boolean } = {},
+  options: { disableUnsafeWarning?: boolean; ignoreCorruptRecords?: boolean } = {},
 ) {
   const config = loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
   const key = deriveVaultKey(keyFilePath)
-  return buildRestorePlanFromState(config, readStore(config, key))
+  return buildRestorePlanFromState(
+    config,
+    readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords }),
+  )
 }
 
 export async function decryptEnvFiles(
   configPath: string,
   keyFilePath: string,
-  options: { dryRun?: boolean; autoApprove?: boolean; disableUnsafeWarning?: boolean } = {},
+  options: {
+    dryRun?: boolean
+    autoApprove?: boolean
+    disableUnsafeWarning?: boolean
+    ignoreCorruptRecords?: boolean
+  } = {},
 ) {
   const config = loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
   const key = deriveVaultKey(keyFilePath)
-  const store = readStore(config, key)
+  const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
   const plan = buildRestorePlanFromState(config, store)
   printRestorePreview(plan)
   if (plan.failedRecords > 0) {
@@ -724,7 +768,12 @@ export async function runVault(
   configPath: string,
   keyFilePath: string,
   mode: 'encrypt' | 'decrypt',
-  options: { dryRun?: boolean; autoApprove?: boolean; disableUnsafeWarning?: boolean } = {},
+  options: {
+    dryRun?: boolean
+    autoApprove?: boolean
+    disableUnsafeWarning?: boolean
+    ignoreCorruptRecords?: boolean
+  } = {},
 ) {
   return mode === 'encrypt'
     ? encryptEnvFiles(configPath, keyFilePath, options)

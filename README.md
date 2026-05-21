@@ -6,7 +6,7 @@ Workspace-aware dotenv injection for TypeScript and Node.js projects.
 
 The repository publishes three packages:
 
-- `env-lane`: the CLI package. It also re-exports the public APIs from the core and vault packages.
+- `env-lane`: the CLI package. It also re-exports the public APIs from the core package.
 - `@env-lane/core`: workspace discovery, config loading, dotenv resolution, selector checks, command execution, redaction, and env-file sorting.
 - `@env-lane/vault`: development-only reversible encrypted dotenv record storage. It is intentionally unsafe for production secret management.
 
@@ -35,7 +35,7 @@ For direct library usage:
 pnpm add -D @env-lane/core
 ```
 
-Install the vault package only when you need the development vault helpers:
+Install the vault package only when you need the optional development vault helpers or `env-lane vault` commands:
 
 ```bash
 pnpm add -D @env-lane/vault
@@ -255,6 +255,8 @@ export default defineConfig({
 `@env-lane/vault` stores reversible encrypted dotenv records for development workflows. It depends on local key-file handling, repository access controls, and CI logging discipline. Do not use it as a production secret-management system.
 
 Prefer CI/CD Secrets, cloud KMS, HashiCorp Vault, SOPS, age, or a platform Secret Manager for production secrets.
+
+The vault helpers are optional. Install `@env-lane/vault` alongside `env-lane` before using `env-lane vault ...` commands.
 
 Vault commands print a warning unless warnings are disabled through config or the lower-level API:
 

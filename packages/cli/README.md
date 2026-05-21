@@ -1,6 +1,6 @@
 # env-lane
 
-CLI for workspace-aware dotenv injection and development vault helpers.
+CLI for workspace-aware dotenv injection and optional development vault helpers.
 
 ```bash
 pnpm add -D env-lane
@@ -14,6 +14,8 @@ env-lane run api --build production -- pnpm start
 env-lane check api --build production --require-override
 ```
 
-The package also re-exports `@env-lane/core` and `@env-lane/vault` APIs for convenience.
+The package also re-exports `@env-lane/core` APIs for convenience.
+
+Vault commands are optional and require installing `@env-lane/vault` alongside `env-lane`.
 
 See the full documentation at https://github.com/billstark001/env-lane#readme.

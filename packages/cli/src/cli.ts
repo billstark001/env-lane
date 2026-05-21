@@ -10,8 +10,9 @@ import {
   sortEnvFile,
   sortEnvFilesFromConfig,
 } from '@env-lane/core'
-import { buildRestorePlan, decryptEnvFiles, encryptEnvFiles } from '@env-lane/vault'
 import { Command } from 'commander'
+
+type VaultModule = typeof import('@env-lane/vault')
 
 const program = new Command()
 program
@@ -25,6 +26,26 @@ function addCommonOptions(command: Command): Command {
     .option('-c, --config <file>', 'env-lane config file')
     .option('-b, --build <name>', 'build selector value')
     .option('--cwd <dir>', 'working directory')
+}
+
+async function loadVaultModule(): Promise<VaultModule> {
+  try {
+    return await import('@env-lane/vault')
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'ERR_MODULE_NOT_FOUND' &&
+      error instanceof Error &&
+      error.message.includes('@env-lane/vault')
+    ) {
+      throw new Error(
+        'Vault commands require the optional @env-lane/vault package. Install it with: pnpm add -D @env-lane/vault',
+      )
+    }
+    throw error
+  }
 }
 
 program
@@ -195,31 +216,32 @@ addCommonOptions(program.command('check [target]'))
 
 const vault = program
   .command('vault')
-  .description('Unsafe development vault helpers. Not for production secret management.')
-vault
-  .command('encrypt <config> <keyFile>')
-  .action(async (config, keyFile) =>
-    console.log(JSON.stringify(await encryptEnvFiles(config, keyFile), null, 2)),
-  )
+  .description('Optional unsafe development vault helpers. Requires @env-lane/vault.')
+vault.command('encrypt <config> <keyFile>').action(async (config, keyFile) => {
+  const { encryptEnvFiles } = await loadVaultModule()
+  console.log(JSON.stringify(await encryptEnvFiles(config, keyFile), null, 2))
+})
 vault
   .command('plan <config> <keyFile>')
   .description('Print the vault restore plan without writing files.')
-  .action(async (config, keyFile) =>
-    console.log(JSON.stringify(await buildRestorePlan(config, keyFile), null, 2)),
-  )
+  .action(async (config, keyFile) => {
+    const { buildRestorePlan } = await loadVaultModule()
+    console.log(JSON.stringify(await buildRestorePlan(config, keyFile), null, 2))
+  })
 vault
   .command('decrypt <config> <keyFile>')
   .option('--dry-run', 'show planned restore without writing files')
   .option('-y, --yes', 'apply restore without interactive confirmation')
-  .action(async (config, keyFile, opts) =>
+  .action(async (config, keyFile, opts) => {
+    const { decryptEnvFiles } = await loadVaultModule()
     console.log(
       JSON.stringify(
         await decryptEnvFiles(config, keyFile, { dryRun: opts.dryRun, autoApprove: opts.yes }),
         null,
         2,
       ),
-    ),
-  )
+    )
+  })
 
 program
   .command('sort-file <envFile> <templateFile>')

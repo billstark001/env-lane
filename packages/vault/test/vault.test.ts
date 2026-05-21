@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -163,5 +163,86 @@ describe('@env-lane/vault', () => {
         disableUnsafeWarning: true,
       }),
     ).rejects.toThrow(/must not overlap/)
+  })
+
+  it('does not record deletions for keys excluded after they were stored', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-exclude-delete-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'SECRET_TOKEN=one\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    writeFileSync(path.join(root, '.env'), 'SECRET_TOKEN=two\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({
+        envFiles: ['.env'],
+        outputDir: '.vault',
+        outputFile: 'store.dat',
+        exclude: { '.env': ['SECRET_*'] },
+      }),
+    )
+
+    const enc = await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    expect(enc.excludedEntriesIgnored).toBe(1)
+    expect(enc.deleteRecordsWritten).toBe(0)
+
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    const plan = await buildRestorePlan(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    expect(plan.summary.delete).toBe(0)
+    expect(plan.files[0]?.entries[0]).toMatchObject({
+      key: 'SECRET_TOKEN',
+      action: 'modify',
+    })
+  })
+
+  it('fails closed on unreadable vault records unless explicitly ignored', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-corrupt-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    appendFileSync(path.join(root, '.vault/store.dat'), 'not-valid-record\n')
+    writeFileSync(path.join(root, '.env'), 'A=2\n')
+
+    await expect(
+      buildRestorePlan(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      }),
+    ).rejects.toThrow(/unreadable record/)
+    await expect(
+      decryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        autoApprove: true,
+      }),
+    ).rejects.toThrow(/unreadable record/)
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=2\n')
+
+    const plan = await buildRestorePlan(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+      ignoreCorruptRecords: true,
+    })
+    expect(plan.failedRecords).toBe(1)
+    expect(plan.summary.modify).toBe(1)
   })
 })

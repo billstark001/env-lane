@@ -2,7 +2,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { parse } from 'dotenv'
 import { loadEnvLaneConfig } from './config.js'
-import type { EnvFileRef, EnvSource, ResolvedEnv, ResolveEnvOptions } from './types.js'
+import type {
+  EnvFileRef,
+  EnvSource,
+  ResolvedEnv,
+  ResolvedEnvLaneConfig,
+  ResolveEnvOptions,
+  WorkspacePackage,
+} from './types.js'
 import { resolveTargetPackage } from './workspace.js'
 
 export function resolveBuildName(
@@ -28,7 +35,15 @@ function patternToFile(
 
 export async function listEnvFiles(options: ResolveEnvOptions = {}): Promise<EnvFileRef[]> {
   const config = await loadEnvLaneConfig(options)
-  const target = await resolveTargetPackage(options.target, options)
+  const target = await resolveTargetPackage(options.target, { ...options, config })
+  return listEnvFilesForTarget(config, target, options)
+}
+
+export function listEnvFilesForTarget(
+  config: ResolvedEnvLaneConfig,
+  target: WorkspacePackage,
+  options: ResolveEnvOptions = {},
+): EnvFileRef[] {
   const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild)
   return config.dotenv.order.map((pattern, index) => {
     const fileName = patternToFile(
@@ -58,9 +73,9 @@ function lineForKey(content: string, key: string): number | undefined {
 
 export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promise<ResolvedEnv> {
   const config = await loadEnvLaneConfig(options)
-  const target = await resolveTargetPackage(options.target, options)
+  const target = await resolveTargetPackage(options.target, { ...options, config })
   const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild)
-  const files = await listEnvFiles(options)
+  const files = listEnvFilesForTarget(config, target, options)
   const values: Record<string, string> = {}
   const sources: Record<string, EnvSource> = {}
 

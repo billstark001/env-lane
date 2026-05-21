@@ -3,8 +3,8 @@ import path from 'node:path'
 import { parse } from 'dotenv'
 import fg from 'fast-glob'
 import { loadEnvLaneConfig } from './config.js'
-import { listEnvFiles } from './dotenv.js'
-import { listWorkspacePackages, resolveTargetPackage } from './workspace.js'
+import { listEnvFilesForTarget } from './dotenv.js'
+import { listWorkspacePackagesForConfig, resolveTargetPackage } from './workspace.js'
 
 export interface CheckResult {
   ok: boolean
@@ -32,7 +32,7 @@ export async function checkDotenvSelector(
   const config = await loadEnvLaneConfig(options)
   const target =
     options.target && options.target !== 'all'
-      ? await resolveTargetPackage(options.target, options)
+      ? await resolveTargetPackage(options.target, { ...options, config })
       : undefined
   const scanDir = target?.dir ?? config.rootDir
   const files = await fg(['**/.env', '**/.env.*', '**/*.env', '**/*.env.*'], {
@@ -65,12 +65,10 @@ export async function checkDotenvSelector(
   if (options.requireOverride ?? config.dotenv.requireOverride) {
     const targets =
       options.target && options.target !== 'all'
-        ? [await resolveTargetPackage(options.target, options)]
-        : await listWorkspacePackages(options)
+        ? [target ?? (await resolveTargetPackage(options.target, { ...options, config }))]
+        : await listWorkspacePackagesForConfig(config)
     for (const pkg of targets) {
-      const envFiles = await listEnvFiles({
-        cwd: options.cwd,
-        configFile: options.configFile,
+      const envFiles = listEnvFilesForTarget(config, pkg, {
         target: pkg.relativeDir,
         build: options.build,
         requireOverride: true,

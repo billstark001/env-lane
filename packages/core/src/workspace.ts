@@ -2,7 +2,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import fg from 'fast-glob'
 import { loadEnvLaneConfig } from './config.js'
-import type { ResolveEnvOptions, WorkspacePackage } from './types.js'
+import type { ResolvedEnvLaneConfig, ResolveEnvOptions, WorkspacePackage } from './types.js'
+
+type WorkspaceResolveOptions = Pick<ResolveEnvOptions, 'cwd' | 'configFile'> & {
+  config?: ResolvedEnvLaneConfig
+  packages?: WorkspacePackage[]
+}
 
 function readPackageName(dir: string): string | undefined {
   const file = path.join(dir, 'package.json')
@@ -20,9 +25,15 @@ function unique<T>(values: T[]): T[] {
 }
 
 export async function listWorkspacePackages(
-  options: Pick<ResolveEnvOptions, 'cwd' | 'configFile'> = {},
+  options: WorkspaceResolveOptions = {},
 ): Promise<WorkspacePackage[]> {
-  const config = await loadEnvLaneConfig(options)
+  const config = options.config ?? (await loadEnvLaneConfig(options))
+  return listWorkspacePackagesForConfig(config)
+}
+
+export async function listWorkspacePackagesForConfig(
+  config: ResolvedEnvLaneConfig,
+): Promise<WorkspacePackage[]> {
   const entries = await fg(config.workspace.packageGlobs, {
     cwd: config.rootDir,
     onlyDirectories: true,
@@ -69,31 +80,49 @@ export async function listWorkspacePackages(
   return [...byDir.values()]
 }
 
-export async function resolveTargetPackage(
+function targetMatchesPackage(pkg: WorkspacePackage, value: string): boolean {
+  return pkg.aliases.includes(value) || pkg.name === value || pkg.relativeDir === value
+}
+
+function formatAvailableTargets(packages: WorkspacePackage[]): string {
+  return unique(packages.flatMap((pkg) => pkg.aliases)).join(', ')
+}
+
+export function resolveTargetPackageFromList(
   target: string | undefined,
-  options: Pick<ResolveEnvOptions, 'cwd' | 'configFile'> = {},
-): Promise<WorkspacePackage> {
-  const [config, packages] = await Promise.all([
-    loadEnvLaneConfig(options),
-    listWorkspacePackages(options),
-  ])
+  config: ResolvedEnvLaneConfig,
+  packages: WorkspacePackage[],
+): WorkspacePackage {
   const value = (target || config.workspace.defaultTarget || '').trim()
 
   if (!value) {
     const nonRoot = packages.filter((pkg) => !pkg.isRoot)
     if (nonRoot.length === 0) return packages.find((pkg) => pkg.isRoot) ?? packages[0]
-    throw new Error(
-      `Missing target. Available targets: ${packages.flatMap((pkg) => pkg.aliases).join(', ')}`,
-    )
+    throw new Error(`Missing target. Available targets: ${formatAvailableTargets(packages)}`)
   }
 
-  const matched = packages.find(
-    (pkg) => pkg.aliases.includes(value) || pkg.name === value || pkg.relativeDir === value,
-  )
+  const matches = packages.filter((pkg) => targetMatchesPackage(pkg, value))
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous target '${value}'. Matches: ${matches
+        .map((pkg) => pkg.name ?? pkg.relativeDir)
+        .join(', ')}. Use a package name, relative directory, or configure a unique alias.`,
+    )
+  }
+  const matched = matches[0]
   if (!matched) {
     throw new Error(
-      `Unknown target '${value}'. Available targets: ${packages.flatMap((pkg) => pkg.aliases).join(', ')}`,
+      `Unknown target '${value}'. Available targets: ${formatAvailableTargets(packages)}`,
     )
   }
   return matched
+}
+
+export async function resolveTargetPackage(
+  target: string | undefined,
+  options: WorkspaceResolveOptions = {},
+): Promise<WorkspacePackage> {
+  const config = options.config ?? (await loadEnvLaneConfig(options))
+  const packages = options.packages ?? (await listWorkspacePackagesForConfig(config))
+  return resolveTargetPackageFromList(target, config, packages)
 }
