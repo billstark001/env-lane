@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -8,6 +8,7 @@ import {
   listWorkspacePackages,
   resolveInjectedEnv,
   resolveTargetPackage,
+  sortEnvFile,
 } from '../src/index.js'
 
 function fixture(): string {
@@ -73,5 +74,55 @@ describe('@env-lane/core', () => {
     expect(result.violations).toEqual([
       expect.objectContaining({ relativeFile: 'apps/web/.env', line: 2 }),
     ])
+  })
+
+  it('reports missing override files during selector checks when required', async () => {
+    const root = fixture()
+    const result = await checkDotenvSelector({
+      cwd: root,
+      target: 'api',
+      build: 'staging',
+      requireOverride: true,
+    })
+    expect(result.ok).toBe(false)
+    expect(result.missingRequired).toEqual([
+      expect.objectContaining({ relativeFile: 'apps/api/.env.staging', target: '@acme/api' }),
+    ])
+  })
+
+  it('sorts env file using template order', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
+    writeFileSync(path.join(root, '.env.example'), 'A=\nB=\nC=\n')
+    await sortEnvFile(path.join(root, '.env'), path.join(root, '.env.example'))
+    expect(readFileSync(path.join(root, '.env'), 'utf8').split('\n').slice(0, 3)).toEqual([
+      'A=1',
+      'B=2',
+      '# C=',
+    ])
+  })
+
+  it('sorts env files while preserving comments, bom, newline style, and extras', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-layout-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(
+      path.join(root, '.env'),
+      '\uFEFF# template header\r\n# local B\r\nB=2\r\n\r\n# local A\r\nA=1\r\nEXTRA=9\r\n',
+    )
+    writeFileSync(
+      path.join(root, '.env.example'),
+      '# template header\r\n# template A\r\nA=\r\n# template B\r\nB=\r\nC=\r\n',
+    )
+    const result = await sortEnvFile(path.join(root, '.env'), path.join(root, '.env.example'))
+    const sorted = readFileSync(path.join(root, '.env'), 'utf8')
+    expect(result.insertedCommentedCount).toBe(1)
+    expect(sorted.startsWith('\uFEFF# template header\r\n')).toBe(true)
+    expect(sorted).toContain('# template A\r\n\r\n# local A\r\nA=1')
+    expect(sorted).toContain('# template B\r\n\r\n# local B\r\nB=2')
+    expect(sorted).toContain('\r\n# C=')
+    expect(sorted.endsWith('\r\n')).toBe(true)
+    expect(sorted.indexOf('A=1')).toBeLessThan(sorted.indexOf('B=2'))
+    expect(sorted.indexOf('B=2')).toBeLessThan(sorted.indexOf('EXTRA=9'))
   })
 })

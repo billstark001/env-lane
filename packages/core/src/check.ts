@@ -3,12 +3,14 @@ import path from 'node:path'
 import { parse } from 'dotenv'
 import fg from 'fast-glob'
 import { loadEnvLaneConfig } from './config.js'
-import { resolveTargetPackage } from './workspace.js'
+import { listEnvFiles } from './dotenv.js'
+import { listWorkspacePackages, resolveTargetPackage } from './workspace.js'
 
 export interface CheckResult {
   ok: boolean
   selectorKey: string
   violations: Array<{ file: string; relativeFile: string; line?: number }>
+  missingRequired: Array<{ file: string; relativeFile: string; target: string }>
 }
 
 function lineForKey(content: string, key: string): number | undefined {
@@ -19,7 +21,13 @@ function lineForKey(content: string, key: string): number | undefined {
 }
 
 export async function checkDotenvSelector(
-  options: { cwd?: string; configFile?: string; target?: string } = {},
+  options: {
+    cwd?: string
+    configFile?: string
+    target?: string
+    build?: string
+    requireOverride?: boolean
+  } = {},
 ): Promise<CheckResult> {
   const config = await loadEnvLaneConfig(options)
   const target =
@@ -53,5 +61,33 @@ export async function checkDotenvSelector(
       })
     }
   }
-  return { ok: violations.length === 0, selectorKey: config.selector.envKey, violations }
+  const missingRequired: CheckResult['missingRequired'] = []
+  if (options.requireOverride ?? config.dotenv.requireOverride) {
+    const targets =
+      options.target && options.target !== 'all'
+        ? [await resolveTargetPackage(options.target, options)]
+        : await listWorkspacePackages(options)
+    for (const pkg of targets) {
+      const envFiles = await listEnvFiles({
+        cwd: options.cwd,
+        configFile: options.configFile,
+        target: pkg.relativeDir,
+        build: options.build,
+        requireOverride: true,
+      })
+      for (const file of envFiles.filter((item) => item.required && !item.exists)) {
+        missingRequired.push({
+          file: file.path,
+          relativeFile: file.relativePath,
+          target: pkg.name ?? pkg.relativeDir,
+        })
+      }
+    }
+  }
+  return {
+    ok: violations.length === 0 && missingRequired.length === 0,
+    selectorKey: config.selector.envKey,
+    violations,
+    missingRequired,
+  }
 }

@@ -4,6 +4,27 @@
   "type": "module",
   "description": "CLI for env-lane dotenv injection and development vault helpers.",
   "license": "MIT",
+  "author": "billstark001",
+  "homepage": "https://github.com/billstark001/env-lane#readme",
+  "bugs": {
+    "url": "https://github.com/billstark001/env-lane/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billstark001/env-lane.git",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "dotenv",
+    "env",
+    "environment",
+    "cli",
+    "workspace",
+    "pnpm"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,11 +39,19 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean && tsup src/cli.ts --format esm --clean false",
     "dev": "tsx src/cli.ts",
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check ."
   },

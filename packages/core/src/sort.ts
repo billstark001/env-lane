@@ -1,6 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { loadVaultConfig } from './config.js'
+
+interface EnvSortConfig {
+  baseDir: string
+  envFiles: string[]
+  sort?: Record<string, { file: string; template: string; files?: Record<string, string> }>
+}
 
 type EnvLine =
   | { kind: 'empty' | 'comment'; rawLine: string; lineNumber: number }
@@ -77,6 +82,41 @@ const COMMENTED_ENV_ENTRY_RE = /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s
 
 function portable(file: string): string {
   return file.replace(/\\/g, '/').replaceAll(path.sep, '/')
+}
+
+function readSortConfig(configPath: string): EnvSortConfig {
+  const abs = path.resolve(configPath)
+  if (!existsSync(abs)) throw new Error(`Sort config does not exist: ${abs}`)
+  const baseDir = path.dirname(abs)
+  const raw = JSON.parse(readFileSync(abs, 'utf8').replace(/^\uFEFF/, '')) as {
+    envFiles?: unknown
+    sort?: unknown
+  }
+  const envFiles = Array.isArray(raw.envFiles)
+    ? [
+        ...new Set(
+          raw.envFiles.map((file) => {
+            if (typeof file !== 'string' || !file.trim()) {
+              throw new Error('Each entry in config.envFiles must be a non-empty string.')
+            }
+            return path.resolve(baseDir, file)
+          }),
+        ),
+      ]
+    : []
+
+  if (
+    raw.sort !== undefined &&
+    (!raw.sort || typeof raw.sort !== 'object' || Array.isArray(raw.sort))
+  ) {
+    throw new Error('config.sort must be an object keyed by sort target.')
+  }
+
+  return {
+    baseDir,
+    envFiles,
+    sort: raw.sort as EnvSortConfig['sort'],
+  }
 }
 
 function emitCommandChange(
@@ -479,7 +519,7 @@ export async function sortEnvFilesFromConfig(
   keyArg = 'all',
   envSuffixArg = 'all',
 ) {
-  const config = loadVaultConfig(configPath)
+  const config = readSortConfig(configPath)
   if (!config.sort) throw new Error('config.sort is required for sortEnvFilesFromConfig.')
   const keySelector = normalizeSortSelector(keyArg, 'all', 'key')
   const envSuffixSelector = normalizeSortSelector(envSuffixArg, 'all', 'env-suffix')

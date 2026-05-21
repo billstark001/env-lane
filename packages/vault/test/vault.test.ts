@@ -6,7 +6,6 @@ import {
   buildRestorePlan,
   decryptEnvFiles,
   encryptEnvFiles,
-  sortEnvFile,
   warnUnsafeVault,
 } from '../src/index.js'
 
@@ -131,39 +130,38 @@ describe('@env-lane/vault', () => {
     expect(readFileSync(path.join(newRoot, 'nested/.env'), 'utf8')).toBe('A=1\n')
   })
 
-  it('sorts env file using template order', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-${Date.now()}`)
+  it('loads object-style exclude rules, de-dupes env files, and rejects store overlap', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-config-${Date.now()}`)
     mkdirSync(root, { recursive: true })
-    writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
-    writeFileSync(path.join(root, '.env.example'), 'A=\nB=\nC=\n')
-    await sortEnvFile(path.join(root, '.env'), path.join(root, '.env.example'))
-    expect(readFileSync(path.join(root, '.env'), 'utf8').split('\n').slice(0, 3)).toEqual([
-      'A=1',
-      'B=2',
-      '# C=',
-    ])
-  })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\nSECRET_TOKEN=skip\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      `\uFEFF${JSON.stringify({
+        envFiles: ['.env', './.env'],
+        outputDir: '.vault',
+        outputFile: 'store.dat',
+        exclude: { '.env': ['SECRET_*'] },
+      })}`,
+    )
+    const enc = await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    expect(enc.setRecordsWritten).toBe(1)
+    expect(enc.excludedEntriesIgnored).toBe(1)
 
-  it('sorts env files while preserving comments, bom, newline style, and extras', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-layout-${Date.now()}`)
-    mkdirSync(root, { recursive: true })
     writeFileSync(
-      path.join(root, '.env'),
-      '\uFEFF# template header\r\n# local B\r\nB=2\r\n\r\n# local A\r\nA=1\r\nEXTRA=9\r\n',
+      path.join(root, 'overlap.json'),
+      JSON.stringify({
+        envFiles: ['.vault/store.dat'],
+        outputDir: '.vault',
+        outputFile: 'store.dat',
+      }),
     )
-    writeFileSync(
-      path.join(root, '.env.example'),
-      '# template header\r\n# template A\r\nA=\r\n# template B\r\nB=\r\nC=\r\n',
-    )
-    const result = await sortEnvFile(path.join(root, '.env'), path.join(root, '.env.example'))
-    const sorted = readFileSync(path.join(root, '.env'), 'utf8')
-    expect(result.insertedCommentedCount).toBe(1)
-    expect(sorted.startsWith('\uFEFF# template header\r\n')).toBe(true)
-    expect(sorted).toContain('# template A\r\n\r\n# local A\r\nA=1')
-    expect(sorted).toContain('# template B\r\n\r\n# local B\r\nB=2')
-    expect(sorted).toContain('\r\n# C=')
-    expect(sorted.endsWith('\r\n')).toBe(true)
-    expect(sorted.indexOf('A=1')).toBeLessThan(sorted.indexOf('B=2'))
-    expect(sorted.indexOf('B=2')).toBeLessThan(sorted.indexOf('EXTRA=9'))
+    await expect(
+      encryptEnvFiles(path.join(root, 'overlap.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      }),
+    ).rejects.toThrow(/must not overlap/)
   })
 })

@@ -5,7 +5,7 @@ import path from 'node:path'
 const ALGO = 'aes-256-gcm'
 const IV_LEN = 12
 const TAG_LEN = 16
-const KDF_SALT = Buffer.from('env-lane-v1-kdf-salt', 'utf8')
+const KDF_SALT = Buffer.from('env-store-v1-kdf-salt', 'utf8')
 const KDF_OPTS = { N: 16384, r: 8, p: 1 }
 
 export function deriveVaultKey(keyFilePath: string): Buffer {

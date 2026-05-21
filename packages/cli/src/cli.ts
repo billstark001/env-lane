@@ -7,14 +7,10 @@ import {
   resolveInjectedEnv,
   resolveTargetPackage,
   runWithInjectedEnv,
-} from '@env-lane/core'
-import {
-  buildRestorePlan,
-  decryptEnvFiles,
-  encryptEnvFiles,
   sortEnvFile,
   sortEnvFilesFromConfig,
-} from '@env-lane/vault'
+} from '@env-lane/core'
+import { buildRestorePlan, decryptEnvFiles, encryptEnvFiles } from '@env-lane/vault'
 import { Command } from 'commander'
 
 const program = new Command()
@@ -172,12 +168,26 @@ addCommonOptions(
 
 addCommonOptions(program.command('check [target]'))
   .description('Check that the selector key is not stored in dotenv files.')
+  .option('--require-override', 'fail if selected override file is missing')
   .action(async (target, opts) => {
-    const result = await checkDotenvSelector({ cwd: opts.cwd, configFile: opts.config, target })
+    const result = await checkDotenvSelector({
+      cwd: opts.cwd,
+      configFile: opts.config,
+      target,
+      build: opts.build,
+      requireOverride: opts.requireOverride,
+    })
     if (!result.ok) {
-      console.error(
-        `${result.selectorKey} must not be stored in dotenv files:\n${result.violations.map((v) => `  ${v.relativeFile}${v.line ? `:${v.line}` : ''}`).join('\n')}`,
-      )
+      if (result.violations.length) {
+        console.error(
+          `${result.selectorKey} must not be stored in dotenv files:\n${result.violations.map((v) => `  ${v.relativeFile}${v.line ? `:${v.line}` : ''}`).join('\n')}`,
+        )
+      }
+      if (result.missingRequired.length) {
+        console.error(
+          `Missing required env file(s):\n${result.missingRequired.map((file) => `  ${file.target}: ${file.relativeFile}`).join('\n')}`,
+        )
+      }
       process.exit(1)
     }
     console.log(`[env-lane] OK: ${result.selectorKey} is absent from dotenv files.`)

@@ -2,8 +2,29 @@
   "name": "@env-lane/core",
   "version": "0.1.0",
   "type": "module",
-  "description": "Core dotenv injection and workspace package resolution for env-lane.",
+  "description": "Core dotenv injection, workspace resolution, selector checks, and env sorting for env-lane.",
   "license": "MIT",
+  "author": "billstark001",
+  "homepage": "https://github.com/billstark001/env-lane#readme",
+  "bugs": {
+    "url": "https://github.com/billstark001/env-lane/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billstark001/env-lane.git",
+    "directory": "packages/core"
+  },
+  "keywords": [
+    "dotenv",
+    "env",
+    "environment",
+    "workspace",
+    "pnpm",
+    "secrets"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,10 +37,18 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check ."
   },

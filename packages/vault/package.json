@@ -2,8 +2,29 @@
   "name": "@env-lane/vault",
   "version": "0.1.0",
   "type": "module",
-  "description": "Unsafe-by-default development vault helpers for env-lane dotenv files.",
+  "description": "Unsafe-by-default development vault record storage for env-lane dotenv files.",
   "license": "MIT",
+  "author": "billstark001",
+  "homepage": "https://github.com/billstark001/env-lane#readme",
+  "bugs": {
+    "url": "https://github.com/billstark001/env-lane/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billstark001/env-lane.git",
+    "directory": "packages/vault"
+  },
+  "keywords": [
+    "dotenv",
+    "env",
+    "vault",
+    "development",
+    "secrets",
+    "workspace"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,15 +37,22 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check ."
   },
   "dependencies": {
-    "@env-lane/core": "workspace:*",
     "dotenv": "^17.4.2",
     "picomatch": "^4.0.4",
     "zod": "^4.4.3"
