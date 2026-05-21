@@ -18,7 +18,7 @@ importers:
         specifier: ^8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.14)(tsx@4.22.3)(typescript@6.0.3)(yaml@2.9.0)
       tsx:
-        specifier: ^4.8.1
+        specifier: ^4.22.3
         version: 4.22.3
       typescript:
         specifier: ^6.0.3
