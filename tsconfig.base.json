@@ -12,6 +12,10 @@
     "declarationMap": true,
     "sourceMap": true,
     "resolveJsonModule": true,
+    "paths": {
+      "@env-lane/core": ["./packages/core/src/index.ts"],
+      "@env-lane/vault": ["./packages/vault/src/index.ts"]
+    },
     "types": ["node"]
   }
 }

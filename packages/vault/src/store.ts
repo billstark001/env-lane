@@ -1,3 +1,5 @@
+/// <reference path="./picomatch.d.ts" />
+
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import picomatch from 'picomatch'
