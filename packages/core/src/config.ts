@@ -47,6 +47,11 @@ const schema = z
         configFile: z.string().min(1).optional(),
       })
       .optional(),
+    output: z
+      .object({
+        format: z.enum(['text', 'json', 'dotenv']).optional(),
+      })
+      .optional(),
     sort: z.record(z.string(), sortTargetSchema).optional(),
   })
   .passthrough()
@@ -121,6 +126,9 @@ export async function loadEnvLaneConfig(
       enabled: parsed.vault?.enabled ?? false,
       disableUnsafeWarning: parsed.vault?.disableUnsafeWarning ?? false,
       configFile: parsed.vault?.configFile ?? 'env-lane.vault.json',
+    },
+    output: {
+      format: parsed.output?.format ?? 'text',
     },
     sort: parsed.sort,
   }

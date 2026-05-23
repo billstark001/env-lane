@@ -132,11 +132,31 @@ If no child workspace package exists, the repository root is treated as the only
 
 ## CLI
 
+### Output Formatting
+
+You can control how `env-lane` formats its output globally across commands using the `--format` option or the `--json` shorthand.
+
+- `--format text` (Default): Human-readable tables and lists.
+- `--format json`: Machine-readable JSON, perfect for piping into `jq`. (Shorthand: `--json`)
+- `--format dotenv`: Specific to the `print` command, outputs strict `KEY=VALUE` pairs suitable for shell evaluation or `.env` file generation.
+
+**Configuration Equivalent:**
+
+```ts
+export default defineConfig({
+  output: {
+    format: 'text', // 'text' | 'json' | 'dotenv'
+  }
+})
+```
+
+---
+
 List workspace packages:
 
 ```bash
 env-lane packages
-env-lane packages --format json
+env-lane --json packages
 ```
 
 Resolve a target:
@@ -149,7 +169,7 @@ List dotenv files:
 
 ```bash
 env-lane files api --build production
-env-lane files all --build staging --format json
+env-lane --json files all --build staging
 env-lane files api --build production --require-override
 ```
 
@@ -157,7 +177,7 @@ Print the resolved environment:
 
 ```bash
 env-lane print api --build production
-env-lane print api --build production --format json
+env-lane --json print api --build production
 env-lane print api --build production --show-secrets
 env-lane print api --build production --include-shell
 ```

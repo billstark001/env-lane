@@ -1,4 +1,4 @@
-export type EnvLaneOutputFormat = 'json' | 'dotenv'
+export type EnvLaneOutputFormat = 'text' | 'json' | 'dotenv'
 
 export interface EnvSortTargetConfig {
   baseDir?: string
@@ -45,6 +45,10 @@ export interface EnvLaneConfig {
     disableUnsafeWarning?: boolean
     configFile?: string
   }
+  output?: {
+    /** Default output format for CLI. */
+    format?: EnvLaneOutputFormat
+  }
   sort?: Record<string, EnvSortTargetConfig>
 }
 
@@ -56,6 +60,7 @@ export interface ResolvedEnvLaneConfig {
   }
   dotenv: Required<NonNullable<EnvLaneConfig['dotenv']>>
   vault: Required<NonNullable<EnvLaneConfig['vault']>>
+  output: Required<NonNullable<EnvLaneConfig['output']>>
   sort?: Record<string, EnvSortTargetConfig>
 }
 
