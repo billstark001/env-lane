@@ -53,6 +53,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
+    "@env-lane/core": "workspace:*",
     "c12": "^3.3.4",
     "dotenv": "^17.4.2",
     "picomatch": "^4.0.4",

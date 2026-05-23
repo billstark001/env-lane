@@ -2,6 +2,7 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { getLogger } from '@env-lane/core'
 import picomatch from 'picomatch'
 import { loadVaultConfig, type VaultConfig } from './config.js'
 import { decryptRecord, deriveVaultKey, encryptRecord } from './crypto.js'
@@ -120,7 +121,7 @@ function emitStructuredChange(
   command: 'encrypt' | 'decrypt' | 'sort',
   payload: Record<string, string | number | boolean | undefined>,
 ): void {
-  console.log(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
+  getLogger().info(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
 }
 
 function getCompiledExcludeRules(config: VaultConfig): CompiledExcludeRule[] {
@@ -452,33 +453,34 @@ function buildRestorePlanFromState(config: VaultConfig, store: StoreReadResult):
 }
 
 function printRestorePreview(plan: RestorePlan): void {
-  console.log('[env-lane:vault] Restore preview:')
+  const logger = getLogger()
+  logger.log('[env-lane:vault] Restore preview:')
   if (plan.summary.filesWithChanges === 0) {
-    console.log('[env-lane:vault] No file changes detected.')
-    console.log(`[env-lane:vault] Skipped identical key-value pairs: ${plan.summary.identical}`)
+    logger.log('[env-lane:vault] No file changes detected.')
+    logger.log(`[env-lane:vault] Skipped identical key-value pairs: ${plan.summary.identical}`)
     return
   }
 
   for (const file of plan.files) {
     const changedEntries = file.entries.filter((entry) => entry.action !== 'identical')
     if (changedEntries.length === 0) continue
-    console.log(`\n[env-lane:vault] File: ${file.filePath}`)
+    logger.log(`\n[env-lane:vault] File: ${file.filePath}`)
     for (const entry of changedEntries) {
       if (entry.action === 'add') {
-        console.log(`  ADD ${entry.key}=${formatPreviewValue(entry.nextValue ?? '')}`)
+        logger.log(`  ADD ${entry.key}=${formatPreviewValue(entry.nextValue ?? '')}`)
       } else if (entry.action === 'modify') {
-        console.log(
+        logger.log(
           `  MODIFY ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)} -> ${formatPreviewValue(entry.nextValue ?? '')}`,
         )
       } else {
-        console.log(
+        logger.log(
           `  DELETE ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)}`,
         )
       }
     }
   }
-  console.log('')
-  console.log(
+  logger.log('')
+  logger.log(
     `[env-lane:vault] Summary: ${plan.summary.modify} modify, ${plan.summary.add} add, ${plan.summary.delete} delete, ${plan.summary.identical} identical skipped`,
   )
 }
@@ -486,9 +488,10 @@ function printRestorePreview(plan: RestorePlan): void {
 async function confirmRestore(
   options: { autoApprove?: boolean; dryRun?: boolean } = {},
 ): Promise<boolean> {
+  const logger = getLogger()
   if (options.dryRun) return false
   if (options.autoApprove) {
-    console.log('[env-lane:vault] Auto-approved restore.')
+    logger.log('[env-lane:vault] Auto-approved restore.')
     return true
   }
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -496,7 +499,7 @@ async function confirmRestore(
       'Restore confirmation requires an interactive terminal. Re-run with --yes to apply or --dry-run to preview.',
     )
   }
-  process.stdout.write('[env-lane:vault] Press y to apply restore, any other key to cancel: ')
+  logger.write('[env-lane:vault] Press y to apply restore, any other key to cancel: ')
   return new Promise((resolve) => {
     const stdin = process.stdin
     const cleanup = () => {
@@ -506,7 +509,7 @@ async function confirmRestore(
     }
     const onData = (chunk: Buffer) => {
       cleanup()
-      process.stdout.write('\n')
+      logger.write('\n')
       const input = String(chunk)
       if (input === '\u0003') {
         resolve(false)
@@ -680,23 +683,24 @@ export async function decryptEnvFiles(
   const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
   const plan = buildRestorePlanFromState(config, store)
   printRestorePreview(plan)
+  const logger = getLogger()
   if (plan.failedRecords > 0) {
-    console.warn(
+    logger.warn(
       `[env-lane:vault] Warning: skipped ${plan.failedRecords} unreadable store record(s).`,
     )
   }
   if (plan.aliasedRecords > 0) {
-    console.log(
+    logger.log(
       `[env-lane:vault] Remapped ${plan.aliasedRecords} store record(s) from previous checkout paths to current env files.`,
     )
   }
   if (plan.unmanagedStoreFiles.length > 0) {
-    console.warn(
+    logger.warn(
       `[env-lane:vault] Warning: ignored ${plan.unmanagedStoreFiles.length} store file(s) not listed in config.envFiles.`,
     )
   }
   if (plan.excludedRecordsIgnored > 0) {
-    console.log(
+    logger.log(
       `[env-lane:vault] Ignored ${plan.excludedRecordsIgnored} excluded store record(s) during restore.`,
     )
   }
@@ -721,7 +725,7 @@ export async function decryptEnvFiles(
 
   const confirmed = await confirmRestore(options)
   if (!confirmed) {
-    console.log('[env-lane:vault] Restore cancelled. No files were changed.')
+    logger.log('[env-lane:vault] Restore cancelled. No files were changed.')
     for (const file of plan.files) {
       results.push({
         filePath: file.filePath,

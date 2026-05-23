@@ -1,5 +1,6 @@
 import { execa } from 'execa'
 import { resolveInjectedEnv } from './dotenv.js'
+import { getLogger } from './logger.js'
 
 export async function runWithInjectedEnv(options: {
   cwd?: string
@@ -29,11 +30,12 @@ export async function runWithInjectedEnv(options: {
       .filter((file) => !file.exists)
       .map((file) => file.relativePath)
       .join(', ')
-    console.error(
+    const logger = getLogger()
+    logger.info(
       `[env-lane] target=${resolved.target.name ?? resolved.target.relativeDir} build=${resolved.build}`,
     )
-    console.error(`[env-lane] loaded=${loaded}`)
-    if (missing) console.error(`[env-lane] missing=${missing}`)
+    logger.info(`[env-lane] loaded=${loaded}`)
+    if (missing) logger.info(`[env-lane] missing=${missing}`)
   }
 
   const subprocess = execa(options.command[0], options.command.slice(1), {

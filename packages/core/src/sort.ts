@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { loadEnvLaneConfig } from './config.js'
+import { getLogger } from './logger.js'
 import type { EnvSortTargetConfig, ResolvedEnvLaneConfig, WorkspacePackage } from './types.js'
 import { listWorkspacePackagesForConfig } from './workspace.js'
 
@@ -137,7 +138,7 @@ function emitCommandChange(
   command: 'sort',
   payload: Record<string, string | number | boolean | undefined>,
 ): void {
-  console.log(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
+  getLogger().info(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
 }
 
 function createEmptyDocument(): TextDocument {

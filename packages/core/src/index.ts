@@ -1,6 +1,7 @@
 export * from './check.js'
 export * from './config.js'
 export * from './dotenv.js'
+export * from './logger.js'
 export * from './redaction.js'
 export * from './run.js'
 export * from './sort.js'

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import type { EnvLaneOutputFormat } from '@env-lane/core'
 import {
   checkDotenvSelector,
+  getLogger,
   listEnvFiles,
   listWorkspacePackages,
   loadEnvLaneConfig,
@@ -8,11 +10,23 @@ import {
   resolveInjectedEnv,
   resolveTargetPackage,
   runWithInjectedEnv,
+  setLogger,
   sortEnvFile,
   sortEnvFilesFromConfig,
 } from '@env-lane/core'
-import type { EnvLaneOutputFormat } from '@env-lane/core'
 import { Command } from 'commander'
+import { createConsola } from 'consola'
+
+const consola = createConsola()
+setLogger({
+  log: (msg, ...args) => consola.log(msg, ...args),
+  info: (msg, ...args) => consola.info(msg, ...args),
+  warn: (msg, ...args) => consola.warn(msg, ...args),
+  error: (msg, ...args) => consola.error(msg, ...args),
+  success: (msg, ...args) => consola.success(msg, ...args),
+  debug: (msg, ...args) => consola.debug(msg, ...args),
+  write: (msg) => process.stdout.write(msg),
+})
 
 type VaultModule = typeof import('@env-lane/vault')
 
@@ -38,11 +52,20 @@ async function resolveOutputFormat(
   opts: { format?: string; json?: boolean; config?: string; cwd?: string },
   defaultFormat: EnvLaneOutputFormat = 'text',
 ): Promise<EnvLaneOutputFormat> {
-  if (opts.json) return 'json'
-  if (opts.format) return opts.format as EnvLaneOutputFormat
+  let format: EnvLaneOutputFormat
+  if (opts.json) {
+    format = 'json'
+  } else if (opts.format) {
+    format = opts.format as EnvLaneOutputFormat
+  } else {
+    const config = await loadEnvLaneConfig({ configFile: opts.config, cwd: opts.cwd })
+    format = config.output.format ?? defaultFormat
+  }
 
-  const config = await loadEnvLaneConfig({ configFile: opts.config, cwd: opts.cwd })
-  return config.output.format ?? defaultFormat
+  if (format === 'json') {
+    consola.level = 2 // Errors, Warnings, and Logs (for JSON output)
+  }
+  return format
 }
 
 async function loadVaultModule(): Promise<VaultModule> {
@@ -71,11 +94,12 @@ addCommonOptions(program.command('packages'))
     const allOpts = { ...program.opts(), ...opts }
     const format = await resolveOutputFormat(allOpts, 'text')
     const packages = await listWorkspacePackages({ cwd: allOpts.cwd, configFile: allOpts.config })
+    const logger = getLogger()
     if (format === 'json') {
-      console.log(JSON.stringify(packages, null, 2))
+      logger.log(JSON.stringify(packages, null, 2))
     } else {
       for (const pkg of packages)
-        console.log(`${pkg.name ?? '<unnamed>'}\t${pkg.relativeDir}\t${pkg.aliases.join(',')}`)
+        logger.log(`${pkg.name ?? '<unnamed>'}\t${pkg.relativeDir}\t${pkg.aliases.join(',')}`)
     }
   })
 
@@ -84,11 +108,14 @@ addCommonOptions(program.command('resolve-target <target>'))
   .action(async (target, opts) => {
     const allOpts = { ...program.opts(), ...opts }
     const format = await resolveOutputFormat(allOpts, 'json')
-    const resolved = await resolveTargetPackage(target, { cwd: allOpts.cwd, configFile: allOpts.config })
+    const resolved = await resolveTargetPackage(target, {
+      cwd: allOpts.cwd,
+      configFile: allOpts.config,
+    })
     if (format === 'json') {
-      console.log(JSON.stringify(resolved, null, 2))
+      getLogger().log(JSON.stringify(resolved, null, 2))
     } else {
-      console.log(`${resolved.name ?? '<unnamed>'} ${resolved.dir}`)
+      getLogger().log(`${resolved.name ?? '<unnamed>'} ${resolved.dir}`)
     }
   })
 
@@ -114,12 +141,12 @@ addCommonOptions(program.command('files [target]'))
         })),
       )
       if (format === 'json') {
-        console.log(JSON.stringify(result, null, 2))
+        getLogger().log(JSON.stringify(result, null, 2))
       } else {
         for (const entry of result) {
-          console.log(`# ${entry.target.name ?? entry.target.relativeDir}`)
+          getLogger().log(`# ${entry.target.name ?? entry.target.relativeDir}`)
           for (const file of entry.files)
-            console.log(
+            getLogger().log(
               `${file.exists ? 'loaded ' : 'missing'} ${file.kind.padEnd(8)} ${file.relativePath}`,
             )
         }
@@ -134,10 +161,10 @@ addCommonOptions(program.command('files [target]'))
       requireOverride: allOpts.requireOverride,
     })
     if (format === 'json') {
-      console.log(JSON.stringify(files, null, 2))
+      getLogger().log(JSON.stringify(files, null, 2))
     } else {
       for (const file of files)
-        console.log(
+        getLogger().log(
           `${file.exists ? 'loaded ' : 'missing'} ${file.kind.padEnd(8)} ${file.relativePath}`,
         )
     }
@@ -181,12 +208,12 @@ addCommonOptions(program.command('print <target>'))
           },
         ]),
       )
-      console.log(JSON.stringify(payload, null, 2))
+      getLogger().log(JSON.stringify(payload, null, 2))
     } else {
       // Both "text" and "dotenv" formats for 'print' result in KEY=VALUE pairs.
       // "dotenv" is specifically intended for shell sourcing or .env file generation.
       for (const key of keys)
-        console.log(`${key}=${redactValue(key, resolved.values[key], allOpts.showSecrets)}`)
+        getLogger().log(`${key}=${redactValue(key, resolved.values[key], allOpts.showSecrets)}`)
     }
   })
 
@@ -229,44 +256,46 @@ addCommonOptions(program.command('check [target]'))
       requireOverride: allOpts.requireOverride,
     })
     if (format === 'json') {
-      console.log(JSON.stringify(result, null, 2))
+      getLogger().log(JSON.stringify(result, null, 2))
       if (!result.ok) process.exit(1)
       return
     }
 
     if (!result.ok) {
       if (result.violations.length) {
-        console.error(
+        getLogger().error(
           `${result.selectorKey} must not be stored in dotenv files:\n${result.violations.map((v) => `  ${v.relativeFile}${v.line ? `:${v.line}` : ''}`).join('\n')}`,
         )
       }
       if (result.missingRequired.length) {
-        console.error(
+        getLogger().error(
           `Missing required env file(s):\n${result.missingRequired.map((file) => `  ${file.target}: ${file.relativeFile}`).join('\n')}`,
         )
       }
       process.exit(1)
     }
-    console.log(`[env-lane] OK: ${result.selectorKey} is absent from dotenv files.`)
+    getLogger().success(`[env-lane] OK: ${result.selectorKey} is absent from dotenv files.`)
   })
 
 const vault = program
   .command('vault')
   .description('Optional unsafe development vault helpers. Requires @env-lane/vault.')
-addCommonOptions(vault.command('encrypt <config> <keyFile>')).action(async (config, keyFile, opts) => {
-  const allOpts = { ...program.opts(), ...opts }
-  const format = await resolveOutputFormat(allOpts, 'json')
-  const { encryptEnvFiles } = await loadVaultModule()
-  const result = await encryptEnvFiles(config, keyFile)
-  if (format === 'json') {
-    console.log(JSON.stringify(result, null, 2))
-  } else {
-    console.log(`Encrypted records to ${result.storePath}`)
-    console.log(`  Set: ${result.setRecordsWritten}`)
-    console.log(`  Delete: ${result.deleteRecordsWritten}`)
-    console.log(`  Skipped unchanged: ${result.skippedUnchanged}`)
-  }
-})
+addCommonOptions(vault.command('encrypt <config> <keyFile>')).action(
+  async (config, keyFile, opts) => {
+    const allOpts = { ...program.opts(), ...opts }
+    const format = await resolveOutputFormat(allOpts, 'json')
+    const { encryptEnvFiles } = await loadVaultModule()
+    const result = await encryptEnvFiles(config, keyFile)
+    if (format === 'json') {
+      getLogger().log(JSON.stringify(result, null, 2))
+    } else {
+      getLogger().log(`Encrypted records to ${result.storePath}`)
+      getLogger().log(`  Set: ${result.setRecordsWritten}`)
+      getLogger().log(`  Delete: ${result.deleteRecordsWritten}`)
+      getLogger().log(`  Skipped unchanged: ${result.skippedUnchanged}`)
+    }
+  },
+)
 addCommonOptions(vault.command('plan <config> <keyFile>'))
   .description('Print the vault restore plan without writing files.')
   .action(async (config, keyFile, opts) => {
@@ -275,17 +304,17 @@ addCommonOptions(vault.command('plan <config> <keyFile>'))
     const { buildRestorePlan } = await loadVaultModule()
     const result = await buildRestorePlan(config, keyFile)
     if (format === 'json') {
-      console.log(JSON.stringify(result, null, 2))
+      getLogger().log(JSON.stringify(result, null, 2))
     } else {
-      console.log(`Restore plan for ${result.storePath}:`)
+      getLogger().log(`Restore plan for ${result.storePath}:`)
       for (const file of result.files) {
         const changes = file.entries.filter((e) => e.action !== 'identical')
         if (changes.length > 0) {
-          console.log(`# ${file.filePath}`)
-          for (const e of changes) console.log(`  ${e.action.padEnd(10)} ${e.key}`)
+          getLogger().log(`# ${file.filePath}`)
+          for (const e of changes) getLogger().log(`  ${e.action.padEnd(10)} ${e.key}`)
         }
       }
-      console.log(`Summary: ${result.summary.filesWithChanges} files to change.`)
+      getLogger().log(`Summary: ${result.summary.filesWithChanges} files to change.`)
     }
   })
 addCommonOptions(vault.command('decrypt <config> <keyFile>'))
@@ -300,9 +329,9 @@ addCommonOptions(vault.command('decrypt <config> <keyFile>'))
       autoApprove: allOpts.yes,
     })
     if (format === 'json') {
-      console.log(JSON.stringify(result, null, 2))
+      getLogger().log(JSON.stringify(result, null, 2))
     } else {
-      console.log(`Decrypted ${result.filesWritten} files from ${result.storePath}`)
+      getLogger().log(`Decrypted ${result.filesWritten} files from ${result.storePath}`)
     }
   })
 
@@ -313,12 +342,12 @@ addCommonOptions(program.command('sort-file <envFile> <templateFile>'))
     const format = await resolveOutputFormat(allOpts, 'json')
     const result = await sortEnvFile(envFile, templateFile)
     if (format === 'json') {
-      console.log(JSON.stringify(result, null, 2))
+      getLogger().log(JSON.stringify(result, null, 2))
     } else {
-      console.log(`${result.applied ? 'Sorted' : 'No changes for'} ${envFile}`)
+      getLogger().log(`${result.applied ? 'Sorted' : 'No changes for'} ${envFile}`)
       if (result.applied) {
-        console.log(`  Moved: ${result.movedCount}`)
-        console.log(`  Inserted commented: ${result.insertedCommentedCount}`)
+        getLogger().log(`  Moved: ${result.movedCount}`)
+        getLogger().log(`  Inserted commented: ${result.insertedCommentedCount}`)
       }
     }
   })
@@ -329,16 +358,16 @@ addCommonOptions(program.command('sort <config> [key] [envSuffix]'))
     const format = await resolveOutputFormat(allOpts, 'json')
     const result = await sortEnvFilesFromConfig(config, key, envSuffix)
     if (format === 'json') {
-      console.log(JSON.stringify(result, null, 2))
+      getLogger().log(JSON.stringify(result, null, 2))
     } else {
-      console.log(`Sort applied: ${result.applied}`)
+      getLogger().log(`Sort applied: ${result.applied}`)
       for (const r of result.results) {
-        console.log(`${r.applied ? 'SORTED ' : 'SKIPPED'} ${r.filePath}`)
+        getLogger().log(`${r.applied ? 'SORTED ' : 'SKIPPED'} ${r.filePath}`)
       }
     }
   })
 
 program.parseAsync().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error))
+  getLogger().error(error instanceof Error ? error.message : String(error))
   process.exit(1)
 })
