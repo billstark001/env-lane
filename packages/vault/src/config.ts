@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { loadConfig as c12LoadConfig } from 'c12'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -86,14 +87,28 @@ export interface VaultConfig {
   disableUnsafeWarning: boolean
 }
 
-export function loadVaultConfig(configPath: string): VaultConfig {
+export function defineVaultConfig(config: z.input<typeof schema>): z.input<typeof schema> {
+  return config
+}
+
+export async function loadVaultConfig(configPath: string): Promise<VaultConfig> {
   const abs = path.resolve(configPath)
   if (!existsSync(abs)) throw new Error(`Vault config does not exist: ${abs}`)
   const baseDir = path.dirname(abs)
-  const raw = JSON.parse(readFileSync(abs, 'utf8').replace(/^\uFEFF/, '')) as Record<
-    string,
-    unknown
-  >
+  const raw =
+    path.extname(abs) === '.json'
+      ? (JSON.parse(readFileSync(abs, 'utf8').replace(/^\uFEFF/, '')) as Record<string, unknown>)
+      : ((
+          await c12LoadConfig<Record<string, unknown>>({
+            cwd: baseDir,
+            configFile: abs,
+            packageJson: false,
+            dotenv: false,
+            rcFile: false,
+            globalRc: false,
+            configFileRequired: true,
+          })
+        ).config ?? {})
   const parsed = schema.parse({
     ...raw,
     exclude: normalizeExclude(raw.exclude ?? raw.excludes),
@@ -115,7 +130,6 @@ export function loadVaultConfig(configPath: string): VaultConfig {
       files: Array.isArray(rule.files) ? rule.files : [rule.files],
       keys: Array.isArray(rule.keys) ? rule.keys : [rule.keys],
     })),
-    sort: parsed.sort,
     disableUnsafeWarning: parsed.disableUnsafeWarning ?? false,
   }
 }

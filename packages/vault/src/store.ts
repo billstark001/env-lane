@@ -568,7 +568,7 @@ export async function encryptEnvFiles(
   keyFilePath: string,
   options: { disableUnsafeWarning?: boolean; ignoreCorruptRecords?: boolean } = {},
 ) {
-  const config = loadVaultConfig(configPath)
+  const config = await loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
@@ -651,7 +651,7 @@ export async function buildRestorePlan(
   keyFilePath: string,
   options: { disableUnsafeWarning?: boolean; ignoreCorruptRecords?: boolean } = {},
 ) {
-  const config = loadVaultConfig(configPath)
+  const config = await loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
@@ -672,7 +672,7 @@ export async function decryptEnvFiles(
     ignoreCorruptRecords?: boolean
   } = {},
 ) {
-  const config = loadVaultConfig(configPath)
+  const config = await loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })

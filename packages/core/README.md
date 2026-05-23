@@ -7,10 +7,11 @@ pnpm add -D @env-lane/core
 ```
 
 ```ts
-import { listEnvFiles, resolveInjectedEnv } from '@env-lane/core';
+import { listEnvFiles, resolveInjectedEnv, sortEnvFilesFromConfig } from '@env-lane/core';
 
 const files = await listEnvFiles({ target: 'api', build: 'production' });
 const env = await resolveInjectedEnv({ target: 'api', build: 'production' });
+await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 ```
 
 See the full documentation at https://github.com/billstark001/env-lane#readme.

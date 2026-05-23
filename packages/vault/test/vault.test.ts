@@ -6,8 +6,16 @@ import {
   buildRestorePlan,
   decryptEnvFiles,
   encryptEnvFiles,
+  loadVaultConfig,
   warnUnsafeVault,
 } from '../src/index.js'
+
+function configSource(ext: string, config: unknown): string {
+  const json = JSON.stringify(config)
+  if (ext === 'json') return json
+  if (ext === 'cjs' || ext === 'js') return `module.exports = ${json};\n`
+  return `export default ${json};\n`
+}
 
 describe('@env-lane/vault', () => {
   it('emits an unsafe warning unless explicitly disabled', () => {
@@ -163,6 +171,28 @@ describe('@env-lane/vault', () => {
         disableUnsafeWarning: true,
       }),
     ).rejects.toThrow(/must not overlap/)
+  })
+
+  it.each(['ts', 'mjs', 'cjs', 'js', 'json'])('loads vault %s config files', async (ext) => {
+    const root = path.join(tmpdir(), `env-lane-vault-config-format-${ext}-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    const configFile = path.join(root, `vault.${ext}`)
+    writeFileSync(
+      configFile,
+      configSource(ext, {
+        envFiles: ['.env', './.env'],
+        outputDir: '.vault',
+        outputFile: 'store.dat',
+        exclude: { '.env': ['SECRET_*'] },
+      }),
+    )
+
+    const config = await loadVaultConfig(configFile)
+
+    expect(config.envFiles).toEqual([path.join(root, '.env')])
+    expect(config.storePath).toBe(path.join(root, '.vault/store.dat'))
+    expect(config.exclude).toEqual([{ files: ['.env'], keys: ['SECRET_*'] }])
   })
 
   it('does not record deletions for keys excluded after they were stored', async () => {

@@ -6,6 +6,12 @@ import YAML from 'yaml'
 import { z } from 'zod'
 import type { EnvLaneConfig, ResolvedEnvLaneConfig } from './types.js'
 
+const sortTargetSchema = z.object({
+  file: z.string().min(1),
+  template: z.string().min(1),
+  files: z.record(z.string(), z.string().min(1)).optional(),
+})
+
 const schema = z
   .object({
     selector: z
@@ -39,6 +45,7 @@ const schema = z
         configFile: z.string().min(1).optional(),
       })
       .optional(),
+    sort: z.record(z.string(), sortTargetSchema).optional(),
   })
   .passthrough()
 
@@ -109,5 +116,6 @@ export async function loadEnvLaneConfig(
       disableUnsafeWarning: parsed.vault?.disableUnsafeWarning ?? false,
       configFile: parsed.vault?.configFile ?? 'env-lane.vault.json',
     },
+    sort: parsed.sort,
   }
 }

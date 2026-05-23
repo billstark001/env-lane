@@ -182,6 +182,7 @@ Sort env files:
 
 ```bash
 env-lane sort-file apps/api/.env apps/api/.env.example
+env-lane sort env-lane.config.ts api production
 env-lane sort env-lane.vault.json api production
 ```
 
@@ -194,7 +195,8 @@ import {
   listWorkspacePackages,
   resolveInjectedEnv,
   runWithInjectedEnv,
-  sortEnvFile
+  sortEnvFile,
+  sortEnvFilesFromConfig
 } from '@env-lane/core';
 
 const packages = await listWorkspacePackages();
@@ -203,6 +205,7 @@ const env = await resolveInjectedEnv({ target: 'api', build: 'staging' });
 
 await checkDotenvSelector({ target: 'api', build: 'staging' });
 await sortEnvFile('apps/api/.env', 'apps/api/.env.example');
+await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 await runWithInjectedEnv({
   target: 'api',
   build: 'staging',
@@ -242,6 +245,15 @@ export default defineConfig({
     requireOverride: false,
     includeProcessEnv: true
   },
+  sort: {
+    api: {
+      file: 'apps/api/.env',
+      template: 'apps/api/.env.example',
+      files: {
+        production: 'apps/api/.env.production'
+      }
+    }
+  },
   vault: {
     enabled: false,
     configFile: 'env-lane.vault.json',
@@ -249,6 +261,8 @@ export default defineConfig({
   }
 });
 ```
+
+`env-lane sort` can read this inline `sort` section directly from env-lane config files. Env-lane and vault config files both support TypeScript, JavaScript ESM, JavaScript CJS, and JSON formats.
 
 ## Development Vault
 
@@ -268,16 +282,16 @@ Vault commands print a warning unless warnings are disabled through config or th
 
 Example vault config:
 
-```json
-{
-  "envFiles": ["apps/api/.env.local", "apps/web/.env.local"],
-  "outputDir": ".env-lane-vault",
-  "outputFile": "store.dat",
-  "trackDeletions": true,
-  "exclude": {
-    "apps/api/.env.local": ["PUBLIC_*"]
+```ts
+export default {
+  envFiles: ['apps/api/.env.local', 'apps/web/.env.local'],
+  outputDir: '.env-lane-vault',
+  outputFile: 'store.dat',
+  trackDeletions: true,
+  exclude: {
+    'apps/api/.env.local': ['PUBLIC_*']
   }
-}
+};
 ```
 
 CLI:

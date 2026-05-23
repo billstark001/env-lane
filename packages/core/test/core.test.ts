@@ -9,6 +9,7 @@ import {
   resolveInjectedEnv,
   resolveTargetPackage,
   sortEnvFile,
+  sortEnvFilesFromConfig,
 } from '../src/index.js'
 
 function fixture(): string {
@@ -24,6 +25,13 @@ function fixture(): string {
   writeFileSync(path.join(root, 'apps/api/.env'), 'A=1\nSECRET_TOKEN=abc\n')
   writeFileSync(path.join(root, 'apps/api/.env.production'), 'A=2\nB=3\n')
   return root
+}
+
+function configSource(ext: string, config: unknown): string {
+  const json = JSON.stringify(config)
+  if (ext === 'json') return json
+  if (ext === 'cjs' || ext === 'js') return `module.exports = ${json};\n`
+  return `export default ${json};\n`
 }
 
 describe('@env-lane/core', () => {
@@ -144,5 +152,39 @@ describe('@env-lane/core', () => {
     expect(sorted.endsWith('\r\n')).toBe(true)
     expect(sorted.indexOf('A=1')).toBeLessThan(sorted.indexOf('B=2'))
     expect(sorted.indexOf('B=2')).toBeLessThan(sorted.indexOf('EXTRA=9'))
+  })
+
+  it.each([
+    'ts',
+    'mjs',
+    'cjs',
+    'js',
+    'json',
+  ])('sorts env files from env-lane %s config sort section', async (ext) => {
+    const root = path.join(tmpdir(), `env-lane-sort-config-${ext}-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    const configFile = path.join(root, `env-lane.config.${ext}`)
+    writeFileSync(
+      configFile,
+      configSource(ext, {
+        sort: {
+          api: {
+            file: 'apps/api/.env',
+            template: 'apps/api/.env.example',
+            files: { production: 'apps/api/.env.production' },
+          },
+        },
+      }),
+    )
+    mkdirSync(path.join(root, 'apps/api'), { recursive: true })
+    writeFileSync(path.join(root, 'apps/api/.env'), 'B=2\nA=1\n')
+    writeFileSync(path.join(root, 'apps/api/.env.production'), 'B=20\nA=10\n')
+    writeFileSync(path.join(root, 'apps/api/.env.example'), 'A=\nB=\n')
+
+    const result = await sortEnvFilesFromConfig(configFile, 'api', 'all')
+
+    expect(result.count).toBe(2)
+    expect(readFileSync(path.join(root, 'apps/api/.env'), 'utf8')).toBe('A=1\nB=2\n')
+    expect(readFileSync(path.join(root, 'apps/api/.env.production'), 'utf8')).toBe('A=10\nB=20\n')
   })
 })

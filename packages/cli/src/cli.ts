@@ -251,7 +251,7 @@ program
   )
 program
   .command('sort <config> [key] [envSuffix]')
-  .description('Sort env files using vault config sort section.')
+  .description('Sort env files using an env-lane config sort section.')
   .action(async (config, key = 'all', envSuffix = 'all') =>
     console.log(JSON.stringify(await sortEnvFilesFromConfig(config, key, envSuffix), null, 2)),
   )

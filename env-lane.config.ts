@@ -16,6 +16,15 @@ export default {
     requireOverride: false,
     includeProcessEnv: true
   },
+  sort: {
+    api: {
+      file: 'apps/api/.env',
+      template: 'apps/api/.env.example',
+      files: {
+        production: 'apps/api/.env.production'
+      }
+    }
+  },
   vault: {
     enabled: false,
     disableUnsafeWarning: false,

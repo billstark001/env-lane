@@ -1,5 +1,11 @@
 export type EnvLaneOutputFormat = 'json' | 'dotenv'
 
+export interface EnvSortTargetConfig {
+  file: string
+  template: string
+  files?: Record<string, string>
+}
+
 export interface EnvLaneConfig {
   selector?: {
     /** Environment selector variable. Defaults to ENV_BUILD. */
@@ -36,6 +42,7 @@ export interface EnvLaneConfig {
     disableUnsafeWarning?: boolean
     configFile?: string
   }
+  sort?: Record<string, EnvSortTargetConfig>
 }
 
 export interface ResolvedEnvLaneConfig {
@@ -46,6 +53,7 @@ export interface ResolvedEnvLaneConfig {
   }
   dotenv: Required<NonNullable<EnvLaneConfig['dotenv']>>
   vault: Required<NonNullable<EnvLaneConfig['vault']>>
+  sort?: Record<string, EnvSortTargetConfig>
 }
 
 export interface WorkspacePackage {

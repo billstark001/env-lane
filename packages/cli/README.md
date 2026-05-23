@@ -12,6 +12,7 @@ env-lane files api --build production
 env-lane print api --build production --format json
 env-lane run api --build production -- pnpm start
 env-lane check api --build production --require-override
+env-lane sort env-lane.config.ts api production
 ```
 
 The package also re-exports `@env-lane/core` APIs for convenience.
