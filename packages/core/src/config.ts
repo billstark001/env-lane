@@ -7,8 +7,9 @@ import { z } from 'zod'
 import type { EnvLaneConfig, ResolvedEnvLaneConfig } from './types.js'
 
 const sortTargetSchema = z.object({
-  file: z.string().min(1),
-  template: z.string().min(1),
+  baseDir: z.string().min(1).optional(),
+  file: z.string().min(1).optional(),
+  template: z.string().min(1).optional(),
   files: z.record(z.string(), z.string().min(1)).optional(),
 })
 
@@ -18,6 +19,7 @@ const schema = z
       .object({
         envKey: z.string().min(1).optional(),
         defaultBuild: z.string().min(1).optional(),
+        builds: z.array(z.string().min(1)).optional(),
         forbidInDotenv: z.boolean().optional(),
       })
       .optional(),
@@ -80,10 +82,13 @@ export async function loadEnvLaneConfig(
   options: { cwd?: string; configFile?: string } = {},
 ): Promise<ResolvedEnvLaneConfig> {
   const rootDir = await findWorkspaceRoot(options.cwd)
+  const configFileName = options.configFile
+    ? path.relative(rootDir, path.resolve(rootDir, options.configFile))
+    : undefined
   const loaded = await c12LoadConfig<EnvLaneConfig>({
     name: 'env-lane',
     cwd: rootDir,
-    configFile: options.configFile,
+    configFile: configFileName,
     packageJson: false,
     dotenv: false,
     rcFile: false,
@@ -96,6 +101,7 @@ export async function loadEnvLaneConfig(
     selector: {
       envKey: parsed.selector?.envKey ?? 'ENV_BUILD',
       defaultBuild: parsed.selector?.defaultBuild ?? 'local',
+      builds: parsed.selector?.builds ?? [],
       forbidInDotenv: parsed.selector?.forbidInDotenv ?? true,
     },
     workspace: {

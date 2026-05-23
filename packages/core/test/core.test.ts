@@ -187,4 +187,58 @@ describe('@env-lane/core', () => {
     expect(readFileSync(path.join(root, 'apps/api/.env'), 'utf8')).toBe('A=1\nB=2\n')
     expect(readFileSync(path.join(root, 'apps/api/.env.production'), 'utf8')).toBe('A=10\nB=20\n')
   })
+
+  it('infers sort targets from workspace packages and builds', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-inference-${Date.now()}`)
+    mkdirSync(path.join(root, 'packages/api'), { recursive: true })
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root', private: true }))
+    writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n')
+    writeFileSync(path.join(root, 'packages/api/package.json'), JSON.stringify({ name: 'api' }))
+
+    const configFile = path.join(root, 'env-lane.config.ts')
+    writeFileSync(
+      configFile,
+      configSource('ts', {
+        selector: { builds: ['prod'] },
+        dotenv: { order: ['.env', '.env.{build}'] },
+      }),
+    )
+
+    writeFileSync(path.join(root, 'packages/api/.env'), 'B=2\nA=1\n')
+    writeFileSync(path.join(root, 'packages/api/.env.prod'), 'B=20\nA=10\n')
+    writeFileSync(path.join(root, 'packages/api/.env.example'), 'A=\nB=\n')
+
+    // Test inference using package name 'api'
+    const result = await sortEnvFilesFromConfig(configFile, 'api', 'all')
+    expect(result.count).toBe(2)
+    expect(readFileSync(path.join(root, 'packages/api/.env'), 'utf8')).toBe('A=1\nB=2\n')
+    expect(readFileSync(path.join(root, 'packages/api/.env.prod'), 'utf8')).toBe('A=10\nB=20\n')
+
+    // Test inference using relative path 'packages/api'
+    writeFileSync(path.join(root, 'packages/api/.env'), 'B=2\nA=1\n')
+    await sortEnvFilesFromConfig(configFile, 'packages/api', 'all')
+    expect(readFileSync(path.join(root, 'packages/api/.env'), 'utf8')).toBe('A=1\nB=2\n')
+  })
+
+  it('fills missing file/template defaults in manual sort config', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-defaults-${Date.now()}`)
+    const customDir = path.join(root, 'custom')
+    mkdirSync(customDir, { recursive: true })
+    const configFile = path.join(root, 'env-lane.config.json')
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        sort: {
+          custom: {
+            baseDir: customDir,
+          },
+        },
+      }),
+    )
+    writeFileSync(path.join(customDir, '.env'), 'B=2\nA=1\n')
+    writeFileSync(path.join(customDir, '.env.example'), 'A=\nB=\n')
+
+    await sortEnvFilesFromConfig(configFile, 'custom', 'all')
+    expect(readFileSync(path.join(customDir, '.env'), 'utf8')).toBe('A=1\nB=2\n')
+  })
 })

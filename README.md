@@ -226,32 +226,51 @@ import { defineConfig } from '@env-lane/core';
 
 export default defineConfig({
   selector: {
+    // Environment selector variable. Defaults to ENV_BUILD.
     envKey: 'ENV_BUILD',
+    // Default build name when no CLI/API build is supplied. Defaults to local.
     defaultBuild: 'local',
+    // List of valid build names. Used by 'sort' to auto-discover env files.
+    builds: ['staging', 'production'],
+    // Forbid selector envKey in dotenv files. Defaults to true.
     forbidInDotenv: true
   },
   workspace: {
+    // Optional package globs. Defaults to pnpm/npm/yarn workspace patterns.
     packageGlobs: ['apps/*', 'packages/*'],
+    // Additional aliases, keyed by alias, value package name or relative directory.
     aliases: {
-      api: '@acme/api'
+      api: 'apps/api'
     },
+    // Default target when multiple packages exist.
     defaultTarget: 'api',
+    // Whether root is exposed as a target. Defaults to true.
     includeRoot: true
   },
   dotenv: {
-    order: ['.env', '.env.{build}'],
+    // Ordered dotenv patterns relative to target dir. {build} is interpolated.
+    order: ['.env', '.env.{build}', '.env.local'],
+    // Build name that maps to localOverrideFile. Defaults to local.
     localBuildName: 'local',
+    // Override file for local build. Defaults to .env.local.
     localOverrideFile: '.env.local',
-    requireOverride: false,
+    // Merge process.env after dotenv files. Defaults to true.
     includeProcessEnv: true
   },
   sort: {
+    // Manual configuration: baseDir is optional if key matches a workspace alias.
+    // file and template default to .env and .env.example.
     api: {
-      file: 'apps/api/.env',
-      template: 'apps/api/.env.example',
       files: {
-        production: 'apps/api/.env.production'
+        // Additional custom files to sort using the same template
+        ci: '.env.ci'
       }
+    },
+    // Explicit path configuration
+    legacy: {
+      baseDir: 'old-project',
+      file: 'configs/.env',
+      template: 'configs/.env.template'
     }
   },
   vault: {
@@ -262,7 +281,18 @@ export default defineConfig({
 });
 ```
 
-`env-lane sort` can read this inline `sort` section directly from env-lane config files. Env-lane and vault config files both support TypeScript, JavaScript ESM, JavaScript CJS, and JSON formats.
+### Smart Sort Discovery
+
+The `env-lane sort` command employs a "convention over configuration" approach:
+
+1. **Automatic Discovery**: It automatically scans your workspace and identifies all packages. Each package (and its aliases) becomes a valid sort target with default settings (`.env` sorted against `.env.example`).
+2. **Flexible Configuration**:
+    - If the target key matches a workspace package, `baseDir` defaults to that package's directory.
+    - `file` and `template` default to `.env` and `.env.example` if omitted.
+    - You can provide a custom `baseDir` to point to any directory.
+3. **Build Inference**: If `selector.builds` is defined, `env-lane sort` uses the `dotenv.order` patterns to automatically find and sort build-specific files (e.g., `.env.production`) without manual mapping.
+
+Env-lane and vault config files both support TypeScript, JavaScript ESM, JavaScript CJS, and JSON formats.
 
 ## Development Vault
 

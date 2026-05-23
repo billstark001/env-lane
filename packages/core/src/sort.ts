@@ -1,12 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { loadEnvLaneConfig } from './config.js'
-import type { EnvSortTargetConfig } from './types.js'
+import type { EnvSortTargetConfig, ResolvedEnvLaneConfig, WorkspacePackage } from './types.js'
+import { listWorkspacePackagesForConfig } from './workspace.js'
 
 interface EnvSortConfig {
   baseDir: string
   envFiles: string[]
-  sort?: Record<string, EnvSortTargetConfig>
+  sort: Record<string, EnvSortTargetConfig>
+  dotenv: ResolvedEnvLaneConfig['dotenv']
+  selector: ResolvedEnvLaneConfig['selector']
+  packages: WorkspacePackage[]
 }
 
 type EnvLine =
@@ -90,11 +94,42 @@ async function loadSortConfig(configPath: string): Promise<EnvSortConfig> {
   const abs = path.resolve(configPath)
   if (!existsSync(abs)) throw new Error(`Sort config does not exist: ${abs}`)
 
-  const envLaneConfig = await loadEnvLaneConfig({ cwd: path.dirname(abs), configFile: abs })
+  const config = await loadEnvLaneConfig({ cwd: path.dirname(abs), configFile: abs })
+  const packages = await listWorkspacePackagesForConfig(config)
+  const sort: Record<string, EnvSortTargetConfig> = { ...config.sort }
+
+  const handledAliases = new Set<string>()
+
+  for (const pkg of packages) {
+    for (const alias of pkg.aliases) {
+      handledAliases.add(alias)
+      const target = sort[alias] ?? {}
+      sort[alias] = {
+        ...target,
+        baseDir: target.baseDir ?? pkg.dir,
+        file: target.file ?? '.env',
+        template: target.template ?? '.env.example',
+      }
+    }
+  }
+
+  for (const [key, target] of Object.entries(sort)) {
+    if (handledAliases.has(key)) continue
+    sort[key] = {
+      ...target,
+      baseDir: target.baseDir ?? config.rootDir,
+      file: target.file ?? '.env',
+      template: target.template ?? '.env.example',
+    }
+  }
+
   return {
-    baseDir: envLaneConfig.rootDir,
+    baseDir: config.rootDir,
     envFiles: [],
-    sort: envLaneConfig.sort,
+    sort,
+    dotenv: config.dotenv,
+    selector: config.selector,
+    packages,
   }
 }
 
@@ -482,24 +517,12 @@ function interpolateSortFilePattern(pattern: string, envSuffix: string): string 
   return pattern.replaceAll('{env}', envSuffix).replaceAll('{suffix}', envSuffix)
 }
 
-function getEnvSuffixFromDefaultFile(
-  defaultFilePath: string,
-  candidateFilePath: string,
-): string | null {
-  if (candidateFilePath === defaultFilePath) return ''
-  const prefix = `${defaultFilePath}.`
-  if (!candidateFilePath.startsWith(prefix)) return null
-  const suffix = candidateFilePath.slice(prefix.length)
-  return suffix && suffix !== 'example' ? suffix : null
-}
-
 export async function sortEnvFilesFromConfig(
   configPath: string,
   keyArg = 'all',
   envSuffixArg = 'all',
 ) {
   const config = await loadSortConfig(configPath)
-  if (!config.sort) throw new Error('config.sort is required for sortEnvFilesFromConfig.')
   const keySelector = normalizeSortSelector(keyArg, 'all', 'key')
   const envSuffixSelector = normalizeSortSelector(envSuffixArg, 'all', 'env-suffix')
   const selectedTargets = Object.entries(config.sort).filter(
@@ -509,18 +532,27 @@ export async function sortEnvFilesFromConfig(
 
   const results = []
   for (const [key, target] of selectedTargets) {
-    const defaultFilePath = path.resolve(config.baseDir, target.file)
-    const templateFilePath = path.resolve(config.baseDir, target.template)
+    const baseDir = target.baseDir ?? config.baseDir
+    const file = target.file ?? '.env'
+    const template = target.template ?? '.env.example'
+    const defaultFilePath = path.resolve(baseDir, file)
+    const templateFilePath = path.resolve(baseDir, template)
+    const targetDir = path.dirname(defaultFilePath)
     const files = new Map<string, string>([['', defaultFilePath]])
-    for (const envFilePath of config.envFiles) {
-      const suffix = getEnvSuffixFromDefaultFile(defaultFilePath, envFilePath)
-      if (suffix !== null) files.set(suffix, envFilePath)
+
+    for (const pattern of config.dotenv.order) {
+      if (pattern.includes('{build}')) {
+        for (const build of config.selector.builds) {
+          files.set(build, path.resolve(targetDir, pattern.replace('{build}', build)))
+        }
+      }
     }
+
     if (target.files) {
       for (const [suffix, file] of Object.entries(target.files)) {
         if (suffix === 'default')
           throw new Error(`config.sort.${key}.files must not use reserved suffix "default".`)
-        files.set(suffix, path.resolve(config.baseDir, interpolateSortFilePattern(file, suffix)))
+        files.set(suffix, path.resolve(baseDir, interpolateSortFilePattern(file, suffix)))
       }
     }
 
@@ -531,10 +563,7 @@ export async function sortEnvFilesFromConfig(
             [
               envSuffixSelector,
               files.get(envSuffixSelector) ??
-                path.resolve(
-                  path.dirname(defaultFilePath),
-                  `${path.basename(defaultFilePath)}.${envSuffixSelector}`,
-                ),
+                path.resolve(targetDir, `${path.basename(defaultFilePath)}.${envSuffixSelector}`),
             ],
           ]
     for (const [, file] of jobs) results.push(await sortEnvFile(file, templateFilePath))

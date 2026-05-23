@@ -1,8 +1,9 @@
 export type EnvLaneOutputFormat = 'json' | 'dotenv'
 
 export interface EnvSortTargetConfig {
-  file: string
-  template: string
+  baseDir?: string
+  file?: string
+  template?: string
   files?: Record<string, string>
 }
 
@@ -12,6 +13,8 @@ export interface EnvLaneConfig {
     envKey?: string
     /** Default build name when no CLI/API build is supplied. Defaults to local. */
     defaultBuild?: string
+    /** List of valid build names. If empty, all builds are allowed. */
+    builds?: string[]
     /** Forbid selector envKey in dotenv files. Defaults to true. */
     forbidInDotenv?: boolean
   }
