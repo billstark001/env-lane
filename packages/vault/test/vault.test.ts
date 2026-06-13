@@ -19,6 +19,7 @@ import {
   decryptEnvFiles,
   encryptEnvFiles,
   loadVaultConfig,
+  pruneVaultHistory,
   warnUnsafeVault,
 } from '../src/index.js'
 
@@ -27,6 +28,11 @@ function configSource(ext: string, config: unknown): string {
   if (ext === 'json') return json
   if (ext === 'cjs' || ext === 'js') return `module.exports = ${json};\n`
   return `export default ${json};\n`
+}
+
+function storeLineCount(root: string): number {
+  return readFileSync(path.join(root, '.vault/store.dat'), 'utf8').split(/\r?\n/).filter(Boolean)
+    .length
 }
 
 describe('@env-lane/vault', () => {
@@ -286,5 +292,132 @@ describe('@env-lane/vault', () => {
     })
     expect(plan.failedRecords).toBe(1)
     expect(plan.summary.modify).toBe(1)
+  })
+
+  it('uses explicit sync state to detect restore and push conflicts', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-sync-${Date.now()}`)
+    const syncDir = path.join(root, '.sync-state')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+      syncDir,
+    })
+    writeFileSync(path.join(root, '.env'), 'A=2\n')
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    writeFileSync(path.join(root, '.env'), 'A=3\n')
+
+    const restorePlan = await buildRestorePlan(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      {
+        disableUnsafeWarning: true,
+        syncDir,
+      },
+    )
+    expect(restorePlan.summary.conflict).toBe(1)
+
+    const ignoredRestore = await decryptEnvFiles(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      {
+        disableUnsafeWarning: true,
+        syncDir,
+        conflictStrategy: 'ignore',
+        autoApprove: true,
+      },
+    )
+    expect(ignoredRestore.filesWritten).toBe(0)
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=3\n')
+
+    const ignoredPush = await encryptEnvFiles(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      {
+        disableUnsafeWarning: true,
+        syncDir,
+        conflictStrategy: 'ignore',
+      },
+    )
+    expect(ignoredPush.conflictsIgnored).toBe(1)
+    expect(ignoredPush.setRecordsWritten).toBe(0)
+
+    const overwrittenRestore = await decryptEnvFiles(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      {
+        disableUnsafeWarning: true,
+        syncDir,
+        conflictStrategy: 'overwrite',
+        autoApprove: true,
+      },
+    )
+    expect(overwrittenRestore.filesWritten).toBe(1)
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=2\n')
+  })
+
+  it('prunes vault history by recent count and age while preserving latest records', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-prune-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    writeFileSync(path.join(root, '.env'), 'A=2\n')
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    writeFileSync(path.join(root, '.env'), 'A=3\n')
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    expect(storeLineCount(root)).toBe(3)
+
+    const keepRecent = await pruneVaultHistory(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      {
+        disableUnsafeWarning: true,
+        keepRecent: 2,
+        autoApprove: true,
+      },
+    )
+    expect(keepRecent.removedRecords).toBe(1)
+    expect(keepRecent.applied).toBe(true)
+    expect(storeLineCount(root)).toBe(2)
+
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const olderThan = await pruneVaultHistory(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      {
+        disableUnsafeWarning: true,
+        olderThanDays: 0,
+        autoApprove: true,
+      },
+    )
+    expect(olderThan.removedRecords).toBe(1)
+    expect(storeLineCount(root)).toBe(1)
+
+    writeFileSync(path.join(root, '.env'), 'A=local\n')
+    await decryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+      autoApprove: true,
+    })
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=3\n')
   })
 })

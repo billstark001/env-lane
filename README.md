@@ -353,6 +353,24 @@ env-lane vault decrypt env-lane.vault.json key.aes --dry-run
 env-lane vault decrypt env-lane.vault.json key.aes --yes
 ```
 
+Optional local sync state provides git-like conflict detection without changing the encrypted vault record format. It is disabled unless you explicitly choose a directory, so env-lane will not silently create a system cache of environment data. The sync file stores per-key metadata and value hashes, not plaintext values:
+
+```bash
+env-lane vault encrypt env-lane.vault.json key.aes --sync-dir .env-lane-sync
+env-lane vault plan env-lane.vault.json key.aes --sync-dir .env-lane-sync
+env-lane vault decrypt env-lane.vault.json key.aes --sync-dir .env-lane-sync --conflicts ask
+```
+
+When both the local dotenv value and the latest vault record changed since the last sync baseline, env-lane reports a conflict. Use `--conflicts ask`, `--conflicts overwrite`, or `--conflicts ignore` on `vault encrypt` and `vault decrypt` to decide per item or apply a consistent policy. If no sync baseline exists yet, env-lane falls back to the dotenv file mtime when it can.
+
+Vault history can be compacted by age or by keeping only the latest records for each file/key pair. The latest record is preserved by default so the current restore result remains available:
+
+```bash
+env-lane vault prune env-lane.vault.json key.aes --keep-recent 3 --dry-run
+env-lane vault prune env-lane.vault.json key.aes --older-than-days 30 --yes
+env-lane vault prune env-lane.vault.json key.aes --file apps/api/.env.local --key API_TOKEN --keep-recent 2 --yes
+```
+
 ## Local Development
 
 ```bash
