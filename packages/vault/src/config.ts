@@ -130,6 +130,7 @@ export async function loadVaultConfig(configPath: string): Promise<VaultConfig> 
       files: Array.isArray(rule.files) ? rule.files : [rule.files],
       keys: Array.isArray(rule.keys) ? rule.keys : [rule.keys],
     })),
+    sort: parsed.sort,
     disableUnsafeWarning: parsed.disableUnsafeWarning ?? false,
   }
 }

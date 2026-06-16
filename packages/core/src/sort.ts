@@ -1,8 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { loadEnvLaneConfig } from './config.js'
+import {
+  isEnvEntryLikeLine,
+  loadEnvDocument,
+  parseEnvLine,
+  renderEnvTextDocument,
+  writeEnvDocumentContent,
+} from './env-document.js'
 import { getLogger } from './logger.js'
 import type { EnvSortTargetConfig, ResolvedEnvLaneConfig, WorkspacePackage } from './types.js'
+import { DEFAULT_ENV_FILE_VARIANT, normalizeEnvFileVariant } from './variants.js'
 import { listWorkspacePackagesForConfig } from './workspace.js'
 
 interface EnvSortConfig {
@@ -12,35 +20,6 @@ interface EnvSortConfig {
   dotenv: ResolvedEnvLaneConfig['dotenv']
   selector: ResolvedEnvLaneConfig['selector']
   packages: WorkspacePackage[]
-}
-
-type EnvLine =
-  | { kind: 'empty' | 'comment'; rawLine: string; lineNumber: number }
-  | {
-      kind: 'entry' | 'commented-entry'
-      rawLine: string
-      lineNumber: number
-      key: string
-      prefix: string
-      rawValue: string
-    }
-  | { kind: 'invalid'; rawLine: string; lineNumber: number; reason: string }
-type EnvLineData =
-  | { kind: 'empty' | 'comment'; rawLine: string }
-  | {
-      kind: 'entry' | 'commented-entry'
-      rawLine: string
-      key: string
-      prefix: string
-      rawValue: string
-    }
-  | { kind: 'invalid'; rawLine: string; reason: string }
-
-interface TextDocument {
-  hasBom: boolean
-  eol: string
-  hasFinalNewline: boolean
-  lines: string[]
 }
 
 interface EnvBlock {
@@ -83,9 +62,6 @@ export interface EnvSortPlan {
     groupedDuplicateCount: number
   }
 }
-
-const ENV_ENTRY_RE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
-const COMMENTED_ENV_ENTRY_RE = /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
 
 function portable(file: string): string {
   return file.replace(/\\/g, '/').replaceAll(path.sep, '/')
@@ -139,74 +115,6 @@ function emitCommandChange(
   payload: Record<string, string | number | boolean | undefined>,
 ): void {
   getLogger().info(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
-}
-
-function createEmptyDocument(): TextDocument {
-  return { hasBom: false, eol: '\n', hasFinalNewline: true, lines: [] }
-}
-
-function createTextDocument(content: string): TextDocument {
-  const hasBom = content.startsWith('\uFEFF')
-  const raw = hasBom ? content.slice(1) : content
-  const eol = raw.includes('\r\n') ? '\r\n' : '\n'
-  const hasFinalNewline = raw.length > 0 && /\r?\n$/.test(raw)
-  let lines = raw.length > 0 ? raw.split(/\r\n|\n/) : []
-  if (hasFinalNewline && lines.at(-1) === '') lines = lines.slice(0, -1)
-  return { hasBom, eol, hasFinalNewline, lines }
-}
-
-function renderTextDocument(document: TextDocument, lines: string[]): string {
-  const body = lines.join(document.eol)
-  const withNewline = lines.length > 0 && document.hasFinalNewline ? `${body}${document.eol}` : body
-  return document.hasBom ? `\uFEFF${withNewline}` : withNewline
-}
-
-function parseEnvLine(line: string): EnvLineData {
-  const trimmed = line.trim()
-  if (!trimmed) return { kind: 'empty', rawLine: line }
-  if (trimmed.startsWith('#')) {
-    const commentedEntryMatch = line.match(COMMENTED_ENV_ENTRY_RE)
-    if (commentedEntryMatch) {
-      const eqIdx = line.indexOf('=')
-      return {
-        kind: 'commented-entry',
-        rawLine: line,
-        key: commentedEntryMatch[1],
-        prefix: line.slice(0, eqIdx + 1),
-        rawValue: line.slice(eqIdx + 1),
-      }
-    }
-    return { kind: 'comment', rawLine: line }
-  }
-  const eqIdx = line.indexOf('=')
-  if (eqIdx < 0) return { kind: 'invalid', rawLine: line, reason: 'missing equals sign' }
-  const match = line.match(ENV_ENTRY_RE)
-  if (!match) return { kind: 'invalid', rawLine: line, reason: 'invalid env key' }
-  return {
-    kind: 'entry',
-    rawLine: line,
-    key: match[1],
-    prefix: line.slice(0, eqIdx + 1),
-    rawValue: line.slice(eqIdx + 1),
-  }
-}
-
-function loadEnvDocument(filePath: string) {
-  const fileExists = existsSync(filePath)
-  const document = fileExists
-    ? createTextDocument(readFileSync(filePath, 'utf8'))
-    : createEmptyDocument()
-  const parsedLines: EnvLine[] = document.lines.map((line, index) => ({
-    lineNumber: index + 1,
-    ...parseEnvLine(line),
-  }))
-  return { exists: fileExists, document, parsedLines }
-}
-
-function isEnvEntryLikeLine(
-  line: EnvLine,
-): line is EnvLine & { kind: 'entry' | 'commented-entry'; key: string; rawValue: string } {
-  return line.kind === 'entry' || line.kind === 'commented-entry'
 }
 
 function buildEnvSortLayout(envDoc: ReturnType<typeof loadEnvDocument>) {
@@ -437,9 +345,9 @@ export function buildEnvSortPlan(envFilePath: string, templateFilePath: string):
 
   const renderDocument = envDoc.exists ? envDoc.document : templateDoc.document
   const currentContent = envDoc.exists
-    ? renderTextDocument(envDoc.document, envDoc.document.lines)
+    ? renderEnvTextDocument(envDoc.document, envDoc.document.lines)
     : ''
-  const nextContent = renderTextDocument(renderDocument, renderedLines)
+  const nextContent = renderEnvTextDocument(renderDocument, renderedLines)
   const summary = operations.reduce(
     (acc, operation) => {
       if (operation.action === 'move') acc.movedCount++
@@ -479,8 +387,7 @@ export async function sortEnvFile(envFilePath: string, templateFilePath: string)
       ...plan.summary,
     }
   }
-  mkdirSync(path.dirname(plan.filePath), { recursive: true })
-  writeFileSync(plan.filePath, plan.nextContent, 'utf8')
+  writeEnvDocumentContent(plan.filePath, plan.nextContent)
   for (const operation of plan.operations) {
     emitCommandChange('sort', {
       action: operation.action,
@@ -507,10 +414,16 @@ function normalizeSortSelector(
   fallback: string,
   fieldName: string,
 ): string {
+  if (fieldName === 'env-suffix') {
+    return normalizeEnvFileVariant(value, {
+      allowAll: true,
+      fallback,
+      fieldName,
+    })
+  }
   const normalized =
     value === undefined || value === null || value === '' ? fallback : String(value).trim()
   if (!normalized) return fallback
-  if (fieldName === 'env-suffix' && normalized === 'default') return ''
   return normalized
 }
 
@@ -539,7 +452,7 @@ export async function sortEnvFilesFromConfig(
     const defaultFilePath = path.resolve(baseDir, file)
     const templateFilePath = path.resolve(baseDir, template)
     const targetDir = path.dirname(defaultFilePath)
-    const files = new Map<string, string>([['', defaultFilePath]])
+    const files = new Map<string, string>([[DEFAULT_ENV_FILE_VARIANT, defaultFilePath]])
 
     for (const pattern of config.dotenv.order) {
       if (pattern.includes('{build}')) {

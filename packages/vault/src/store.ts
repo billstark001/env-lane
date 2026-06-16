@@ -10,7 +10,12 @@ import {
   writeFileSync,
 } from 'node:fs'
 import path from 'node:path'
-import { getLogger } from '@env-lane/core'
+import {
+  applyEnvDocumentPatches,
+  getLogger,
+  type LoadedEnvDocument,
+  loadEnvDocument,
+} from '@env-lane/core'
 import picomatch from 'picomatch'
 import { loadVaultConfig, type VaultConfig } from './config.js'
 import { decryptRecord, deriveVaultKey, encryptRecord } from './crypto.js'
@@ -111,47 +116,6 @@ interface PruneCandidate {
   record: VaultRecord
 }
 
-interface EnvDocument {
-  hasBom: boolean
-  eol: string
-  hasFinalNewline: boolean
-  lines: string[]
-}
-
-type ParsedEnvLine =
-  | { kind: 'empty' | 'comment'; rawLine: string; lineNumber: number }
-  | {
-      kind: 'entry' | 'commented-entry'
-      rawLine: string
-      lineNumber: number
-      key: string
-      prefix: string
-      rawValue: string
-    }
-  | { kind: 'invalid'; rawLine: string; lineNumber: number; reason: string }
-type ParsedEnvLineData =
-  | { kind: 'empty' | 'comment'; rawLine: string }
-  | {
-      kind: 'entry' | 'commented-entry'
-      rawLine: string
-      key: string
-      prefix: string
-      rawValue: string
-    }
-  | { kind: 'invalid'; rawLine: string; reason: string }
-
-interface LoadedEnvDocument {
-  exists: boolean
-  document: EnvDocument
-  parsedLines: ParsedEnvLine[]
-  currentMap: Map<string, { value: string }>
-  occurrencesMap: Map<string, Array<{ value: string; prefix: string; lineNumber: number }>>
-  invalidLineCount: number
-  shadowedEntryCount: number
-}
-
-const ENV_ENTRY_RE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
-const COMMENTED_ENV_ENTRY_RE = /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
 const PREVIEW_VALUE_LIMIT = 160
 const SYNC_STATE_FILE = 'vault-sync-state.json'
 
@@ -503,94 +467,6 @@ function append(config: VaultConfig, key: Buffer, record: VaultRecord): void {
   )
 }
 
-function createEmptyDocument(): EnvDocument {
-  return { hasBom: false, eol: '\n', hasFinalNewline: true, lines: [] }
-}
-
-function createTextDocument(content: string): EnvDocument {
-  const hasBom = content.startsWith('\uFEFF')
-  const raw = hasBom ? content.slice(1) : content
-  const eol = raw.includes('\r\n') ? '\r\n' : '\n'
-  const hasFinalNewline = raw.length > 0 && /\r?\n$/.test(raw)
-  let lines = raw.length > 0 ? raw.split(/\r\n|\n/) : []
-  if (hasFinalNewline && lines.at(-1) === '') lines = lines.slice(0, -1)
-  return { hasBom, eol, hasFinalNewline, lines }
-}
-
-function renderTextDocument(document: EnvDocument, lines: string[]): string {
-  const body = lines.join(document.eol)
-  const withNewline = lines.length > 0 && document.hasFinalNewline ? `${body}${document.eol}` : body
-  return document.hasBom ? `\uFEFF${withNewline}` : withNewline
-}
-
-function parseEnvLine(line: string): ParsedEnvLineData {
-  const trimmed = line.trim()
-  if (!trimmed) return { kind: 'empty', rawLine: line }
-  if (trimmed.startsWith('#')) {
-    const commentedEntryMatch = line.match(COMMENTED_ENV_ENTRY_RE)
-    if (commentedEntryMatch) {
-      const eqIdx = line.indexOf('=')
-      return {
-        kind: 'commented-entry',
-        rawLine: line,
-        key: commentedEntryMatch[1],
-        prefix: line.slice(0, eqIdx + 1),
-        rawValue: line.slice(eqIdx + 1),
-      }
-    }
-    return { kind: 'comment', rawLine: line }
-  }
-  const eqIdx = line.indexOf('=')
-  if (eqIdx < 0) return { kind: 'invalid', rawLine: line, reason: 'missing equals sign' }
-  const match = line.match(ENV_ENTRY_RE)
-  if (!match) return { kind: 'invalid', rawLine: line, reason: 'invalid env key' }
-  return {
-    kind: 'entry',
-    rawLine: line,
-    key: match[1],
-    prefix: line.slice(0, eqIdx + 1),
-    rawValue: line.slice(eqIdx + 1),
-  }
-}
-
-function loadEnvDocument(filePath: string): LoadedEnvDocument {
-  const fileExists = existsSync(filePath)
-  const document = fileExists
-    ? createTextDocument(readFileSync(filePath, 'utf8'))
-    : createEmptyDocument()
-  const parsedLines: ParsedEnvLine[] = document.lines.map((line, index) => ({
-    lineNumber: index + 1,
-    ...parseEnvLine(line),
-  }))
-  const currentMap = new Map<string, { value: string }>()
-  const occurrencesMap = new Map<
-    string,
-    Array<{ value: string; prefix: string; lineNumber: number }>
-  >()
-  let invalidLineCount = 0
-  let shadowedEntryCount = 0
-  for (const line of parsedLines) {
-    if (line.kind === 'entry') {
-      const occurrences = occurrencesMap.get(line.key) ?? []
-      occurrences.push({ value: line.rawValue, prefix: line.prefix, lineNumber: line.lineNumber })
-      occurrencesMap.set(line.key, occurrences)
-      if (currentMap.has(line.key)) shadowedEntryCount++
-      currentMap.set(line.key, { value: line.rawValue })
-    } else if (line.kind === 'invalid') {
-      invalidLineCount++
-    }
-  }
-  return {
-    exists: fileExists,
-    document,
-    parsedLines,
-    currentMap,
-    occurrencesMap,
-    invalidLineCount,
-    shadowedEntryCount,
-  }
-}
-
 function desiredRecordsForFile(
   config: VaultConfig,
   filePath: string,
@@ -856,39 +732,24 @@ function applyRestoreFile(
   ignoredConflicts: Set<string> = new Set(),
 ): boolean {
   const { desired } = desiredRecordsForFile(config, filePath, state)
-  const envDoc = loadEnvDocument(filePath)
-  const seenKeys = new Set<string>()
-  const nextLines: string[] = []
-
-  for (const line of envDoc.parsedLines) {
-    if (line.kind !== 'entry') {
-      nextLines.push(line.rawLine)
-      continue
-    }
-    const desiredRecord = desired.get(line.key)
-    if (!desiredRecord || ignoredConflicts.has(`${filePath}\0${line.key}`)) {
-      nextLines.push(line.rawLine)
-      continue
-    }
-    seenKeys.add(line.key)
-    if (desiredRecord.op === 'delete') continue
-    nextLines.push(`${line.prefix}${desiredRecord.v ?? ''}`)
-  }
-
-  const additions = [...desired.entries()]
-    .filter(
-      ([key, record]) =>
-        record.op === 'set' && !seenKeys.has(key) && !ignoredConflicts.has(`${filePath}\0${key}`),
-    )
-    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-  for (const [key, record] of additions) nextLines.push(`${key}=${record.v ?? ''}`)
-
-  const current = envDoc.exists ? renderTextDocument(envDoc.document, envDoc.document.lines) : ''
-  const next = renderTextDocument(envDoc.document, nextLines)
-  if (current === next) return false
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  writeFileSync(filePath, next, 'utf8')
-  return true
+  const ignoredKeys = new Set(
+    [...desired.keys()].filter((key) => ignoredConflicts.has(`${filePath}\0${key}`)),
+  )
+  return applyEnvDocumentPatches(
+    filePath,
+    [...desired.entries()].map(([key, record]) =>
+      record.op === 'set'
+        ? { op: 'set' as const, key, value: record.v ?? '' }
+        : { op: 'delete' as const, key },
+    ),
+    {
+      ignoredKeys,
+      update: 'all',
+      matchCommented: false,
+      sortAdditions: true,
+      blankLineBeforeAdditions: false,
+    },
+  ).changed
 }
 
 export async function encryptEnvFiles(

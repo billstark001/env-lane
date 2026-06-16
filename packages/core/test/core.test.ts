@@ -8,6 +8,8 @@ import {
   listWorkspacePackages,
   resolveInjectedEnv,
   resolveTargetPackage,
+  runEnvCheck,
+  runEnvSync,
   sortEnvFile,
   sortEnvFilesFromConfig,
 } from '../src/index.js'
@@ -86,6 +88,45 @@ describe('@env-lane/core', () => {
     expect(resolved.values.A).toBe('2')
     expect(resolved.values.B).toBe('3')
     expect(resolved.values.ENV_BUILD).toBe('production')
+  })
+
+  it('validates configured selector builds when strict mode is enabled', async () => {
+    const root = fixture()
+    writeFileSync(
+      path.join(root, 'env-lane.config.ts'),
+      configSource('ts', {
+        workspace: { aliases: { api: '@acme/api' } },
+        selector: { builds: ['production'], buildValidation: 'error' },
+      }),
+    )
+
+    await expect(
+      resolveInjectedEnv({
+        cwd: root,
+        target: 'api',
+        build: 'staging',
+        includeProcessEnv: false,
+      }),
+    ).rejects.toThrow(/not listed in selector\.builds/)
+  })
+
+  it('maps the local build to localOverrideFile for any build pattern', async () => {
+    const root = fixture()
+    writeFileSync(
+      path.join(root, 'env-lane.config.ts'),
+      configSource('ts', {
+        workspace: { aliases: { api: '@acme/api' } },
+        dotenv: {
+          order: ['.env', 'deploy/{build}.env'],
+          localBuildName: 'local',
+          localOverrideFile: '.env.local',
+        },
+      }),
+    )
+
+    const files = await listEnvFiles({ cwd: root, target: 'api', build: 'local' })
+
+    expect(files.map((file) => path.basename(file.path))).toEqual(['.env', '.env.local'])
   })
 
   it('reports selector violations with target filtering and line numbers', async () => {
@@ -240,5 +281,69 @@ describe('@env-lane/core', () => {
 
     await sortEnvFilesFromConfig(configFile, 'custom', 'all')
     expect(readFileSync(path.join(customDir, '.env'), 'utf8')).toBe('A=1\nB=2\n')
+  })
+
+  it('runs configured env checks and sync mappings', async () => {
+    const root = path.join(tmpdir(), `env-lane-policy-${Date.now()}`)
+    mkdirSync(path.join(root, 'packages/w3'), { recursive: true })
+    mkdirSync(path.join(root, 'packages/web'), { recursive: true })
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
+    writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n')
+    writeFileSync(path.join(root, 'packages/w3/package.json'), JSON.stringify({ name: 'w3' }))
+    writeFileSync(path.join(root, 'packages/web/package.json'), JSON.stringify({ name: 'web' }))
+    writeFileSync(
+      path.join(root, 'packages/w3/.env.production'),
+      'CHAIN_ID=8453\nCONTRACT_ADDRESS=0xABC\nIPFS_GATEWAY_URL=https://ipfs.example/\n',
+    )
+    writeFileSync(
+      path.join(root, 'packages/web/.env.production'),
+      'VITE_CHAIN_ID=8453\nVITE_MOMENT_BADGE_ADDRESS=0xabc\n',
+    )
+    writeFileSync(
+      path.join(root, 'env-lane.config.ts'),
+      configSource('ts', {
+        selector: { builds: ['production'], buildValidation: 'error' },
+        checks: {
+          deploy: {
+            sources: {
+              w3: { target: 'w3' },
+              web: { target: 'web' },
+            },
+            rules: [
+              { type: 'required', source: 'w3', key: 'CHAIN_ID' },
+              {
+                type: 'equals',
+                left: { source: 'web', key: 'VITE_MOMENT_BADGE_ADDRESS' },
+                right: { source: 'w3', key: 'CONTRACT_ADDRESS' },
+                transform: 'lowercase',
+              },
+            ],
+          },
+        },
+        sync: {
+          webFromW3: {
+            from: { target: 'w3' },
+            to: { target: 'web' },
+            mappings: [
+              { from: 'CHAIN_ID', to: 'VITE_CHAIN_ID' },
+              {
+                from: 'IPFS_GATEWAY_URL',
+                to: 'VITE_IPFS_GATEWAY_BASE',
+                transform: 'url-base-slash',
+              },
+            ],
+          },
+        },
+      }),
+    )
+
+    const check = await runEnvCheck('deploy', { cwd: root, build: 'production' })
+    expect(check.ok).toBe(true)
+
+    const sync = await runEnvSync('webFromW3', { cwd: root, build: 'production' })
+    expect(sync.changed).toBe(true)
+    expect(readFileSync(path.join(root, 'packages/web/.env.production'), 'utf8')).toContain(
+      'VITE_IPFS_GATEWAY_BASE=https://ipfs.example/',
+    )
   })
 })

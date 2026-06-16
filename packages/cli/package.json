@@ -1,6 +1,6 @@
 {
   "name": "env-lane",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "CLI for env-lane dotenv injection and optional development vault helpers.",
   "license": "MIT",
@@ -23,7 +23,7 @@
     "pnpm"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -57,14 +57,14 @@
   },
   "dependencies": {
     "@env-lane/core": "workspace:*",
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "consola": "^3.4.2"
   },
   "devDependencies": {
     "@env-lane/vault": "workspace:*"
   },
   "peerDependencies": {
-    "@env-lane/vault": "^0.1.0"
+    "@env-lane/vault": "^0.2.0"
   },
   "peerDependenciesMeta": {
     "@env-lane/vault": {

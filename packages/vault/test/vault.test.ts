@@ -3,16 +3,21 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('@env-lane/core', () => ({
-  getLogger: vi.fn(() => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    success: vi.fn(),
-    log: vi.fn(),
-  })),
-}))
+vi.mock('@env-lane/core', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../core/src/index.js')>('../../core/src/index.js')
+  return {
+    ...actual,
+    getLogger: vi.fn(() => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      success: vi.fn(),
+      log: vi.fn(),
+    })),
+  }
+})
 
 import {
   buildRestorePlan,
