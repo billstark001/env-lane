@@ -1,15 +1,29 @@
 /// <reference path="./picomatch.d.ts" />
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import path from 'node:path'
-import { getLogger } from '@env-lane/core'
+import {
+  applyEnvDocumentPatches,
+  getLogger,
+  type LoadedEnvDocument,
+  loadEnvDocument,
+} from '@env-lane/core'
 import picomatch from 'picomatch'
 import { loadVaultConfig, type VaultConfig } from './config.js'
 import { decryptRecord, deriveVaultKey, encryptRecord } from './crypto.js'
 import { warnUnsafeVault } from './warning.js'
 
 export type VaultOperation = 'set' | 'delete'
-export type RestoreAction = 'add' | 'modify' | 'delete' | 'identical'
+export type RestoreAction = 'add' | 'modify' | 'delete' | 'identical' | 'conflict'
+export type VaultConflictStrategy = 'ask' | 'overwrite' | 'ignore'
 
 export interface VaultRecord {
   f: string
@@ -27,6 +41,9 @@ export interface RestorePlanEntry {
   currentValues: string[]
   occurrenceCount: number
   nextValue?: string
+  conflict?: boolean
+  vaultAction?: Exclude<RestoreAction, 'conflict'>
+  conflictReason?: string
 }
 
 export interface RestorePlanFile {
@@ -55,48 +72,52 @@ interface StoreReadResult {
   aliasedRecords: number
 }
 
-interface EnvDocument {
-  hasBom: boolean
-  eol: string
-  hasFinalNewline: boolean
-  lines: string[]
+interface StoreRecordLine {
+  encryptedLine: string
+  record: VaultRecord
+  groupFilePath: string
 }
 
-type ParsedEnvLine =
-  | { kind: 'empty' | 'comment'; rawLine: string; lineNumber: number }
-  | {
-      kind: 'entry' | 'commented-entry'
-      rawLine: string
-      lineNumber: number
-      key: string
-      prefix: string
-      rawValue: string
-    }
-  | { kind: 'invalid'; rawLine: string; lineNumber: number; reason: string }
-type ParsedEnvLineData =
-  | { kind: 'empty' | 'comment'; rawLine: string }
-  | {
-      kind: 'entry' | 'commented-entry'
-      rawLine: string
-      key: string
-      prefix: string
-      rawValue: string
-    }
-  | { kind: 'invalid'; rawLine: string; reason: string }
-
-interface LoadedEnvDocument {
-  exists: boolean
-  document: EnvDocument
-  parsedLines: ParsedEnvLine[]
-  currentMap: Map<string, { value: string }>
-  occurrencesMap: Map<string, Array<{ value: string; prefix: string; lineNumber: number }>>
-  invalidLineCount: number
-  shadowedEntryCount: number
+interface StoreRecordsReadResult {
+  records: StoreRecordLine[]
+  failedRecords: number
+  parsedRecords: number
+  rawRecords: number
+  aliasedRecords: number
 }
 
-const ENV_ENTRY_RE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
-const COMMENTED_ENV_ENTRY_RE = /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
+interface SyncStateEntry {
+  filePath: string
+  key: string
+  op: VaultOperation
+  valueHash: string
+  vaultTimestamp: number
+  syncedAt: number
+}
+
+interface SyncState {
+  version: 1
+  entries: Record<string, SyncStateEntry>
+}
+
+interface SyncContext {
+  syncDir: string
+  statePath: string
+  state: SyncState
+}
+
+interface ConflictCheck {
+  conflict: boolean
+  reason?: string
+}
+
+interface PruneCandidate {
+  index: number
+  record: VaultRecord
+}
+
 const PREVIEW_VALUE_LIMIT = 160
+const SYNC_STATE_FILE = 'vault-sync-state.json'
 
 type PicomatchMatcher = ReturnType<typeof picomatch>
 
@@ -115,6 +136,158 @@ const managedFileAliasCache = new WeakMap<VaultConfig, ManagedFileAlias[]>()
 
 function portable(file: string): string {
   return file.replace(/\\/g, '/').replaceAll(path.sep, '/')
+}
+
+function stableHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function valueHash(op: VaultOperation, value?: string): string {
+  return stableHash(JSON.stringify({ op, v: op === 'set' ? (value ?? '') : undefined }))
+}
+
+function recordValueHash(record: Pick<VaultRecord, 'op' | 'v'>): string {
+  return valueHash(record.op, record.v)
+}
+
+function syncEntryId(config: VaultConfig, filePath: string, key: string): string {
+  return stableHash(`${portable(path.relative(config.baseDir, filePath))}\0${key}`)
+}
+
+function syncStateFilePath(syncDir: string): string {
+  return path.join(path.resolve(syncDir), SYNC_STATE_FILE)
+}
+
+function emptySyncState(): SyncState {
+  return { version: 1, entries: {} }
+}
+
+function loadSyncContext(syncDir?: string): SyncContext | undefined {
+  if (!syncDir) return undefined
+  const resolvedSyncDir = path.resolve(syncDir)
+  const statePath = syncStateFilePath(resolvedSyncDir)
+  if (!existsSync(statePath))
+    return { syncDir: resolvedSyncDir, statePath, state: emptySyncState() }
+  const parsed = JSON.parse(readFileSync(statePath, 'utf8').replace(/^\uFEFF/, '')) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`Invalid vault sync state file: ${statePath}`)
+  }
+  const raw = parsed as Record<string, unknown>
+  if (raw.version !== 1 || !raw.entries || typeof raw.entries !== 'object') {
+    throw new Error(`Unsupported vault sync state file: ${statePath}`)
+  }
+  return { syncDir: resolvedSyncDir, statePath, state: raw as unknown as SyncState }
+}
+
+function saveSyncContext(context: SyncContext): void {
+  mkdirSync(context.syncDir, { recursive: true })
+  writeFileSync(context.statePath, `${JSON.stringify(context.state, null, 2)}\n`, 'utf8')
+}
+
+function updateSyncEntry(
+  config: VaultConfig,
+  context: SyncContext | undefined,
+  record: VaultRecord,
+): void {
+  if (!context) return
+  const id = syncEntryId(config, record.f, record.k)
+  context.state.entries[id] = {
+    filePath: portable(path.relative(config.baseDir, record.f)),
+    key: record.k,
+    op: record.op,
+    valueHash: recordValueHash(record),
+    vaultTimestamp: record.t,
+    syncedAt: Date.now(),
+  }
+}
+
+function hasDivergedFromSyncEntry(
+  config: VaultConfig,
+  context: SyncContext | undefined,
+  filePath: string,
+  key: string,
+  localHash: string,
+  vaultHash: string,
+): ConflictCheck {
+  if (!context) return { conflict: false }
+  const entry = context.state.entries[syncEntryId(config, filePath, key)]
+  if (!entry) return { conflict: false }
+  const localChanged = localHash !== entry.valueHash
+  const vaultChanged = vaultHash !== entry.valueHash
+  return localChanged && vaultChanged && localHash !== vaultHash
+    ? { conflict: true, reason: 'local and vault both changed since the last sync' }
+    : { conflict: false }
+}
+
+function hasSyncEntry(
+  config: VaultConfig,
+  context: SyncContext | undefined,
+  filePath: string,
+  key: string,
+): boolean {
+  return context ? syncEntryId(config, filePath, key) in context.state.entries : false
+}
+
+function hasMtimeFallbackConflict(
+  filePath: string,
+  localHash: string,
+  vaultHash: string,
+  vaultTimestamp: number,
+): ConflictCheck {
+  if (localHash === vaultHash) return { conflict: false }
+  const mtime = getEnvFileMtime(filePath)
+  return mtime !== undefined && mtime > vaultTimestamp
+    ? {
+        conflict: true,
+        reason: 'local env file is newer than the vault record and no sync baseline exists',
+      }
+    : { conflict: false }
+}
+
+function restoreConflictCheck(
+  config: VaultConfig,
+  context: SyncContext | undefined,
+  filePath: string,
+  key: string,
+  envDoc: LoadedEnvDocument,
+  record: VaultRecord,
+): ConflictCheck {
+  if (!context) return { conflict: false }
+  const localHash = localValueHashForEnvDoc(envDoc, key)
+  const vaultHash = recordValueHash(record)
+  if (hasSyncEntry(config, context, filePath, key)) {
+    return hasDivergedFromSyncEntry(config, context, filePath, key, localHash, vaultHash)
+  }
+  return hasMtimeFallbackConflict(filePath, localHash, vaultHash, record.t)
+}
+
+function pushConflictCheck(
+  config: VaultConfig,
+  context: SyncContext | undefined,
+  filePath: string,
+  key: string,
+  localHash: string,
+  previousRecord: VaultRecord | undefined,
+): ConflictCheck {
+  if (!context || !previousRecord) return { conflict: false }
+  const vaultHash = recordValueHash(previousRecord)
+  if (hasSyncEntry(config, context, filePath, key)) {
+    return hasDivergedFromSyncEntry(config, context, filePath, key, localHash, vaultHash)
+  }
+  return hasMtimeFallbackConflict(filePath, localHash, vaultHash, previousRecord.t)
+}
+
+function localValueHashForEnvDoc(envDoc: LoadedEnvDocument, key: string): string {
+  const current = envDoc.currentMap.get(key)
+  return current ? valueHash('set', current.value) : valueHash('delete')
+}
+
+function getEnvFileMtime(filePath: string): number | undefined {
+  try {
+    return existsSync(filePath) ? statSync(filePath).mtimeMs : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function emitStructuredChange(
@@ -216,22 +389,27 @@ function validateStoreRecord(decoded: unknown, order: number): VaultRecord {
   }
 }
 
-function readStore(
+function readEncryptedStoreLines(
   config: VaultConfig,
-  key: Buffer,
-  options: { allowMissing?: boolean; ignoreCorruptRecords?: boolean } = {},
-): StoreReadResult {
-  const state = new Map<string, Map<string, VaultRecord>>()
+  options: { allowMissing?: boolean } = {},
+): string[] {
   if (!existsSync(config.storePath)) {
-    if (options.allowMissing) {
-      return { state, failedRecords: 0, parsedRecords: 0, rawRecords: 0, aliasedRecords: 0 }
-    }
+    if (options.allowMissing) return []
     throw new Error(`Store file does not exist: ${config.storePath}`)
   }
-  const lines = readFileSync(config.storePath, 'utf8')
+  return readFileSync(config.storePath, 'utf8')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
+}
+
+function readStoreRecordLines(
+  config: VaultConfig,
+  key: Buffer,
+  options: { allowMissing?: boolean; ignoreCorruptRecords?: boolean } = {},
+): StoreRecordsReadResult {
+  const lines = readEncryptedStoreLines(config, { allowMissing: options.allowMissing })
+  const records: StoreRecordLine[] = []
   let failedRecords = 0
   let parsedRecords = 0
   let aliasedRecords = 0
@@ -239,12 +417,12 @@ function readStore(
     try {
       const parsedRecord = validateStoreRecord(JSON.parse(decryptRecord(key, line)), order)
       const remapped = remapManagedStoreFilePath(parsedRecord.f, config)
-      const record = remapped.aliased ? { ...parsedRecord, f: remapped.filePath } : parsedRecord
       if (remapped.aliased) aliasedRecords++
-      const perFile = state.get(record.f) ?? new Map<string, VaultRecord>()
-      const existing = perFile.get(record.k)
-      if (!existing || isNewerRecord(record, existing)) perFile.set(record.k, record)
-      state.set(record.f, perFile)
+      records.push({
+        encryptedLine: line,
+        record: parsedRecord,
+        groupFilePath: remapped.filePath,
+      })
       parsedRecords++
     } catch {
       failedRecords++
@@ -258,100 +436,35 @@ function readStore(
       `Vault store contains ${failedRecords} unreadable record(s) in ${config.storePath}. Refusing to continue from partial state; pass ignoreCorruptRecords only after inspecting the store.`,
     )
   }
-  return { state, failedRecords, parsedRecords, rawRecords: lines.length, aliasedRecords }
+  return { records, failedRecords, parsedRecords, rawRecords: lines.length, aliasedRecords }
+}
+
+function readStore(
+  config: VaultConfig,
+  key: Buffer,
+  options: { allowMissing?: boolean; ignoreCorruptRecords?: boolean } = {},
+): StoreReadResult {
+  const state = new Map<string, Map<string, VaultRecord>>()
+  const store = readStoreRecordLines(config, key, options)
+  for (const item of store.records) {
+    const record =
+      item.groupFilePath === item.record.f ? item.record : { ...item.record, f: item.groupFilePath }
+    const perFile = state.get(record.f) ?? new Map<string, VaultRecord>()
+    const existing = perFile.get(record.k)
+    if (!existing || isNewerRecord(record, existing)) perFile.set(record.k, record)
+    state.set(record.f, perFile)
+  }
+  return { ...store, state }
 }
 
 function append(config: VaultConfig, key: Buffer, record: VaultRecord): void {
   mkdirSync(path.dirname(config.storePath), { recursive: true })
-  appendFileSync(config.storePath, `${encryptRecord(key, JSON.stringify(record))}\n`, 'utf8')
-}
-
-function createEmptyDocument(): EnvDocument {
-  return { hasBom: false, eol: '\n', hasFinalNewline: true, lines: [] }
-}
-
-function createTextDocument(content: string): EnvDocument {
-  const hasBom = content.startsWith('\uFEFF')
-  const raw = hasBom ? content.slice(1) : content
-  const eol = raw.includes('\r\n') ? '\r\n' : '\n'
-  const hasFinalNewline = raw.length > 0 && /\r?\n$/.test(raw)
-  let lines = raw.length > 0 ? raw.split(/\r\n|\n/) : []
-  if (hasFinalNewline && lines.at(-1) === '') lines = lines.slice(0, -1)
-  return { hasBom, eol, hasFinalNewline, lines }
-}
-
-function renderTextDocument(document: EnvDocument, lines: string[]): string {
-  const body = lines.join(document.eol)
-  const withNewline = lines.length > 0 && document.hasFinalNewline ? `${body}${document.eol}` : body
-  return document.hasBom ? `\uFEFF${withNewline}` : withNewline
-}
-
-function parseEnvLine(line: string): ParsedEnvLineData {
-  const trimmed = line.trim()
-  if (!trimmed) return { kind: 'empty', rawLine: line }
-  if (trimmed.startsWith('#')) {
-    const commentedEntryMatch = line.match(COMMENTED_ENV_ENTRY_RE)
-    if (commentedEntryMatch) {
-      const eqIdx = line.indexOf('=')
-      return {
-        kind: 'commented-entry',
-        rawLine: line,
-        key: commentedEntryMatch[1],
-        prefix: line.slice(0, eqIdx + 1),
-        rawValue: line.slice(eqIdx + 1),
-      }
-    }
-    return { kind: 'comment', rawLine: line }
-  }
-  const eqIdx = line.indexOf('=')
-  if (eqIdx < 0) return { kind: 'invalid', rawLine: line, reason: 'missing equals sign' }
-  const match = line.match(ENV_ENTRY_RE)
-  if (!match) return { kind: 'invalid', rawLine: line, reason: 'invalid env key' }
-  return {
-    kind: 'entry',
-    rawLine: line,
-    key: match[1],
-    prefix: line.slice(0, eqIdx + 1),
-    rawValue: line.slice(eqIdx + 1),
-  }
-}
-
-function loadEnvDocument(filePath: string): LoadedEnvDocument {
-  const fileExists = existsSync(filePath)
-  const document = fileExists
-    ? createTextDocument(readFileSync(filePath, 'utf8'))
-    : createEmptyDocument()
-  const parsedLines: ParsedEnvLine[] = document.lines.map((line, index) => ({
-    lineNumber: index + 1,
-    ...parseEnvLine(line),
-  }))
-  const currentMap = new Map<string, { value: string }>()
-  const occurrencesMap = new Map<
-    string,
-    Array<{ value: string; prefix: string; lineNumber: number }>
-  >()
-  let invalidLineCount = 0
-  let shadowedEntryCount = 0
-  for (const line of parsedLines) {
-    if (line.kind === 'entry') {
-      const occurrences = occurrencesMap.get(line.key) ?? []
-      occurrences.push({ value: line.rawValue, prefix: line.prefix, lineNumber: line.lineNumber })
-      occurrencesMap.set(line.key, occurrences)
-      if (currentMap.has(line.key)) shadowedEntryCount++
-      currentMap.set(line.key, { value: line.rawValue })
-    } else if (line.kind === 'invalid') {
-      invalidLineCount++
-    }
-  }
-  return {
-    exists: fileExists,
-    document,
-    parsedLines,
-    currentMap,
-    occurrencesMap,
-    invalidLineCount,
-    shadowedEntryCount,
-  }
+  const { f, k, t, op, v } = record
+  appendFileSync(
+    config.storePath,
+    `${encryptRecord(key, JSON.stringify({ f, k, t, op, v }))}\n`,
+    'utf8',
+  )
 }
 
 function desiredRecordsForFile(
@@ -392,13 +505,18 @@ function formatPreviewValues(values: string[], occurrenceCount: number): string 
   return occurrenceCount > 1 ? `${valuePreview} (${occurrenceCount} occurrences)` : valuePreview
 }
 
-function buildRestorePlanFromState(config: VaultConfig, store: StoreReadResult): RestorePlan {
+function buildRestorePlanFromState(
+  config: VaultConfig,
+  store: StoreReadResult,
+  syncContext?: SyncContext,
+): RestorePlan {
   const files: RestorePlanFile[] = []
   const summary: RestorePlan['summary'] = {
     add: 0,
     modify: 0,
     delete: 0,
     identical: 0,
+    conflict: 0,
     filesWithChanges: 0,
   }
   const managedFiles = new Set(config.envFiles)
@@ -419,10 +537,15 @@ function buildRestorePlanFromState(config: VaultConfig, store: StoreReadResult):
     for (const record of desired.values()) {
       const occurrences = envDoc.occurrencesMap.get(record.k) ?? []
       const currentValues = occurrences.map((item) => item.value)
-      let action: RestoreAction
-      if (record.op === 'delete') action = occurrences.length === 0 ? 'identical' : 'delete'
-      else if (occurrences.length === 0) action = 'add'
-      else action = currentValues.every((value) => value === record.v) ? 'identical' : 'modify'
+      let vaultAction: Exclude<RestoreAction, 'conflict'>
+      if (record.op === 'delete') vaultAction = occurrences.length === 0 ? 'identical' : 'delete'
+      else if (occurrences.length === 0) vaultAction = 'add'
+      else vaultAction = currentValues.every((value) => value === record.v) ? 'identical' : 'modify'
+      const conflict =
+        vaultAction === 'identical'
+          ? { conflict: false }
+          : restoreConflictCheck(config, syncContext, filePath, record.k, envDoc, record)
+      const action: RestoreAction = conflict.conflict ? 'conflict' : vaultAction
       summary[action]++
       entries.push({
         filePath,
@@ -431,6 +554,9 @@ function buildRestorePlanFromState(config: VaultConfig, store: StoreReadResult):
         currentValues,
         occurrenceCount: occurrences.length,
         nextValue: record.op === 'set' ? record.v : undefined,
+        conflict: conflict.conflict,
+        vaultAction,
+        conflictReason: conflict.reason,
       })
     }
     entries.sort((left, right) => left.key.localeCompare(right.key))
@@ -472,16 +598,22 @@ function printRestorePreview(plan: RestorePlan): void {
         logger.log(
           `  MODIFY ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)} -> ${formatPreviewValue(entry.nextValue ?? '')}`,
         )
-      } else {
+      } else if (entry.action === 'delete') {
         logger.log(
           `  DELETE ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)}`,
+        )
+      } else {
+        const target =
+          entry.vaultAction === 'delete' ? '<delete>' : formatPreviewValue(entry.nextValue ?? '')
+        logger.log(
+          `  CONFLICT ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)} -> ${target}${entry.conflictReason ? ` (${entry.conflictReason})` : ''}`,
         )
       }
     }
   }
   logger.log('')
   logger.log(
-    `[env-lane:vault] Summary: ${plan.summary.modify} modify, ${plan.summary.add} add, ${plan.summary.delete} delete, ${plan.summary.identical} identical skipped`,
+    `[env-lane:vault] Summary: ${plan.summary.modify} modify, ${plan.summary.add} add, ${plan.summary.delete} delete, ${plan.summary.conflict} conflict, ${plan.summary.identical} identical skipped`,
   )
 }
 
@@ -528,54 +660,114 @@ async function confirmRestore(
   })
 }
 
+async function promptChoice(prompt: string, choices: string[]): Promise<string> {
+  const logger = getLogger()
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      'Interactive vault conflict handling requires a TTY. Re-run with --conflicts overwrite or --conflicts ignore.',
+    )
+  }
+  logger.write(prompt)
+  return new Promise((resolve) => {
+    const stdin = process.stdin
+    const cleanup = () => {
+      stdin.off('data', onData)
+      stdin.pause()
+      if (typeof stdin.setRawMode === 'function') stdin.setRawMode(false)
+    }
+    const onData = (chunk: Buffer) => {
+      if (String(chunk) === '\u0003') {
+        cleanup()
+        logger.write('\n')
+        resolve('i')
+        return
+      }
+      const input = String(chunk)
+        .replace(/[\r\n]+/g, '')
+        .trim()
+        .toLowerCase()
+      if (choices.includes(input)) {
+        cleanup()
+        logger.write('\n')
+        resolve(input)
+      }
+    }
+    stdin.resume()
+    if (typeof stdin.setRawMode === 'function') stdin.setRawMode(true)
+    stdin.on('data', onData)
+  })
+}
+
+async function resolveConflict(
+  strategy: VaultConflictStrategy | undefined,
+  prompt: string,
+): Promise<'overwrite' | 'ignore'> {
+  if (strategy === 'overwrite') return 'overwrite'
+  if (strategy === 'ignore') return 'ignore'
+  const choice = await promptChoice(prompt, ['o', 'i'])
+  return choice === 'o' ? 'overwrite' : 'ignore'
+}
+
+async function resolveRestoreConflicts(
+  plan: RestorePlan,
+  strategy: VaultConflictStrategy | undefined,
+): Promise<Set<string>> {
+  const ignored = new Set<string>()
+  for (const file of plan.files) {
+    for (const entry of file.entries.filter((item) => item.action === 'conflict')) {
+      const decision = await resolveConflict(
+        strategy,
+        `[env-lane:vault] Conflict ${entry.filePath} ${entry.key}: overwrite from vault (o) or ignore local file (i)? `,
+      )
+      if (decision === 'ignore') ignored.add(`${entry.filePath}\0${entry.key}`)
+    }
+  }
+  return ignored
+}
+
 function applyRestoreFile(
   config: VaultConfig,
   filePath: string,
   state: Map<string, Map<string, VaultRecord>>,
+  ignoredConflicts: Set<string> = new Set(),
 ): boolean {
   const { desired } = desiredRecordsForFile(config, filePath, state)
-  const envDoc = loadEnvDocument(filePath)
-  const seenKeys = new Set<string>()
-  const nextLines: string[] = []
-
-  for (const line of envDoc.parsedLines) {
-    if (line.kind !== 'entry') {
-      nextLines.push(line.rawLine)
-      continue
-    }
-    const desiredRecord = desired.get(line.key)
-    if (!desiredRecord) {
-      nextLines.push(line.rawLine)
-      continue
-    }
-    seenKeys.add(line.key)
-    if (desiredRecord.op === 'delete') continue
-    nextLines.push(`${line.prefix}${desiredRecord.v ?? ''}`)
-  }
-
-  const additions = [...desired.entries()]
-    .filter(([key, record]) => record.op === 'set' && !seenKeys.has(key))
-    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-  for (const [key, record] of additions) nextLines.push(`${key}=${record.v ?? ''}`)
-
-  const current = envDoc.exists ? renderTextDocument(envDoc.document, envDoc.document.lines) : ''
-  const next = renderTextDocument(envDoc.document, nextLines)
-  if (current === next) return false
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  writeFileSync(filePath, next, 'utf8')
-  return true
+  const ignoredKeys = new Set(
+    [...desired.keys()].filter((key) => ignoredConflicts.has(`${filePath}\0${key}`)),
+  )
+  return applyEnvDocumentPatches(
+    filePath,
+    [...desired.entries()].map(([key, record]) =>
+      record.op === 'set'
+        ? { op: 'set' as const, key, value: record.v ?? '' }
+        : { op: 'delete' as const, key },
+    ),
+    {
+      ignoredKeys,
+      update: 'all',
+      matchCommented: false,
+      sortAdditions: true,
+      blankLineBeforeAdditions: false,
+    },
+  ).changed
 }
 
 export async function encryptEnvFiles(
   configPath: string,
   keyFilePath: string,
-  options: { disableUnsafeWarning?: boolean; ignoreCorruptRecords?: boolean } = {},
+  options: {
+    disableUnsafeWarning?: boolean
+    ignoreCorruptRecords?: boolean
+    syncDir?: string
+    conflictStrategy?: VaultConflictStrategy
+  } = {},
 ) {
   const config = await loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
   const key = deriveVaultKey(keyFilePath)
+  const syncContext = loadSyncContext(options.syncDir)
   const store = readStore(config, key, {
     allowMissing: true,
     ignoreCorruptRecords: options.ignoreCorruptRecords,
@@ -588,6 +780,9 @@ export async function encryptEnvFiles(
   let missingFilesSkipped = 0
   let invalidLinesIgnored = 0
   let shadowedEntriesIgnored = 0
+  let conflicts = 0
+  let conflictsIgnored = 0
+  let conflictsOverwritten = 0
 
   for (const filePath of config.envFiles) {
     if (!existsSync(filePath)) {
@@ -606,9 +801,32 @@ export async function encryptEnvFiles(
       const old = prev.get(keyName)
       if (old?.op === 'set' && old.v === value) {
         skippedUnchanged++
+        updateSyncEntry(config, syncContext, old)
         continue
       }
-      append(config, key, { f: filePath, k: keyName, v: value, op: 'set', t: Date.now() })
+      const conflict = pushConflictCheck(
+        config,
+        syncContext,
+        filePath,
+        keyName,
+        valueHash('set', value),
+        old,
+      )
+      if (conflict.conflict) {
+        conflicts++
+        const decision = await resolveConflict(
+          options.conflictStrategy,
+          `[env-lane:vault] Conflict ${filePath} ${keyName}: overwrite vault from local (o) or ignore local value (i)? `,
+        )
+        if (decision === 'ignore') {
+          conflictsIgnored++
+          continue
+        }
+        conflictsOverwritten++
+      }
+      const record = { f: filePath, k: keyName, v: value, op: 'set' as const, t: Date.now() }
+      append(config, key, record)
+      updateSyncEntry(config, syncContext, record)
       emitStructuredChange('encrypt', {
         action: old?.op === 'set' ? 'update' : 'set',
         filePath: portable(filePath),
@@ -620,7 +838,29 @@ export async function encryptEnvFiles(
       for (const [keyName, old] of prev.entries()) {
         if (isExcluded(config, filePath, keyName)) continue
         if (old.op === 'set' && !current.has(keyName)) {
-          append(config, key, { f: filePath, k: keyName, op: 'delete', t: Date.now() })
+          const conflict = pushConflictCheck(
+            config,
+            syncContext,
+            filePath,
+            keyName,
+            valueHash('delete'),
+            old,
+          )
+          if (conflict.conflict) {
+            conflicts++
+            const decision = await resolveConflict(
+              options.conflictStrategy,
+              `[env-lane:vault] Conflict ${filePath} ${keyName}: record local deletion (o) or ignore it (i)? `,
+            )
+            if (decision === 'ignore') {
+              conflictsIgnored++
+              continue
+            }
+            conflictsOverwritten++
+          }
+          const record = { f: filePath, k: keyName, op: 'delete' as const, t: Date.now() }
+          append(config, key, record)
+          updateSyncEntry(config, syncContext, record)
           emitStructuredChange('encrypt', {
             action: 'delete',
             filePath: portable(filePath),
@@ -630,9 +870,13 @@ export async function encryptEnvFiles(
         }
       }
     }
+    for (const [keyName, old] of prev.entries()) {
+      if (old.op === 'delete' && !current.has(keyName)) updateSyncEntry(config, syncContext, old)
+    }
     invalidLinesIgnored += envDoc.invalidLineCount
     shadowedEntriesIgnored += envDoc.shadowedEntryCount
   }
+  if (syncContext) saveSyncContext(syncContext)
   return {
     storePath: config.storePath,
     setRecordsWritten,
@@ -646,22 +890,32 @@ export async function encryptEnvFiles(
     parsedRecords: store.parsedRecords,
     failedRecords: store.failedRecords,
     aliasedRecords: store.aliasedRecords,
+    conflicts,
+    conflictsIgnored,
+    conflictsOverwritten,
+    syncStatePath: syncContext?.statePath,
   }
 }
 
 export async function buildRestorePlan(
   configPath: string,
   keyFilePath: string,
-  options: { disableUnsafeWarning?: boolean; ignoreCorruptRecords?: boolean } = {},
+  options: {
+    disableUnsafeWarning?: boolean
+    ignoreCorruptRecords?: boolean
+    syncDir?: string
+  } = {},
 ) {
   const config = await loadVaultConfig(configPath)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
   const key = deriveVaultKey(keyFilePath)
+  const syncContext = loadSyncContext(options.syncDir)
   return buildRestorePlanFromState(
     config,
     readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords }),
+    syncContext,
   )
 }
 
@@ -673,6 +927,8 @@ export async function decryptEnvFiles(
     autoApprove?: boolean
     disableUnsafeWarning?: boolean
     ignoreCorruptRecords?: boolean
+    syncDir?: string
+    conflictStrategy?: VaultConflictStrategy
   } = {},
 ) {
   const config = await loadVaultConfig(configPath)
@@ -680,8 +936,9 @@ export async function decryptEnvFiles(
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
   const key = deriveVaultKey(keyFilePath)
+  const syncContext = loadSyncContext(options.syncDir)
   const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
-  const plan = buildRestorePlanFromState(config, store)
+  const plan = buildRestorePlanFromState(config, store, syncContext)
   printRestorePreview(plan)
   const logger = getLogger()
   if (plan.failedRecords > 0) {
@@ -705,13 +962,34 @@ export async function decryptEnvFiles(
     )
   }
 
+  const ignoredConflicts =
+    !options.dryRun && plan.summary.conflict > 0
+      ? await resolveRestoreConflicts(plan, options.conflictStrategy)
+      : new Set<string>()
   const results: Array<{
     filePath: string
     keys: number
     changed: boolean
     entries: RestorePlanEntry[]
   }> = []
-  if (plan.summary.filesWithChanges === 0 || options.dryRun) {
+  const effectiveChanges = plan.files.some((file) =>
+    file.entries.some(
+      (entry) =>
+        entry.action !== 'identical' && !ignoredConflicts.has(`${file.filePath}\0${entry.key}`),
+    ),
+  )
+  if (!effectiveChanges || options.dryRun) {
+    if (!options.dryRun && syncContext) {
+      for (const file of plan.files) {
+        for (const entry of file.entries) {
+          if (entry.action === 'identical' && entry.vaultAction) {
+            const record = store.state.get(file.filePath)?.get(entry.key)
+            if (record) updateSyncEntry(config, syncContext, record)
+          }
+        }
+      }
+      saveSyncContext(syncContext)
+    }
     for (const file of plan.files) {
       results.push({
         filePath: file.filePath,
@@ -739,7 +1017,11 @@ export async function decryptEnvFiles(
 
   let filesWritten = 0
   for (const file of plan.files) {
-    if (!file.changed) {
+    const fileHasEffectiveChanges = file.entries.some(
+      (entry) =>
+        entry.action !== 'identical' && !ignoredConflicts.has(`${file.filePath}\0${entry.key}`),
+    )
+    if (!file.changed || !fileHasEffectiveChanges) {
       results.push({
         filePath: file.filePath,
         keys: file.entries.filter((entry) => entry.action !== 'delete').length,
@@ -748,12 +1030,14 @@ export async function decryptEnvFiles(
       })
       continue
     }
-    const changed = applyRestoreFile(config, file.filePath, store.state)
+    const changed = applyRestoreFile(config, file.filePath, store.state, ignoredConflicts)
     if (changed) {
       filesWritten++
       for (const entry of file.entries.filter((item) => item.action !== 'identical')) {
+        if (ignoredConflicts.has(`${file.filePath}\0${entry.key}`)) continue
+        const action = entry.action === 'conflict' ? entry.vaultAction : entry.action
         emitStructuredChange('decrypt', {
-          action: entry.action,
+          action,
           filePath: portable(file.filePath),
           key: entry.key,
         })
@@ -767,7 +1051,156 @@ export async function decryptEnvFiles(
       entries: file.entries,
     })
   }
-  return { ...plan, applied: filesWritten > 0, filesWritten, results }
+  if (syncContext) {
+    for (const file of plan.files) {
+      for (const entry of file.entries) {
+        if (ignoredConflicts.has(`${file.filePath}\0${entry.key}`)) continue
+        if (entry.action === 'identical' || entry.action !== 'conflict' || entry.vaultAction) {
+          const record = store.state.get(file.filePath)?.get(entry.key)
+          if (record) updateSyncEntry(config, syncContext, record)
+        }
+      }
+    }
+    saveSyncContext(syncContext)
+  }
+  return {
+    ...plan,
+    applied: filesWritten > 0,
+    filesWritten,
+    results,
+    conflictsIgnored: ignoredConflicts.size,
+    syncStatePath: syncContext?.statePath,
+  }
+}
+
+async function confirmPrune(
+  options: { autoApprove?: boolean; dryRun?: boolean } = {},
+): Promise<boolean> {
+  const logger = getLogger()
+  if (options.dryRun) return false
+  if (options.autoApprove) {
+    logger.log('[env-lane:vault] Auto-approved history prune.')
+    return true
+  }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      'History prune confirmation requires an interactive terminal. Re-run with --yes to apply or --dry-run to preview.',
+    )
+  }
+  const choice = await promptChoice('[env-lane:vault] Rewrite the vault store? y/n: ', ['y', 'n'])
+  return choice === 'y'
+}
+
+function pruneGroupKey(record: StoreRecordLine): string {
+  return `${record.groupFilePath}\0${record.record.k}`
+}
+
+function shouldPruneCandidate(
+  candidate: PruneCandidate,
+  rank: number,
+  options: { keepRecent?: number; olderThanMs?: number; preserveLatest: boolean },
+): boolean {
+  if (options.preserveLatest && rank === 0) return false
+  if (options.keepRecent !== undefined && rank >= options.keepRecent) return true
+  if (options.olderThanMs !== undefined && candidate.record.t < options.olderThanMs) return true
+  return false
+}
+
+export async function pruneVaultHistory(
+  configPath: string,
+  keyFilePath: string,
+  options: {
+    filePath?: string
+    key?: string
+    keepRecent?: number
+    olderThanDays?: number
+    preserveLatest?: boolean
+    dryRun?: boolean
+    autoApprove?: boolean
+    disableUnsafeWarning?: boolean
+    ignoreCorruptRecords?: boolean
+  } = {},
+) {
+  if (options.keepRecent === undefined && options.olderThanDays === undefined) {
+    throw new Error('History prune requires --keep-recent or --older-than-days.')
+  }
+  if (
+    options.keepRecent !== undefined &&
+    (!Number.isInteger(options.keepRecent) || options.keepRecent < 1)
+  ) {
+    throw new Error('keepRecent must be a positive integer.')
+  }
+  if (
+    options.olderThanDays !== undefined &&
+    (!Number.isFinite(options.olderThanDays) || options.olderThanDays < 0)
+  ) {
+    throw new Error('olderThanDays must be a non-negative number.')
+  }
+  const config = await loadVaultConfig(configPath)
+  warnUnsafeVault({
+    disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
+  })
+  const key = deriveVaultKey(keyFilePath)
+  const store = readStoreRecordLines(config, key, {
+    ignoreCorruptRecords: options.ignoreCorruptRecords,
+  })
+  const targetFilePath = options.filePath
+    ? path.resolve(config.baseDir, options.filePath)
+    : undefined
+  const groups = new Map<string, PruneCandidate[]>()
+  store.records.forEach((record, index) => {
+    if (targetFilePath && record.groupFilePath !== targetFilePath) return
+    if (options.key && record.record.k !== options.key) return
+    const group = groups.get(pruneGroupKey(record)) ?? []
+    group.push({ index, record: record.record })
+    groups.set(pruneGroupKey(record), group)
+  })
+
+  const keep = new Set(store.records.map((_, index) => index))
+  const olderThanMs =
+    options.olderThanDays === undefined
+      ? undefined
+      : Date.now() - options.olderThanDays * 24 * 60 * 60 * 1000
+  const preserveLatest = options.preserveLatest ?? true
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((left, right) => {
+      if (isNewerRecord(left.record, right.record)) return -1
+      if (isNewerRecord(right.record, left.record)) return 1
+      return 0
+    })
+    sorted.forEach((candidate, rank) => {
+      if (
+        shouldPruneCandidate(candidate, rank, {
+          keepRecent: options.keepRecent,
+          olderThanMs,
+          preserveLatest,
+        })
+      ) {
+        keep.delete(candidate.index)
+      }
+    })
+  }
+
+  const keptLines = store.records
+    .filter((_, index) => keep.has(index))
+    .map((record) => record.encryptedLine)
+  const removedRecords = store.records.length - keptLines.length
+  const result = {
+    storePath: config.storePath,
+    rawRecords: store.rawRecords,
+    parsedRecords: store.parsedRecords,
+    failedRecords: store.failedRecords,
+    aliasedRecords: store.aliasedRecords,
+    groups: groups.size,
+    removedRecords,
+    keptRecords: keptLines.length,
+    applied: false,
+  }
+  if (removedRecords === 0 || options.dryRun) return result
+  const confirmed = await confirmPrune(options)
+  if (!confirmed) return result
+  writeFileSync(config.storePath, keptLines.length > 0 ? `${keptLines.join('\n')}\n` : '', 'utf8')
+  return { ...result, applied: true }
 }
 
 export async function runVault(
@@ -779,6 +1212,8 @@ export async function runVault(
     autoApprove?: boolean
     disableUnsafeWarning?: boolean
     ignoreCorruptRecords?: boolean
+    syncDir?: string
+    conflictStrategy?: VaultConflictStrategy
   } = {},
 ) {
   return mode === 'encrypt'

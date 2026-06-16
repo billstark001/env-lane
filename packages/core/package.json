@@ -1,6 +1,6 @@
 {
   "name": "@env-lane/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Core dotenv injection, workspace resolution, selector checks, and env sorting for env-lane.",
   "license": "MIT",
@@ -23,7 +23,7 @@
     "secrets"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "sideEffects": false,
   "main": "./dist/index.cjs",

@@ -4,6 +4,7 @@ import { parse } from 'dotenv'
 import fg from 'fast-glob'
 import { loadEnvLaneConfig } from './config.js'
 import { listEnvFilesForTarget } from './dotenv.js'
+import { lineForEnvKey } from './env-document.js'
 import { listWorkspacePackagesForConfig, resolveTargetPackage } from './workspace.js'
 
 export interface CheckResult {
@@ -11,13 +12,6 @@ export interface CheckResult {
   selectorKey: string
   violations: Array<{ file: string; relativeFile: string; line?: number }>
   missingRequired: Array<{ file: string; relativeFile: string; target: string }>
-}
-
-function lineForKey(content: string, key: string): number | undefined {
-  const lines = content.split(/\r?\n/)
-  const re = new RegExp(`^\\s*(?:export\\s+)?${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`)
-  const idx = lines.findIndex((line) => re.test(line))
-  return idx >= 0 ? idx + 1 : undefined
 }
 
 export async function checkDotenvSelector(
@@ -57,7 +51,7 @@ export async function checkDotenvSelector(
       violations.push({
         file,
         relativeFile: path.relative(config.rootDir, file).replaceAll(path.sep, '/'),
-        line: lineForKey(content, config.selector.envKey),
+        line: lineForEnvKey(content, config.selector.envKey),
       })
     }
   }

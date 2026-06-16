@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { parse } from 'dotenv'
 import { loadEnvLaneConfig } from './config.js'
+import { lineForEnvKey } from './env-document.js'
+import { getLogger } from './logger.js'
 import type {
   EnvFileRef,
   EnvSource,
@@ -16,10 +18,18 @@ export function resolveBuildName(
   options: ResolveEnvOptions,
   envKey: string,
   defaultBuild: string,
+  validation: { builds?: string[]; mode?: 'off' | 'warn' | 'error' } = {},
 ): string {
   const raw = String(options.build ?? process.env[envKey] ?? defaultBuild).trim()
   if (!raw) throw new Error('Build name is empty.')
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(raw)) throw new Error(`Invalid build name '${raw}'.`)
+  const builds = validation.builds ?? []
+  const mode = validation.mode ?? 'warn'
+  if (builds.length > 0 && !builds.includes(raw) && mode !== 'off') {
+    const message = `Build '${raw}' is not listed in selector.builds: ${builds.join(', ')}.`
+    if (mode === 'error') throw new Error(message)
+    getLogger().warn(message)
+  }
   return raw
 }
 
@@ -29,7 +39,7 @@ function patternToFile(
   localBuildName: string,
   localOverrideFile: string,
 ): string {
-  if (pattern === '.env.{build}' && build === localBuildName) return localOverrideFile
+  if (pattern.includes('{build}') && build === localBuildName) return localOverrideFile
   return pattern.replaceAll('{build}', build)
 }
 
@@ -44,7 +54,10 @@ export function listEnvFilesForTarget(
   target: WorkspacePackage,
   options: ResolveEnvOptions = {},
 ): EnvFileRef[] {
-  const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild)
+  const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild, {
+    builds: config.selector.builds,
+    mode: config.selector.buildValidation,
+  })
   return config.dotenv.order.map((pattern, index) => {
     const fileName = patternToFile(
       pattern,
@@ -64,17 +77,13 @@ export function listEnvFilesForTarget(
   })
 }
 
-function lineForKey(content: string, key: string): number | undefined {
-  const lines = content.split(/\r?\n/)
-  const re = new RegExp(`^\\s*(?:export\\s+)?${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`)
-  const idx = lines.findIndex((line) => re.test(line))
-  return idx >= 0 ? idx + 1 : undefined
-}
-
 export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promise<ResolvedEnv> {
   const config = await loadEnvLaneConfig(options)
   const target = await resolveTargetPackage(options.target, { ...options, config })
-  const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild)
+  const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild, {
+    builds: config.selector.builds,
+    mode: config.selector.buildValidation,
+  })
   const files = listEnvFilesForTarget(config, target, options)
   const values: Record<string, string> = {}
   const sources: Record<string, EnvSource> = {}
@@ -103,7 +112,7 @@ export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promi
         source: 'dotenv',
         file: file.path,
         relativeFile: file.relativePath,
-        line: lineForKey(content, key),
+        line: lineForEnvKey(content, key),
       }
     }
   }

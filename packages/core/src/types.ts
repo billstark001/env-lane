@@ -7,6 +7,56 @@ export interface EnvSortTargetConfig {
   files?: Record<string, string>
 }
 
+export interface EnvValueSourceConfig {
+  target?: string
+  file?: string
+  includeProcessEnv?: boolean
+}
+
+export type EnvCheckSeverity = 'warn' | 'error'
+export type EnvValueTransform = 'trim' | 'lowercase' | 'uppercase' | 'url-base' | 'url-base-slash'
+
+export type EnvCheckRuleConfig =
+  | {
+      type: 'required'
+      source: string
+      key: string
+      label?: string
+      severity?: EnvCheckSeverity
+    }
+  | {
+      type: 'requiredAny'
+      source: string
+      keys: string[]
+      label?: string
+      severity?: EnvCheckSeverity
+    }
+  | {
+      type: 'equals'
+      left: { source: string; key: string }
+      right: { source: string; key: string }
+      label?: string
+      severity?: EnvCheckSeverity
+      transform?: EnvValueTransform
+    }
+
+export interface EnvCheckConfig {
+  sources: Record<string, EnvValueSourceConfig>
+  rules: EnvCheckRuleConfig[]
+}
+
+export interface EnvSyncMappingConfig {
+  from: string
+  to: string
+  transform?: EnvValueTransform
+}
+
+export interface EnvSyncConfig {
+  from: EnvValueSourceConfig
+  to: EnvValueSourceConfig & { variant?: string }
+  mappings: EnvSyncMappingConfig[]
+}
+
 export interface EnvLaneConfig {
   selector?: {
     /** Environment selector variable. Defaults to ENV_BUILD. */
@@ -15,6 +65,8 @@ export interface EnvLaneConfig {
     defaultBuild?: string
     /** List of valid build names. If empty, all builds are allowed. */
     builds?: string[]
+    /** How to handle a build outside selector.builds. Defaults to warn. */
+    buildValidation?: 'off' | 'warn' | 'error'
     /** Forbid selector envKey in dotenv files. Defaults to true. */
     forbidInDotenv?: boolean
   }
@@ -50,6 +102,8 @@ export interface EnvLaneConfig {
     format?: EnvLaneOutputFormat
   }
   sort?: Record<string, EnvSortTargetConfig>
+  checks?: Record<string, EnvCheckConfig>
+  sync?: Record<string, EnvSyncConfig>
 }
 
 export interface ResolvedEnvLaneConfig {
@@ -62,6 +116,8 @@ export interface ResolvedEnvLaneConfig {
   vault: Required<NonNullable<EnvLaneConfig['vault']>>
   output: Required<NonNullable<EnvLaneConfig['output']>>
   sort?: Record<string, EnvSortTargetConfig>
+  checks?: Record<string, EnvCheckConfig>
+  sync?: Record<string, EnvSyncConfig>
 }
 
 export interface WorkspacePackage {

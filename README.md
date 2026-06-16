@@ -41,7 +41,7 @@ Install the vault package only when you need the optional development vault help
 pnpm add -D @env-lane/vault
 ```
 
-`env-lane` requires Node.js 20 or newer.
+`env-lane` requires Node.js 22 or newer.
 
 ## Quick Start
 
@@ -190,12 +190,14 @@ env-lane run api --build production --run-cwd root -- pnpm test
 env-lane run api --build production --quiet -- node server.js
 ```
 
-Check dotenv files:
+Check dotenv files and configured env policies:
 
 ```bash
-env-lane check
-env-lane check api --build production
-env-lane check api --build production --require-override
+env-lane check --target api --build production
+env-lane check --target api --build production --require-override
+env-lane check --policy deploy --build production
+env-lane sync webFromW3 --build production
+env-lane sync webFromW3 --build production --dry-run
 ```
 
 Sort env files:
@@ -214,6 +216,8 @@ import {
   listEnvFiles,
   listWorkspacePackages,
   resolveInjectedEnv,
+  runEnvCheck,
+  runEnvSync,
   runWithInjectedEnv,
   sortEnvFile,
   sortEnvFilesFromConfig
@@ -224,6 +228,8 @@ const files = await listEnvFiles({ target: 'api', build: 'staging' });
 const env = await resolveInjectedEnv({ target: 'api', build: 'staging' });
 
 await checkDotenvSelector({ target: 'api', build: 'staging' });
+await runEnvCheck('deploy', { build: 'production' });
+await runEnvSync('webFromApi', { build: 'production', dryRun: true });
 await sortEnvFile('apps/api/.env', 'apps/api/.env.example');
 await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 await runWithInjectedEnv({
@@ -250,8 +256,11 @@ export default defineConfig({
     envKey: 'ENV_BUILD',
     // Default build name when no CLI/API build is supplied. Defaults to local.
     defaultBuild: 'local',
-    // List of valid build names. Used by 'sort' to auto-discover env files.
+    // List of valid build names. Used by 'sort' to auto-discover env files
+    // and by resolution checks.
     builds: ['staging', 'production'],
+    // How to handle a build outside selector.builds. Defaults to warn.
+    buildValidation: 'warn',
     // Forbid selector envKey in dotenv files. Defaults to true.
     forbidInDotenv: true
   },
@@ -293,6 +302,32 @@ export default defineConfig({
       template: 'configs/.env.template'
     }
   },
+  checks: {
+    deploy: {
+      sources: {
+        api: { target: 'api' },
+        web: { target: 'web' }
+      },
+      rules: [
+        { type: 'required', source: 'api', key: 'DATABASE_URL' },
+        {
+          type: 'equals',
+          left: { source: 'web', key: 'VITE_API_ORIGIN' },
+          right: { source: 'api', key: 'PUBLIC_API_ORIGIN' },
+          transform: 'url-base'
+        }
+      ]
+    }
+  },
+  sync: {
+    webFromApi: {
+      from: { target: 'api' },
+      to: { target: 'web' },
+      mappings: [
+        { from: 'PUBLIC_API_ORIGIN', to: 'VITE_API_ORIGIN', transform: 'url-base' }
+      ]
+    }
+  },
   vault: {
     enabled: false,
     configFile: 'env-lane.vault.json',
@@ -313,6 +348,16 @@ The `env-lane sort` command employs a "convention over configuration" approach:
 3. **Build Inference**: If `selector.builds` is defined, `env-lane sort` uses the `dotenv.order` patterns to automatically find and sort build-specific files (e.g., `.env.production`) without manual mapping.
 
 Env-lane and vault config files both support TypeScript, JavaScript ESM, JavaScript CJS, and JSON formats.
+
+### Checks, Sync, and Parsing
+
+`env-lane check --target <target>` runs the built-in dotenv selector check. It verifies that the selector key, such as `ENV_BUILD`, is not committed to dotenv files and can require the selected override file to exist.
+
+`env-lane check --policy <name>` runs a configured env policy from `checks`. Policy checks support required variables, required-any groups, and equality checks with simple transforms such as lowercase normalization or URL-base normalization.
+
+`env-lane sync <name>` copies mapped values from one source to another dotenv file using the same env document writer used by sort and vault restore. It preserves comments, BOMs, and newline style where possible.
+
+Runtime injection and selector checks intentionally use `dotenv.parse()` so they match dotenv loading behavior. Editing commands such as sort, vault restore, and sync use env-lane's structured env document parser/writer so commented entries, duplicate entries, and surrounding comments can be handled consistently.
 
 ## Development Vault
 
@@ -351,6 +396,24 @@ env-lane vault encrypt env-lane.vault.json key.aes
 env-lane vault plan env-lane.vault.json key.aes
 env-lane vault decrypt env-lane.vault.json key.aes --dry-run
 env-lane vault decrypt env-lane.vault.json key.aes --yes
+```
+
+Optional local sync state provides git-like conflict detection without changing the encrypted vault record format. It is disabled unless you explicitly choose a directory, so env-lane will not silently create a system cache of environment data. The sync file stores per-key metadata and value hashes, not plaintext values:
+
+```bash
+env-lane vault encrypt env-lane.vault.json key.aes --sync-dir .env-lane-sync
+env-lane vault plan env-lane.vault.json key.aes --sync-dir .env-lane-sync
+env-lane vault decrypt env-lane.vault.json key.aes --sync-dir .env-lane-sync --conflicts ask
+```
+
+When both the local dotenv value and the latest vault record changed since the last sync baseline, env-lane reports a conflict. Use `--conflicts ask`, `--conflicts overwrite`, or `--conflicts ignore` on `vault encrypt` and `vault decrypt` to decide per item or apply a consistent policy. If no sync baseline exists yet, env-lane falls back to the dotenv file mtime when it can.
+
+Vault history can be compacted by age or by keeping only the latest records for each file/key pair. The latest record is preserved by default so the current restore result remains available:
+
+```bash
+env-lane vault prune env-lane.vault.json key.aes --keep-recent 3 --dry-run
+env-lane vault prune env-lane.vault.json key.aes --older-than-days 30 --yes
+env-lane vault prune env-lane.vault.json key.aes --file apps/api/.env.local --key API_TOKEN --keep-recent 2 --yes
 ```
 
 ## Local Development

@@ -11,7 +11,9 @@ env-lane packages
 env-lane files api --build production
 env-lane print api --build production --format json
 env-lane run api --build production -- pnpm start
-env-lane check api --build production --require-override
+env-lane check --target api --build production --require-override
+env-lane check --policy deploy --build production
+env-lane sync webFromApi --build production --dry-run
 env-lane sort env-lane.config.ts api production
 ```
 

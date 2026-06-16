@@ -13,6 +13,58 @@ const sortTargetSchema = z.object({
   files: z.record(z.string(), z.string().min(1)).optional(),
 })
 
+const valueSourceSchema = z
+  .object({
+    target: z.string().min(1).optional(),
+    file: z.string().min(1).optional(),
+    includeProcessEnv: z.boolean().optional(),
+    variant: z.string().min(1).optional(),
+  })
+  .refine((source) => Boolean(source.target || source.file), {
+    message: 'source must include target or file',
+  })
+
+const checkRuleSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('required'),
+    source: z.string().min(1),
+    key: z.string().min(1),
+    label: z.string().min(1).optional(),
+    severity: z.enum(['warn', 'error']).optional(),
+  }),
+  z.object({
+    type: z.literal('requiredAny'),
+    source: z.string().min(1),
+    keys: z.array(z.string().min(1)).min(1),
+    label: z.string().min(1).optional(),
+    severity: z.enum(['warn', 'error']).optional(),
+  }),
+  z.object({
+    type: z.literal('equals'),
+    left: z.object({ source: z.string().min(1), key: z.string().min(1) }),
+    right: z.object({ source: z.string().min(1), key: z.string().min(1) }),
+    label: z.string().min(1).optional(),
+    severity: z.enum(['warn', 'error']).optional(),
+    transform: z.enum(['trim', 'lowercase', 'uppercase', 'url-base', 'url-base-slash']).optional(),
+  }),
+])
+
+const syncSchema = z.object({
+  from: valueSourceSchema,
+  to: valueSourceSchema,
+  mappings: z
+    .array(
+      z.object({
+        from: z.string().min(1),
+        to: z.string().min(1),
+        transform: z
+          .enum(['trim', 'lowercase', 'uppercase', 'url-base', 'url-base-slash'])
+          .optional(),
+      }),
+    )
+    .min(1),
+})
+
 const schema = z
   .object({
     selector: z
@@ -20,6 +72,7 @@ const schema = z
         envKey: z.string().min(1).optional(),
         defaultBuild: z.string().min(1).optional(),
         builds: z.array(z.string().min(1)).optional(),
+        buildValidation: z.enum(['off', 'warn', 'error']).optional(),
         forbidInDotenv: z.boolean().optional(),
       })
       .optional(),
@@ -53,6 +106,16 @@ const schema = z
       })
       .optional(),
     sort: z.record(z.string(), sortTargetSchema).optional(),
+    checks: z
+      .record(
+        z.string(),
+        z.object({
+          sources: z.record(z.string(), valueSourceSchema),
+          rules: z.array(checkRuleSchema),
+        }),
+      )
+      .optional(),
+    sync: z.record(z.string(), syncSchema).optional(),
   })
   .passthrough()
 
@@ -107,6 +170,7 @@ export async function loadEnvLaneConfig(
       envKey: parsed.selector?.envKey ?? 'ENV_BUILD',
       defaultBuild: parsed.selector?.defaultBuild ?? 'local',
       builds: parsed.selector?.builds ?? [],
+      buildValidation: parsed.selector?.buildValidation ?? 'warn',
       forbidInDotenv: parsed.selector?.forbidInDotenv ?? true,
     },
     workspace: {
@@ -131,5 +195,7 @@ export async function loadEnvLaneConfig(
       format: parsed.output?.format ?? 'text',
     },
     sort: parsed.sort,
+    checks: parsed.checks,
+    sync: parsed.sync,
   }
 }
