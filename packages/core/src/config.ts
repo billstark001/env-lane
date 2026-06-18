@@ -11,6 +11,7 @@ const sortTargetSchema = z.object({
   file: z.string().min(1).optional(),
   template: z.string().min(1).optional(),
   files: z.record(z.string(), z.string().min(1)).optional(),
+  create: z.boolean().optional(),
 })
 
 const valueSourceSchema = z
@@ -91,6 +92,13 @@ const schema = z
         localOverrideFile: z.string().min(1).optional(),
         requireOverride: z.boolean().optional(),
         includeProcessEnv: z.boolean().optional(),
+        preserveBOM: z.boolean().optional(),
+        eol: z.enum(['auto', 'lf', 'crlf']).optional(),
+      })
+      .optional(),
+    cli: z
+      .object({
+        aliases: z.record(z.string(), z.string().min(1)).optional(),
       })
       .optional(),
     vault: z
@@ -103,6 +111,7 @@ const schema = z
     output: z
       .object({
         format: z.enum(['text', 'json', 'dotenv']).optional(),
+        prefix: z.boolean().optional(),
       })
       .optional(),
     sort: z.record(z.string(), sortTargetSchema).optional(),
@@ -146,23 +155,48 @@ export function readPnpmWorkspaceGlobs(rootDir: string): string[] {
     : []
 }
 
-export async function loadEnvLaneConfig(
-  options: { cwd?: string; configFile?: string } = {},
-): Promise<ResolvedEnvLaneConfig> {
+export interface LoadConfigOptionsWithC12 {
+  cwd?: string
+  configFile?: string
+  name: string
+  configFileRequired?: boolean
+}
+
+export async function loadConfigWithC12<T extends Record<string, any>>(
+  options: LoadConfigOptionsWithC12,
+): Promise<{ config: T; configFile?: string; rootDir: string }> {
   const rootDir = await findWorkspaceRoot(options.cwd)
   const configFileName = options.configFile
     ? path.relative(rootDir, path.resolve(rootDir, options.configFile))
     : undefined
-  const loaded = await c12LoadConfig<EnvLaneConfig>({
-    name: 'env-lane',
+
+  const loaded = await c12LoadConfig<T>({
+    name: options.name,
     cwd: rootDir,
     configFile: configFileName,
     packageJson: false,
     dotenv: false,
     rcFile: false,
     globalRc: false,
+    configFileRequired: options.configFileRequired ?? false,
   })
-  const parsed = schema.parse(loaded.config ?? {})
+
+  return {
+    config: loaded.config as T,
+    configFile: loaded.configFile,
+    rootDir,
+  }
+}
+
+export async function loadEnvLaneConfig(
+  options: { cwd?: string; configFile?: string } = {},
+): Promise<ResolvedEnvLaneConfig> {
+  const { config, rootDir } = await loadConfigWithC12<EnvLaneConfig>({
+    cwd: options.cwd,
+    configFile: options.configFile,
+    name: 'env-lane',
+  })
+  const parsed = schema.parse(config ?? {})
   const workspaceGlobs = parsed.workspace?.packageGlobs ?? readPnpmWorkspaceGlobs(rootDir) ?? []
   return {
     rootDir,
@@ -185,14 +219,22 @@ export async function loadEnvLaneConfig(
       localOverrideFile: parsed.dotenv?.localOverrideFile ?? '.env.local',
       requireOverride: parsed.dotenv?.requireOverride ?? false,
       includeProcessEnv: parsed.dotenv?.includeProcessEnv ?? true,
+      preserveBOM: parsed.dotenv?.preserveBOM ?? true,
+      eol: parsed.dotenv?.eol ?? 'auto',
     },
+    cli: parsed.cli
+      ? {
+          aliases: parsed.cli.aliases ?? {},
+        }
+      : undefined,
     vault: {
       enabled: parsed.vault?.enabled ?? false,
       disableUnsafeWarning: parsed.vault?.disableUnsafeWarning ?? false,
-      configFile: parsed.vault?.configFile ?? 'env-lane.vault.json',
+      configFile: parsed.vault?.configFile ?? 'env-lane.vault',
     },
     output: {
       format: parsed.output?.format ?? 'text',
+      prefix: parsed.output?.prefix ?? true,
     },
     sort: parsed.sort,
     checks: parsed.checks,

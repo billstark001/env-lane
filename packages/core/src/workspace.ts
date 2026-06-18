@@ -54,6 +54,7 @@ export async function listWorkspacePackagesForConfig(
   }
 
   for (const dir of entries.sort()) {
+    if (dir === config.rootDir) continue
     const packageJson = path.join(dir, 'package.json')
     if (!existsSync(packageJson)) continue
     const name = readPackageName(dir)
@@ -92,12 +93,32 @@ export function resolveTargetPackageFromList(
   target: string | undefined,
   config: ResolvedEnvLaneConfig,
   packages: WorkspacePackage[],
+  options: WorkspaceResolveOptions = {},
 ): WorkspacePackage {
-  const value = (target || config.workspace.defaultTarget || '').trim()
+  let value = (target || config.workspace.defaultTarget || '').trim()
+
+  if (!value && options.cwd) {
+    const absoluteCwd = path.resolve(options.cwd)
+    const matchedPkg = packages
+      .filter((pkg) => absoluteCwd === pkg.dir || absoluteCwd.startsWith(pkg.dir + path.sep))
+      .sort((a, b) => b.dir.length - a.dir.length)[0]
+    if (matchedPkg) {
+      value = matchedPkg.aliases[0] || matchedPkg.name || matchedPkg.relativeDir
+    }
+  }
 
   if (!value) {
     const nonRoot = packages.filter((pkg) => !pkg.isRoot)
     if (nonRoot.length === 0) return packages.find((pkg) => pkg.isRoot) ?? packages[0]
+
+    const rootPkg = packages.find((pkg) => pkg.isRoot)
+    if (rootPkg && options.cwd) {
+      const absoluteCwd = path.resolve(options.cwd)
+      if (absoluteCwd === path.resolve(rootPkg.dir)) {
+        return rootPkg
+      }
+    }
+
     throw new Error(`Missing target. Available targets: ${formatAvailableTargets(packages)}`)
   }
 
@@ -124,5 +145,5 @@ export async function resolveTargetPackage(
 ): Promise<WorkspacePackage> {
   const config = options.config ?? (await loadEnvLaneConfig(options))
   const packages = options.packages ?? (await listWorkspacePackagesForConfig(config))
-  return resolveTargetPackageFromList(target, config, packages)
+  return resolveTargetPackageFromList(target, config, packages, options)
 }

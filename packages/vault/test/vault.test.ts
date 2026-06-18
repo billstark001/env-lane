@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -105,7 +105,7 @@ describe('@env-lane/vault', () => {
     })
     expect(dec.filesWritten).toBe(1)
     expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe(
-      ['# header', 'export A=1', '', 'UNMANAGED=keep', 'C=local-only', 'B=two words', ''].join(
+      ['# header', 'export A=1', '', 'UNMANAGED=keep', 'C=local-only', '', 'B=two words', ''].join(
         '\n',
       ),
     )
@@ -424,5 +424,400 @@ describe('@env-lane/vault', () => {
       autoApprove: true,
     })
     expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=3\n')
+  })
+
+  it('implicitly resolves vault config from main config or default location', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-implicit-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\nB=2\n')
+
+    writeFileSync(
+      path.join(root, 'env-lane.config.json'),
+      JSON.stringify({
+        vault: {
+          configFile: 'custom-vault.json',
+        },
+      }),
+    )
+
+    writeFileSync(
+      path.join(root, 'custom-vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+
+    const originalCwd = process.cwd
+    process.cwd = () => root
+    try {
+      const enc = await encryptEnvFiles(undefined, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      })
+      expect(enc.setRecordsWritten).toBe(2)
+      expect(enc.storePath).toBe(path.resolve(root, '.vault/store.dat'))
+
+      writeFileSync(path.join(root, '.env'), 'A=changed\n')
+      const dec = await decryptEnvFiles(undefined, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        autoApprove: true,
+      })
+      expect(dec.filesWritten).toBe(1)
+      expect(readFileSync(path.join(root, '.env'), 'utf8')).toContain('A=1')
+    } finally {
+      process.cwd = originalCwd
+    }
+  })
+
+  it.each([
+    ['ts'],
+    ['js'],
+    ['json'],
+  ])('implicitly resolves vault config in different formats: %s', async (ext) => {
+    const root = path.join(tmpdir(), `env-lane-vault-formats-${ext}-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+
+    const vaultConfig = { envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }
+    writeFileSync(path.join(root, `env-lane.vault.${ext}`), configSource(ext, vaultConfig))
+
+    const originalCwd = process.cwd
+    process.cwd = () => root
+    try {
+      const enc = await encryptEnvFiles(undefined, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      })
+      expect(enc.setRecordsWritten).toBe(1)
+      expect(enc.storePath.endsWith('.vault/store.dat')).toBe(true)
+    } finally {
+      process.cwd = originalCwd
+    }
+  })
+
+  describe('unhappy paths', () => {
+    it('throws when key file does not exist or is empty', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-unhappy-key-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      const nonExistentKey = path.join(root, 'non-existent.key')
+      const emptyKey = path.join(root, 'empty.key')
+      writeFileSync(emptyKey, '')
+      writeFileSync(
+        path.join(root, 'env-lane.vault.json'),
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+
+      const originalCwd = process.cwd
+      process.cwd = () => root
+      try {
+        await expect(encryptEnvFiles(undefined, nonExistentKey)).rejects.toThrow(
+          /Key file does not exist/,
+        )
+
+        await expect(encryptEnvFiles(undefined, emptyKey)).rejects.toThrow(/Key file is empty/)
+      } finally {
+        process.cwd = originalCwd
+      }
+    })
+
+    it('throws when encrypted record is too short or decryption fails', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-unhappy-decrypt-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+      writeFileSync(path.join(root, '.env'), 'A=1\n')
+      writeFileSync(
+        path.join(root, 'vault.json'),
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+
+      await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      })
+
+      // 1. Wrong key file
+      const wrongKey = path.join(root, 'wrong.key')
+      writeFileSync(wrongKey, 'wrong-key-material')
+      await expect(
+        decryptEnvFiles(path.join(root, 'vault.json'), wrongKey, {
+          disableUnsafeWarning: true,
+          autoApprove: true,
+        }),
+      ).rejects.toThrow()
+
+      // 2. Encrypted record is too short
+      const storePath = path.join(root, '.vault/store.dat')
+      const { appendFileSync } = await import('node:fs')
+      appendFileSync(storePath, `${Buffer.from('too-short-payload').toString('base64')}\n`)
+      await expect(
+        decryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+          autoApprove: true,
+        }),
+      ).rejects.toThrow(/unreadable record/)
+    })
+
+    it('throws when loading non-existent vault config file', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-unhappy-config-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      const originalCwd = process.cwd
+      process.cwd = () => root
+      try {
+        await expect(
+          encryptEnvFiles('non-existent-vault.json', path.join(root, 'key.aes')),
+        ).rejects.toThrow(/cannot be resolved/)
+      } finally {
+        process.cwd = originalCwd
+      }
+    })
+
+    it('throws when loading invalid exclude configuration format', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-unhappy-exclude-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+
+      const configFile = path.join(root, 'vault.json')
+      // exclude must be array or object
+      writeFileSync(
+        configFile,
+        JSON.stringify({
+          envFiles: ['.env'],
+          exclude: 'invalid-string',
+        }),
+      )
+      await expect(
+        encryptEnvFiles(configFile, path.join(root, 'key.aes'), { disableUnsafeWarning: true }),
+      ).rejects.toThrow(/config.exclude must be an array or an object/)
+
+      // exclude array item must be object
+      writeFileSync(
+        configFile,
+        JSON.stringify({
+          envFiles: ['.env'],
+          exclude: ['invalid-array-item-string'],
+        }),
+      )
+      await expect(
+        encryptEnvFiles(configFile, path.join(root, 'key.aes'), { disableUnsafeWarning: true }),
+      ).rejects.toThrow(/must be an object/)
+    })
+
+    it('throws when sync state file is invalid or unsupported JSON', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-unhappy-sync-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+      writeFileSync(path.join(root, '.env'), 'A=1\n')
+      writeFileSync(
+        path.join(root, 'vault.json'),
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+
+      const syncDir = path.join(root, '.sync-state')
+      mkdirSync(syncDir, { recursive: true })
+
+      // 1. Invalid JSON/object
+      writeFileSync(path.join(syncDir, 'vault-sync-state.json'), '[]')
+      await expect(
+        encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+          syncDir,
+        }),
+      ).rejects.toThrow(/Invalid vault sync state file/)
+
+      // 2. Unsupported version
+      writeFileSync(
+        path.join(syncDir, 'vault-sync-state.json'),
+        JSON.stringify({ version: 2, entries: {} }),
+      )
+      await expect(
+        encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+          syncDir,
+        }),
+      ).rejects.toThrow(/Unsupported vault sync state file/)
+    })
+
+    it('throws when prune parameters are missing or invalid', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-unhappy-prune-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+      writeFileSync(
+        path.join(root, 'vault.json'),
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+
+      // 1. Both keepRecent and olderThanDays are missing
+      await expect(
+        pruneVaultHistory(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+        }),
+      ).rejects.toThrow(/History prune requires --keep-recent or --older-than-days/)
+
+      // 2. keepRecent is invalid
+      await expect(
+        pruneVaultHistory(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+          keepRecent: 0,
+        }),
+      ).rejects.toThrow(/keepRecent must be a positive integer/)
+
+      // 3. olderThanDays is invalid
+      await expect(
+        pruneVaultHistory(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+          olderThanDays: -1,
+        }),
+      ).rejects.toThrow(/olderThanDays must be a non-negative number/)
+    })
+
+    it('throws when interactive terminal is required in TTY check', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-unhappy-tty-${Date.now()}`)
+      const syncDir = path.join(root, '.sync-state')
+      mkdirSync(root, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+      writeFileSync(path.join(root, '.env'), 'A=1\n')
+      writeFileSync(
+        path.join(root, 'vault.json'),
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+
+      await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        syncDir,
+      })
+      writeFileSync(path.join(root, '.env'), 'A=2\n')
+      await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      })
+      writeFileSync(path.join(root, '.env'), 'A=3\n')
+
+      const originalIsTTY = process.stdin.isTTY
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true })
+      try {
+        await expect(
+          decryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+            disableUnsafeWarning: true,
+            syncDir,
+            autoApprove: false, // forces prompt
+          }),
+        ).rejects.toThrow(/Interactive terminal is required/)
+      } finally {
+        Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true })
+      }
+    })
+  })
+
+  describe('New Features: autoRemapPaths and allowUnmanaged', () => {
+    it('behaves correctly under autoRemapPaths and allowUnmanaged controls', async () => {
+      const root = path.join(tmpdir(), `env-lane-vault-features-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+
+      // Setup old config only managing .env
+      const configPath = path.join(root, 'vault.json')
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          envFiles: ['.env'],
+          outputDir: '.vault',
+          outputFile: 'store.dat',
+          autoRemapPaths: true,
+          allowUnmanaged: false,
+        }),
+      )
+
+      const envFile = path.join(root, '.env')
+      writeFileSync(envFile, 'A=1\n')
+
+      // 1. Encrypt .env
+      await encryptEnvFiles(configPath, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      })
+
+      // 2. Temporarily write configuration supporting unmanaged file
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          envFiles: ['.env', '.env.unmanaged'],
+          outputDir: '.vault',
+          outputFile: 'store.dat',
+          autoRemapPaths: true,
+          allowUnmanaged: false,
+        }),
+      )
+      const unmanagedFile = path.join(root, '.env.unmanaged')
+      writeFileSync(unmanagedFile, 'UNMANAGED=100\n')
+      await encryptEnvFiles(configPath, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      })
+
+      // Reset configuration back to only managing .env
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          envFiles: ['.env'],
+          outputDir: '.vault',
+          outputFile: 'store.dat',
+          autoRemapPaths: true,
+          allowUnmanaged: false,
+        }),
+      )
+      // Delete local unmanaged file
+      try {
+        existsSync(unmanagedFile) && require('node:fs').unlinkSync(unmanagedFile)
+      } catch {}
+
+      // 3. Decrypt with allowUnmanaged: false (should not restore unmanaged file)
+      await decryptEnvFiles(configPath, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        autoApprove: true,
+        allowUnmanaged: false,
+      })
+      expect(existsSync(unmanagedFile)).toBe(false)
+
+      // 4. Decrypt with allowUnmanaged: true (should restore unmanaged file)
+      await decryptEnvFiles(configPath, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        autoApprove: true,
+        allowUnmanaged: true,
+      })
+      expect(existsSync(unmanagedFile)).toBe(true)
+      expect(readFileSync(unmanagedFile, 'utf8')).toContain('UNMANAGED=100')
+
+      // 5. Test autoRemapPaths: false
+      const rootNew = path.join(root, 'new-workspace')
+      mkdirSync(rootNew, { recursive: true })
+      const remappedConfigPath = path.join(rootNew, 'vault-remap.json')
+      writeFileSync(
+        remappedConfigPath,
+        JSON.stringify({
+          envFiles: ['.env'],
+          outputDir: path.relative(rootNew, path.join(root, '.vault')),
+          outputFile: 'store.dat',
+        }),
+      )
+
+      const otherFile = path.join(rootNew, '.env')
+      try {
+        existsSync(otherFile) && require('node:fs').unlinkSync(otherFile)
+      } catch {}
+
+      // Decrypt with autoRemapPaths: true (should remap and restore to rootNew/.env)
+      await decryptEnvFiles(remappedConfigPath, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        autoApprove: true,
+        autoRemapPaths: true,
+      })
+      expect(existsSync(otherFile)).toBe(true)
+
+      // Decrypt with autoRemapPaths: false (should NOT restore to rootNew/.env)
+      try {
+        existsSync(otherFile) && require('node:fs').unlinkSync(otherFile)
+      } catch {}
+
+      await decryptEnvFiles(remappedConfigPath, path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        autoApprove: true,
+        autoRemapPaths: false,
+      })
+      expect(existsSync(otherFile)).toBe(false)
+    })
   })
 })

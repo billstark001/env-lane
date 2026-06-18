@@ -294,7 +294,7 @@ function emitStructuredChange(
   command: 'encrypt' | 'decrypt' | 'sort',
   payload: Record<string, string | number | boolean | undefined>,
 ): void {
-  getLogger().info(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
+  getLogger().info(`[env-lane:vault] ${JSON.stringify({ command, ...payload })}`)
 }
 
 function getCompiledExcludeRules(config: VaultConfig): CompiledExcludeRule[] {
@@ -339,6 +339,9 @@ function remapManagedStoreFilePath(
   config: VaultConfig,
 ): { filePath: string; aliased: boolean } {
   const resolvedFilePath = path.resolve(filePath)
+  if (!config.autoRemapPaths) {
+    return { filePath: resolvedFilePath, aliased: false }
+  }
   const aliases = getManagedFileAliases(config)
   if (aliases.some((alias) => alias.filePath === resolvedFilePath)) {
     return { filePath: resolvedFilePath, aliased: false }
@@ -525,7 +528,11 @@ function buildRestorePlanFromState(
   )
   let excludedRecordsIgnored = 0
 
-  for (const filePath of config.envFiles) {
+  const targetFiles = config.allowUnmanaged
+    ? [...new Set([...config.envFiles, ...unmanagedStoreFiles])]
+    : config.envFiles
+
+  for (const filePath of targetFiles) {
     const { desired, excludedRecordsIgnored: fileExcludedRecordsIgnored } = desiredRecordsForFile(
       config,
       filePath,
@@ -617,55 +624,10 @@ function printRestorePreview(plan: RestorePlan): void {
   )
 }
 
-async function confirmRestore(
-  options: { autoApprove?: boolean; dryRun?: boolean } = {},
-): Promise<boolean> {
-  const logger = getLogger()
-  if (options.dryRun) return false
-  if (options.autoApprove) {
-    logger.log('[env-lane:vault] Auto-approved restore.')
-    return true
-  }
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error(
-      'Restore confirmation requires an interactive terminal. Re-run with --yes to apply or --dry-run to preview.',
-    )
-  }
-  logger.write('[env-lane:vault] Press y to apply restore, any other key to cancel: ')
-  return new Promise((resolve) => {
-    const stdin = process.stdin
-    const cleanup = () => {
-      stdin.off('data', onData)
-      stdin.pause()
-      if (typeof stdin.setRawMode === 'function') stdin.setRawMode(false)
-    }
-    const onData = (chunk: Buffer) => {
-      cleanup()
-      logger.write('\n')
-      const input = String(chunk)
-      if (input === '\u0003') {
-        resolve(false)
-        return
-      }
-      resolve(
-        input
-          .replace(/[\r\n]+/g, '')
-          .trim()
-          .toLowerCase() === 'y',
-      )
-    }
-    stdin.resume()
-    if (typeof stdin.setRawMode === 'function') stdin.setRawMode(true)
-    stdin.once('data', onData)
-  })
-}
-
-async function promptChoice(prompt: string, choices: string[]): Promise<string> {
+async function readSingleKey(prompt: string, choices?: string[]): Promise<string> {
   const logger = getLogger()
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error(
-      'Interactive vault conflict handling requires a TTY. Re-run with --conflicts overwrite or --conflicts ignore.',
-    )
+    throw new Error('Interactive terminal is required.')
   }
   logger.write(prompt)
   return new Promise((resolve) => {
@@ -676,26 +638,48 @@ async function promptChoice(prompt: string, choices: string[]): Promise<string> 
       if (typeof stdin.setRawMode === 'function') stdin.setRawMode(false)
     }
     const onData = (chunk: Buffer) => {
-      if (String(chunk) === '\u0003') {
+      const input = String(chunk)
+      if (input === '\u0003') {
         cleanup()
         logger.write('\n')
-        resolve('i')
+        resolve('\u0003')
         return
       }
-      const input = String(chunk)
+      const char = input
         .replace(/[\r\n]+/g, '')
         .trim()
         .toLowerCase()
-      if (choices.includes(input)) {
+      if (!choices || choices.includes(char)) {
         cleanup()
         logger.write('\n')
-        resolve(input)
+        resolve(char)
       }
     }
     stdin.resume()
     if (typeof stdin.setRawMode === 'function') stdin.setRawMode(true)
     stdin.on('data', onData)
   })
+}
+
+async function confirmRestore(
+  options: { autoApprove?: boolean; dryRun?: boolean } = {},
+): Promise<boolean> {
+  const logger = getLogger()
+  if (options.dryRun) return false
+  if (options.autoApprove) {
+    logger.log('[env-lane:vault] Auto-approved restore.')
+    return true
+  }
+  const key = await readSingleKey(
+    '[env-lane:vault] Press y to apply restore, any other key to cancel: ',
+  )
+  return key === 'y'
+}
+
+async function promptChoice(prompt: string, choices: string[]): Promise<string> {
+  const key = await readSingleKey(prompt, choices)
+  if (key === '\u0003') return 'i'
+  return key
 }
 
 async function resolveConflict(
@@ -747,22 +731,24 @@ function applyRestoreFile(
       update: 'all',
       matchCommented: false,
       sortAdditions: true,
-      blankLineBeforeAdditions: false,
     },
   ).changed
 }
 
 export async function encryptEnvFiles(
-  configPath: string,
+  configPath: string | undefined,
   keyFilePath: string,
   options: {
     disableUnsafeWarning?: boolean
     ignoreCorruptRecords?: boolean
     syncDir?: string
     conflictStrategy?: VaultConflictStrategy
+    vaultConfigFile?: string
+    autoRemapPaths?: boolean
+    allowUnmanaged?: boolean
   } = {},
 ) {
-  const config = await loadVaultConfig(configPath)
+  const config = await loadVaultConfig(configPath, options)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
@@ -898,15 +884,18 @@ export async function encryptEnvFiles(
 }
 
 export async function buildRestorePlan(
-  configPath: string,
+  configPath: string | undefined,
   keyFilePath: string,
   options: {
     disableUnsafeWarning?: boolean
     ignoreCorruptRecords?: boolean
     syncDir?: string
+    vaultConfigFile?: string
+    autoRemapPaths?: boolean
+    allowUnmanaged?: boolean
   } = {},
 ) {
-  const config = await loadVaultConfig(configPath)
+  const config = await loadVaultConfig(configPath, options)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
@@ -920,7 +909,7 @@ export async function buildRestorePlan(
 }
 
 export async function decryptEnvFiles(
-  configPath: string,
+  configPath: string | undefined,
   keyFilePath: string,
   options: {
     dryRun?: boolean
@@ -929,9 +918,12 @@ export async function decryptEnvFiles(
     ignoreCorruptRecords?: boolean
     syncDir?: string
     conflictStrategy?: VaultConflictStrategy
+    vaultConfigFile?: string
+    autoRemapPaths?: boolean
+    allowUnmanaged?: boolean
   } = {},
 ) {
-  const config = await loadVaultConfig(configPath)
+  const config = await loadVaultConfig(configPath, options)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
@@ -951,7 +943,7 @@ export async function decryptEnvFiles(
       `[env-lane:vault] Remapped ${plan.aliasedRecords} store record(s) from previous checkout paths to current env files.`,
     )
   }
-  if (plan.unmanagedStoreFiles.length > 0) {
+  if (!config.allowUnmanaged && plan.unmanagedStoreFiles.length > 0) {
     logger.warn(
       `[env-lane:vault] Warning: ignored ${plan.unmanagedStoreFiles.length} store file(s) not listed in config.envFiles.`,
     )
@@ -1107,7 +1099,7 @@ function shouldPruneCandidate(
 }
 
 export async function pruneVaultHistory(
-  configPath: string,
+  configPath: string | undefined,
   keyFilePath: string,
   options: {
     filePath?: string
@@ -1119,6 +1111,7 @@ export async function pruneVaultHistory(
     autoApprove?: boolean
     disableUnsafeWarning?: boolean
     ignoreCorruptRecords?: boolean
+    vaultConfigFile?: string
   } = {},
 ) {
   if (options.keepRecent === undefined && options.olderThanDays === undefined) {
@@ -1136,7 +1129,7 @@ export async function pruneVaultHistory(
   ) {
     throw new Error('olderThanDays must be a non-negative number.')
   }
-  const config = await loadVaultConfig(configPath)
+  const config = await loadVaultConfig(configPath, options)
   warnUnsafeVault({
     disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
   })
@@ -1214,6 +1207,7 @@ export async function runVault(
     ignoreCorruptRecords?: boolean
     syncDir?: string
     conflictStrategy?: VaultConflictStrategy
+    vaultConfigFile?: string
   } = {},
 ) {
   return mode === 'encrypt'

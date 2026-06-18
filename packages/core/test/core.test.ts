@@ -1,18 +1,33 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   checkDotenvSelector,
   listEnvFiles,
   listWorkspacePackages,
+  normalizeEnvFileVariant,
   resolveInjectedEnv,
   resolveTargetPackage,
   runEnvCheck,
   runEnvSync,
+  setEnvDocumentValues,
+  setLogger,
   sortEnvFile,
   sortEnvFilesFromConfig,
 } from '../src/index.js'
+
+beforeAll(() => {
+  setLogger({
+    log: () => {},
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    success: () => {},
+    debug: () => {},
+    write: () => {},
+  })
+})
 
 function fixture(): string {
   const root = path.join(tmpdir(), `env-lane-${Date.now()}-${Math.random().toString(16).slice(2)}`)
@@ -345,5 +360,332 @@ describe('@env-lane/core', () => {
     expect(readFileSync(path.join(root, 'packages/web/.env.production'), 'utf8')).toContain(
       'VITE_IPFS_GATEWAY_BASE=https://ipfs.example/',
     )
+  })
+
+  it('skips non-existent files when create is false in sort options', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-skip-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    const envFile = path.join(root, '.env')
+    const templateFile = path.join(root, '.env.example')
+    writeFileSync(templateFile, 'A=\n')
+
+    const result = await sortEnvFile(envFile, templateFile, { create: false })
+    expect(result.applied).toBe(false)
+    expect(existsSync(envFile)).toBe(false)
+  })
+
+  it('deduplicates jobs to avoid sorting the same file multiple times', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-dedup-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    const configFile = path.join(root, 'env-lane.config.json')
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        selector: { builds: ['local', 'production'] },
+        dotenv: { order: ['.env'] },
+        sort: {
+          custom: {
+            baseDir: root,
+            file: '.env',
+            template: '.env.example',
+          },
+        },
+      }),
+    )
+    writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
+    writeFileSync(path.join(root, '.env.example'), 'A=\nB=\n')
+
+    const result = await sortEnvFilesFromConfig(configFile, 'custom', 'all')
+    expect(result.count).toBe(1)
+  })
+
+  it('correctly deduplicates root package even if matched by workspace globs', async () => {
+    const root = path.join(tmpdir(), `env-lane-root-glob-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
+    writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    const packages = await listWorkspacePackages({ cwd: root })
+    expect(packages.length).toBe(1)
+    expect(packages[0]).toMatchObject({ isRoot: true, relativeDir: '.' })
+  })
+
+  it('resolves target from cwd when no target is specified', async () => {
+    const root = fixture()
+    const apiPkg = await resolveTargetPackage(undefined, { cwd: path.join(root, 'apps/api') })
+    expect(apiPkg.name).toBe('@acme/api')
+
+    const rootPkg = await resolveTargetPackage(undefined, { cwd: root })
+    expect(rootPkg.isRoot).toBe(true)
+  })
+
+  it('implicitly resolves and sorts env files from default config file', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-implicit-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    const configFile = path.join(root, 'env-lane.config.json')
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        selector: { builds: ['local', 'production'] },
+        dotenv: { order: ['.env'] },
+        sort: {
+          custom: {
+            baseDir: root,
+            file: '.env',
+            template: '.env.example',
+          },
+        },
+      }),
+    )
+    writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
+    writeFileSync(path.join(root, '.env.example'), 'A=\nB=\n')
+
+    const originalCwd = process.cwd
+    process.cwd = () => root
+    try {
+      const result = await sortEnvFilesFromConfig(undefined, 'custom', 'all')
+      expect(result.count).toBe(1)
+      expect(result.applied).toBe(true)
+      expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=1\nB=2\n')
+    } finally {
+      process.cwd = originalCwd
+    }
+  })
+
+  describe('unhappy paths', () => {
+    it('throws when build name is empty or invalid', async () => {
+      const root = fixture()
+      await expect(
+        resolveInjectedEnv({ cwd: root, build: '', includeProcessEnv: false }),
+      ).rejects.toThrow('Build name is empty.')
+      await expect(
+        resolveInjectedEnv({ cwd: root, build: 'prod/build', includeProcessEnv: false }),
+      ).rejects.toThrow(/Invalid build name/)
+      await expect(
+        resolveInjectedEnv({ cwd: root, build: 'a space', includeProcessEnv: false }),
+      ).rejects.toThrow(/Invalid build name/)
+    })
+
+    it('warns when build name validation mode is warn and not listed', async () => {
+      const root = fixture()
+      writeFileSync(
+        path.join(root, 'env-lane.config.ts'),
+        `export default {
+          workspace: { aliases: { api: '@acme/api' } },
+          selector: { builds: ['production'], buildValidation: 'warn' },
+        };\n`,
+      )
+      const originalLogger = (globalThis as any).__env_lane_logger__
+      const warnMock = vi.fn()
+      setLogger({
+        log: () => {},
+        info: () => {},
+        warn: warnMock,
+        error: () => {},
+        success: () => {},
+        debug: () => {},
+        write: () => {},
+      })
+      try {
+        const build = await resolveInjectedEnv({
+          cwd: root,
+          target: 'api',
+          build: 'staging',
+          includeProcessEnv: false,
+        })
+        expect(build.build).toBe('staging')
+        expect(warnMock).toHaveBeenCalledWith(
+          expect.stringContaining('is not listed in selector.builds'),
+        )
+      } finally {
+        if (originalLogger) {
+          setLogger(originalLogger)
+        }
+      }
+    })
+
+    it('throws when target package resolution fails', async () => {
+      const root = fixture()
+      await expect(resolveTargetPackage('non-existent-pkg', { cwd: root })).rejects.toThrow(
+        /Unknown target/,
+      )
+
+      const { loadEnvLaneConfig } = await import('../src/index.js')
+      const config = await loadEnvLaneConfig({ cwd: root })
+      await expect(
+        resolveTargetPackage(undefined, { cwd: '/some/external/path', config }),
+      ).rejects.toThrow(/Missing target/)
+    })
+
+    it('throws when required dotenv file is missing', async () => {
+      const root = fixture()
+      // apps/api/.env exists, but production is .env.production. If we require staging:
+      await expect(
+        resolveInjectedEnv({
+          cwd: root,
+          target: 'api',
+          build: 'staging',
+          requireOverride: true,
+          includeProcessEnv: false,
+        }),
+      ).rejects.toThrow(/Missing required env file/)
+    })
+
+    it('throws when selector key is present in dotenv file', async () => {
+      const root = fixture()
+      writeFileSync(path.join(root, 'apps/api/.env'), 'A=1\nENV_BUILD=production\n')
+      await expect(
+        resolveInjectedEnv({
+          cwd: root,
+          target: 'api',
+          build: 'production',
+          includeProcessEnv: false,
+        }),
+      ).rejects.toThrow(/is a selector and must not be stored in dotenv files/)
+    })
+
+    it('sets env values and removes duplicate entries using setEnvDocumentValues', () => {
+      const tempFile = path.join(tmpdir(), `env-doc-set-test-${Date.now()}.env`)
+      writeFileSync(tempFile, 'A=1\nB=2\nA=3\n')
+      const result = setEnvDocumentValues(tempFile, [
+        ['B', '20'],
+        ['C', '30'],
+      ])
+
+      expect(result.changed).toBe(true)
+      const content = readFileSync(tempFile, 'utf8')
+      expect(content).toContain('B=20')
+      expect(content).toContain('C=30')
+    })
+
+    it('throws on invalid env file variant syntax during sync', async () => {
+      const root = fixture()
+      writeFileSync(
+        path.join(root, 'env-lane.config.ts'),
+        `export default {
+          sync: {
+            invalidVariantSync: {
+              from: { target: 'api' },
+              to: { target: 'api', variant: 'invalid/variant' },
+              mappings: [{ from: 'A', to: 'B' }]
+            }
+          }
+        };\n`,
+      )
+      await expect(runEnvSync('invalidVariantSync', { cwd: root })).rejects.toThrow(
+        /Invalid sync target variant/,
+      )
+    })
+
+    it('throws when sort config or template does not exist', async () => {
+      const root = fixture()
+      await expect(
+        sortEnvFilesFromConfig(path.join(root, 'non-existent-config.json')),
+      ).rejects.toThrow(/Sort config does not exist/)
+
+      const envFile = path.join(root, 'apps/api/.env')
+      const missingTemplate = path.join(root, 'apps/api/non-existent-template.env')
+      await expect(sortEnvFile(envFile, missingTemplate)).rejects.toThrow(
+        /Template env file does not exist/,
+      )
+    })
+
+    it('throws on unknown sort key selector', async () => {
+      const root = fixture()
+      const configFile = path.join(root, 'env-lane.config.ts')
+      await expect(sortEnvFilesFromConfig(configFile, 'non-existent-key', 'all')).rejects.toThrow(
+        /Unknown sort key/,
+      )
+    })
+
+    it('throws when sort files uses reserved word default', async () => {
+      const root = fixture()
+      const configFile = path.join(root, 'invalid-sort-config.json')
+      writeFileSync(
+        configFile,
+        JSON.stringify({
+          sort: {
+            custom: {
+              baseDir: root,
+              file: '.env',
+              template: '.env.example',
+              files: { default: '.env.prod' },
+            },
+          },
+        }),
+      )
+      await expect(sortEnvFilesFromConfig(configFile, 'custom', 'all')).rejects.toThrow(
+        /must not use reserved suffix "default"/,
+      )
+    })
+
+    it('throws on unknown env check or sync names', async () => {
+      const root = fixture()
+      await expect(runEnvCheck('non-existent-check', { cwd: root })).rejects.toThrow(
+        /Unknown env check/,
+      )
+      await expect(runEnvSync('non-existent-sync', { cwd: root })).rejects.toThrow(
+        /Unknown env sync/,
+      )
+    })
+
+    it('throws when sync target has neither target nor file', async () => {
+      const root = fixture()
+      writeFileSync(
+        path.join(root, 'env-lane.config.ts'),
+        `export default {
+          sync: {
+            invalidSync: {
+              from: { target: 'api' },
+              to: {}, // empty
+              mappings: [{ from: 'A', to: 'B' }]
+            }
+          }
+        };\n`,
+      )
+      await expect(runEnvSync('invalidSync', { cwd: root })).rejects.toThrow(
+        /source must include target or file/,
+      )
+    })
+  })
+
+  describe('normalizeEnvFileVariant without legacy alias mappings', () => {
+    it('returns valid variants directly including default', () => {
+      expect(normalizeEnvFileVariant('production')).toBe('production')
+      expect(normalizeEnvFileVariant('default')).toBe('default')
+      expect(normalizeEnvFileVariant('base')).toBe('base')
+      expect(normalizeEnvFileVariant('root')).toBe('root')
+      expect(normalizeEnvFileVariant(undefined)).toBe('')
+    })
+
+    it('throws on invalid variant names containing dots or slashes', () => {
+      expect(() => normalizeEnvFileVariant('.env.production')).toThrow(/Invalid env file variant/)
+      expect(() => normalizeEnvFileVariant('invalid/variant')).toThrow(/Invalid env file variant/)
+    })
+  })
+
+  describe('BOM and EOL configuration feature', () => {
+    it('applies preserveBOM and eol configurations when patching documents', async () => {
+      const root = path.join(tmpdir(), `env-lane-bom-eol-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      const envFile = path.join(root, '.env')
+
+      // Initialize with BOM and LF
+      writeFileSync(envFile, '\uFEFFA=1\n')
+
+      // Force LF and strip BOM (preserveBOM: false)
+      setEnvDocumentValues(envFile, [['B', '2']], { preserveBOM: false, eol: 'lf' })
+      const lfContent = readFileSync(envFile, 'utf8')
+      expect(lfContent.startsWith('\uFEFF')).toBe(false)
+      expect(lfContent).toBe('A=1\n\nB=2\n')
+
+      // Re-initialize with BOM to test preservation
+      writeFileSync(envFile, '\uFEFFA=1\n\nB=2\n')
+
+      // Force CRLF and preserve BOM (preserveBOM: true)
+      setEnvDocumentValues(envFile, [['C', '3']], { preserveBOM: true, eol: 'crlf' })
+      const crlfContent = readFileSync(envFile, 'utf8')
+      expect(crlfContent.startsWith('\uFEFF')).toBe(true)
+      expect(crlfContent).toContain('A=1\r\n\r\nB=2\r\n\r\nC=3\r\n')
+    })
   })
 })

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { getLogger, setLogger } from '@env-lane/core'
+import { getLogger, loadEnvLaneConfig, setLogger } from '@env-lane/core'
 import { Command } from 'commander'
 import { createConsola } from 'consola'
+import packageJson from '../package.json' with { type: 'json' }
 import { registerCoreCommands } from './commands/core.js'
 import { registerSortCommands } from './commands/sort.js'
 import { type CliContext, createCliContext } from './context.js'
@@ -23,12 +24,11 @@ const program = new Command()
 program
   .name('env-lane')
   .description('Workspace-aware dotenv injection and development vault tooling.')
-  .version('0.1.0')
-  .option('--format <format>', 'output format (text, json, dotenv)')
-  .option('--json', 'use json output format (shorthand for --format json)')
+  .version(packageJson.version)
 program.enablePositionalOptions()
 
 const ctx = createCliContext(program, consola)
+ctx.addCommonOptions(program)
 
 async function loadVaultCliModule(): Promise<VaultCliModule | undefined> {
   try {
@@ -64,6 +64,21 @@ async function registerOptionalVaultCommands(command: Command, cliContext: CliCo
 registerCoreCommands(program, ctx)
 registerSortCommands(program, ctx)
 await registerOptionalVaultCommands(program, ctx)
+
+// Apply custom CLI command aliases
+try {
+  const config = await loadEnvLaneConfig()
+  if (config.cli?.aliases) {
+    for (const [cmdName, alias] of Object.entries(config.cli.aliases)) {
+      const cmd = program.commands.find((c) => c.name() === cmdName)
+      if (cmd) {
+        cmd.alias(alias)
+      }
+    }
+  }
+} catch {
+  // ignore config load errors here
+}
 
 program.parseAsync().catch((error: unknown) => {
   getLogger().error(error instanceof Error ? error.message : String(error))

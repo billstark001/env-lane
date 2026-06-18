@@ -5,5 +5,4 @@ dist
 !.env.example
 *.tsbuildinfo
 .DS_Store
-legacy/
 .pnpm-store

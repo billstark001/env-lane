@@ -67,11 +67,15 @@ function portable(file: string): string {
   return file.replace(/\\/g, '/').replaceAll(path.sep, '/')
 }
 
-async function loadSortConfig(configPath: string): Promise<EnvSortConfig> {
-  const abs = path.resolve(configPath)
-  if (!existsSync(abs)) throw new Error(`Sort config does not exist: ${abs}`)
-
-  const config = await loadEnvLaneConfig({ cwd: path.dirname(abs), configFile: abs })
+async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
+  let config: ResolvedEnvLaneConfig
+  if (configPath) {
+    const abs = path.resolve(configPath)
+    if (!existsSync(abs)) throw new Error(`Sort config does not exist: ${abs}`)
+    config = await loadEnvLaneConfig({ cwd: path.dirname(abs), configFile: abs })
+  } else {
+    config = await loadEnvLaneConfig({ cwd: process.cwd() })
+  }
   const packages = await listWorkspacePackagesForConfig(config)
   const sort: Record<string, EnvSortTargetConfig> = { ...config.sort }
 
@@ -114,7 +118,7 @@ function emitCommandChange(
   command: 'sort',
   payload: Record<string, string | number | boolean | undefined>,
 ): void {
-  getLogger().info(`[env-store-change] ${JSON.stringify({ command, ...payload })}`)
+  getLogger().info(`[env-lane] ${JSON.stringify({ command, ...payload })}`)
 }
 
 function buildEnvSortLayout(envDoc: ReturnType<typeof loadEnvDocument>) {
@@ -273,7 +277,11 @@ function commentOutEnvEntryLine(line: string): string {
   return `${indent}# ${line.slice(indent.length)}`
 }
 
-export function buildEnvSortPlan(envFilePath: string, templateFilePath: string): EnvSortPlan {
+export function buildEnvSortPlan(
+  envFilePath: string,
+  templateFilePath: string,
+  options?: { preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' },
+): EnvSortPlan {
   const resolvedEnvFilePath = path.resolve(envFilePath)
   const resolvedTemplateFilePath = path.resolve(templateFilePath)
   if (!existsSync(resolvedTemplateFilePath)) {
@@ -347,7 +355,7 @@ export function buildEnvSortPlan(envFilePath: string, templateFilePath: string):
   const currentContent = envDoc.exists
     ? renderEnvTextDocument(envDoc.document, envDoc.document.lines)
     : ''
-  const nextContent = renderEnvTextDocument(renderDocument, renderedLines)
+  const nextContent = renderEnvTextDocument(renderDocument, renderedLines, options)
   const summary = operations.reduce(
     (acc, operation) => {
       if (operation.action === 'move') acc.movedCount++
@@ -377,8 +385,29 @@ export function buildEnvSortPlan(envFilePath: string, templateFilePath: string):
   }
 }
 
-export async function sortEnvFile(envFilePath: string, templateFilePath: string) {
-  const plan = buildEnvSortPlan(envFilePath, templateFilePath)
+export async function sortEnvFile(
+  envFilePath: string,
+  templateFilePath: string,
+  options?: { create?: boolean; preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' },
+) {
+  const create = options?.create ?? true
+  const resolvedEnvFilePath = path.resolve(envFilePath)
+  const resolvedTemplateFilePath = path.resolve(templateFilePath)
+
+  if (!create && !existsSync(resolvedEnvFilePath)) {
+    return {
+      applied: false,
+      filePath: resolvedEnvFilePath,
+      templateFilePath: resolvedTemplateFilePath,
+      movedCount: 0,
+      insertedCommentedCount: 0,
+      appendedExtraCount: 0,
+      appendedDuplicateCount: 0,
+      groupedDuplicateCount: 0,
+    }
+  }
+
+  const plan = buildEnvSortPlan(resolvedEnvFilePath, resolvedTemplateFilePath, options)
   if (!plan.changed) {
     return {
       applied: false,
@@ -432,9 +461,10 @@ function interpolateSortFilePattern(pattern: string, envSuffix: string): string 
 }
 
 export async function sortEnvFilesFromConfig(
-  configPath: string,
+  configPath?: string,
   keyArg = 'all',
   envSuffixArg = 'all',
+  options?: { create?: boolean; preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' },
 ) {
   const config = await loadSortConfig(configPath)
   const keySelector = normalizeSortSelector(keyArg, 'all', 'key')
@@ -445,6 +475,7 @@ export async function sortEnvFilesFromConfig(
   if (selectedTargets.length === 0) throw new Error(`Unknown sort key: ${keySelector}`)
 
   const results = []
+  const seenFiles = new Set<string>()
   for (const [key, target] of selectedTargets) {
     const baseDir = target.baseDir ?? config.baseDir
     const file = target.file ?? '.env'
@@ -480,7 +511,17 @@ export async function sortEnvFilesFromConfig(
                 path.resolve(targetDir, `${path.basename(defaultFilePath)}.${envSuffixSelector}`),
             ],
           ]
-    for (const [, file] of jobs) results.push(await sortEnvFile(file, templateFilePath))
+    for (const [, file] of jobs) {
+      const absFile = path.resolve(file)
+      if (seenFiles.has(absFile)) continue
+      seenFiles.add(absFile)
+      const mergedOptions = {
+        create: options?.create ?? target.create,
+        preserveBOM: options?.preserveBOM ?? config.dotenv.preserveBOM,
+        eol: options?.eol ?? config.dotenv.eol,
+      }
+      results.push(await sortEnvFile(absFile, templateFilePath, mergedOptions))
+    }
   }
   return { applied: results.some((result) => result.applied), count: results.length, results }
 }

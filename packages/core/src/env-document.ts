@@ -65,10 +65,16 @@ export function createEnvTextDocument(content: string): EnvTextDocument {
   return { hasBom, eol, hasFinalNewline, lines }
 }
 
-export function renderEnvTextDocument(document: EnvTextDocument, lines: string[]): string {
-  const body = lines.join(document.eol)
-  const withNewline = lines.length > 0 && document.hasFinalNewline ? `${body}${document.eol}` : body
-  return document.hasBom ? `\uFEFF${withNewline}` : withNewline
+export function renderEnvTextDocument(
+  document: EnvTextDocument,
+  lines: string[],
+  options: { preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' } = {},
+): string {
+  const finalEol = options.eol === 'lf' ? '\n' : options.eol === 'crlf' ? '\r\n' : document.eol
+  const body = lines.join(finalEol)
+  const withNewline = lines.length > 0 && document.hasFinalNewline ? `${body}${finalEol}` : body
+  const keepBom = (options.preserveBOM ?? true) && document.hasBom
+  return keepBom ? `\uFEFF${withNewline}` : withNewline
 }
 
 export function parseEnvLine(line: string): EnvLineData {
@@ -181,8 +187,9 @@ export function writeEnvDocumentLines(
   filePath: string,
   document: EnvTextDocument,
   lines: string[],
+  options: { preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' } = {},
 ): boolean {
-  return writeEnvDocumentContent(filePath, renderEnvTextDocument(document, lines))
+  return writeEnvDocumentContent(filePath, renderEnvTextDocument(document, lines, options))
 }
 
 export function applyEnvDocumentPatches(
@@ -195,6 +202,8 @@ export function applyEnvDocumentPatches(
     removeDuplicateEntries?: boolean
     sortAdditions?: boolean
     blankLineBeforeAdditions?: boolean
+    preserveBOM?: boolean
+    eol?: 'auto' | 'lf' | 'crlf'
   } = {},
 ): EnvDocumentPatchResult {
   const envDoc = loadEnvDocument(filePath)
@@ -273,7 +282,10 @@ export function applyEnvDocumentPatches(
     addedKeys.push(patch.key)
   }
 
-  const changed = writeEnvDocumentLines(filePath, envDoc.document, nextLines)
+  const changed = writeEnvDocumentLines(filePath, envDoc.document, nextLines, {
+    preserveBOM: options.preserveBOM,
+    eol: options.eol,
+  })
   if (!changed) {
     return {
       changed: false,
@@ -300,6 +312,7 @@ export function applyEnvDocumentPatches(
 export function setEnvDocumentValues(
   filePath: string,
   values: Iterable<[string, string]>,
+  options: { preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' } = {},
 ): EnvDocumentWriteResult {
   const result = applyEnvDocumentPatches(
     filePath,
@@ -308,6 +321,8 @@ export function setEnvDocumentValues(
       update: 'last',
       matchCommented: true,
       removeDuplicateEntries: true,
+      preserveBOM: options.preserveBOM,
+      eol: options.eol,
     },
   )
   return {

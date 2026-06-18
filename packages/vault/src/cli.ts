@@ -10,11 +10,18 @@ export interface VaultCliContext {
     json?: boolean
     config?: string
     cwd?: string
+    prefix?: boolean
   }): Promise<EnvLaneOutputFormat>
-}
-
-function mergedOptions(ctx: VaultCliContext, opts: Record<string, unknown>) {
-  return { ...ctx.getGlobalOptions(), ...opts } as Record<string, any>
+  mergeOptions(opts: Record<string, unknown>): Record<string, any>
+  formatAndLog<T>(
+    result: T,
+    options: {
+      format: EnvLaneOutputFormat
+      text: (res: T) => void
+      dotenv?: (res: T) => void
+      json?: (res: T) => any
+    },
+  ): void
 }
 
 function parseVaultConflictStrategy(value: string | undefined) {
@@ -29,95 +36,116 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
     .description('Optional unsafe development vault helpers. Requires @env-lane/vault.')
 
   ctx
-    .addCommonOptions(vault.command('encrypt <config> <keyFile>'))
+    .addCommonOptions(vault.command('encrypt <keyFile>'))
     .option('--sync-dir <dir>', 'enable local vault sync state in the manually specified directory')
+    .option('--vault-config <file>', 'vault configuration file')
+    .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
     .option(
       '--conflicts <mode>',
       'when --sync-dir detects a conflict: ask, overwrite, or ignore',
       'ask',
     )
-    .action(async (config, keyFile, opts) => {
-      const allOpts = mergedOptions(ctx, opts)
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
-      const result = await encryptEnvFiles(config, keyFile, {
+      const result = await encryptEnvFiles(allOpts.config, keyFile, {
         syncDir: allOpts.syncDir,
+        vaultConfigFile: allOpts.vaultConfig,
         conflictStrategy: parseVaultConflictStrategy(allOpts.conflicts),
+        autoRemapPaths: allOpts.autoRemap,
       })
-      if (format === 'json') {
-        getLogger().log(JSON.stringify(result, null, 2))
-      } else {
-        getLogger().log(`Encrypted records to ${result.storePath}`)
-        getLogger().log(`  Set: ${result.setRecordsWritten}`)
-        getLogger().log(`  Delete: ${result.deleteRecordsWritten}`)
-        getLogger().log(`  Skipped unchanged: ${result.skippedUnchanged}`)
-        if (result.conflicts > 0) {
-          getLogger().log(`  Conflicts: ${result.conflicts}`)
-          getLogger().log(`  Conflicts overwritten: ${result.conflictsOverwritten}`)
-          getLogger().log(`  Conflicts ignored: ${result.conflictsIgnored}`)
-        }
-        if (result.syncStatePath) getLogger().log(`  Sync state: ${result.syncStatePath}`)
-      }
+      ctx.formatAndLog(result, {
+        format,
+        text: (res) => {
+          getLogger().log(`Encrypted records to ${res.storePath}`)
+          getLogger().log(`  Set: ${res.setRecordsWritten}`)
+          getLogger().log(`  Delete: ${res.deleteRecordsWritten}`)
+          getLogger().log(`  Skipped unchanged: ${res.skippedUnchanged}`)
+          if (res.conflicts > 0) {
+            getLogger().log(`  Conflicts: ${res.conflicts}`)
+            getLogger().log(`  Conflicts overwritten: ${res.conflictsOverwritten}`)
+            getLogger().log(`  Conflicts ignored: ${res.conflictsIgnored}`)
+          }
+          if (res.syncStatePath) getLogger().log(`  Sync state: ${res.syncStatePath}`)
+        },
+      })
     })
 
   ctx
-    .addCommonOptions(vault.command('plan <config> <keyFile>'))
+    .addCommonOptions(vault.command('plan <keyFile>'))
     .description('Print the vault restore plan without writing files.')
     .option('--sync-dir <dir>', 'include local vault sync-state conflict detection')
-    .action(async (config, keyFile, opts) => {
-      const allOpts = mergedOptions(ctx, opts)
+    .option('--vault-config <file>', 'vault configuration file')
+    .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
+    .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
-      const result = await buildRestorePlan(config, keyFile, { syncDir: allOpts.syncDir })
-      if (format === 'json') {
-        getLogger().log(JSON.stringify(result, null, 2))
-      } else {
-        getLogger().log(`Restore plan for ${result.storePath}:`)
-        for (const file of result.files) {
-          const changes = file.entries.filter((e) => e.action !== 'identical')
-          if (changes.length > 0) {
-            getLogger().log(`# ${file.filePath}`)
-            for (const e of changes) getLogger().log(`  ${e.action.padEnd(10)} ${e.key}`)
+      const result = await buildRestorePlan(allOpts.config, keyFile, {
+        syncDir: allOpts.syncDir,
+        vaultConfigFile: allOpts.vaultConfig,
+        autoRemapPaths: allOpts.autoRemap,
+        allowUnmanaged: allOpts.allowUnmanaged,
+      })
+      ctx.formatAndLog(result, {
+        format,
+        text: (res) => {
+          getLogger().log(`Restore plan for ${res.storePath}:`)
+          for (const file of res.files) {
+            const changes = file.entries.filter((e) => e.action !== 'identical')
+            if (changes.length > 0) {
+              getLogger().log(`# ${file.filePath}`)
+              for (const e of changes) getLogger().log(`  ${e.action.padEnd(10)} ${e.key}`)
+            }
           }
-        }
-        getLogger().log(
-          `Summary: ${result.summary.filesWithChanges} files to change, ${result.summary.conflict} conflicts.`,
-        )
-      }
+          getLogger().log(
+            `Summary: ${res.summary.filesWithChanges} files to change, ${res.summary.conflict} conflicts.`,
+          )
+        },
+      })
     })
 
   ctx
-    .addCommonOptions(vault.command('decrypt <config> <keyFile>'))
+    .addCommonOptions(vault.command('decrypt <keyFile>'))
     .option('--dry-run', 'show planned restore without writing files')
     .option('-y, --yes', 'apply restore without interactive confirmation')
     .option('--sync-dir <dir>', 'enable local vault sync state in the manually specified directory')
+    .option('--vault-config <file>', 'vault configuration file')
+    .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
+    .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
     .option(
       '--conflicts <mode>',
       'when --sync-dir detects a conflict: ask, overwrite, or ignore',
       'ask',
     )
-    .action(async (config, keyFile, opts) => {
-      const allOpts = mergedOptions(ctx, opts)
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
-      const result = await decryptEnvFiles(config, keyFile, {
+      const result = await decryptEnvFiles(allOpts.config, keyFile, {
         dryRun: allOpts.dryRun,
         autoApprove: allOpts.yes,
         syncDir: allOpts.syncDir,
+        vaultConfigFile: allOpts.vaultConfig,
         conflictStrategy: parseVaultConflictStrategy(allOpts.conflicts),
+        autoRemapPaths: allOpts.autoRemap,
+        allowUnmanaged: allOpts.allowUnmanaged,
       })
-      if (format === 'json') {
-        getLogger().log(JSON.stringify(result, null, 2))
-      } else {
-        getLogger().log(`Decrypted ${result.filesWritten} files from ${result.storePath}`)
-        if ('conflictsIgnored' in result && result.conflictsIgnored) {
-          getLogger().log(`  Conflicts ignored: ${result.conflictsIgnored}`)
-        }
-        if ('syncStatePath' in result && result.syncStatePath) {
-          getLogger().log(`  Sync state: ${result.syncStatePath}`)
-        }
-      }
+      ctx.formatAndLog(result, {
+        format,
+        text: (res) => {
+          getLogger().log(`Decrypted ${res.filesWritten} files from ${res.storePath}`)
+          if ('conflictsIgnored' in res && res.conflictsIgnored) {
+            getLogger().log(`  Conflicts ignored: ${res.conflictsIgnored}`)
+          }
+          if ('syncStatePath' in res && res.syncStatePath) {
+            getLogger().log(`  Sync state: ${res.syncStatePath}`)
+          }
+        },
+      })
     })
 
   ctx
-    .addCommonOptions(vault.command('prune <config> <keyFile>'))
+    .addCommonOptions(vault.command('prune <keyFile>'))
     .description('Prune old vault history while preserving the latest record for each key.')
     .option('--file <path>', 'only prune history for one env file from the vault config')
     .option('--key <name>', 'only prune history for one env key')
@@ -129,10 +157,11 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
     )
     .option('--dry-run', 'show how many records would be removed without rewriting the store')
     .option('-y, --yes', 'rewrite the vault store without interactive confirmation')
-    .action(async (config, keyFile, opts) => {
-      const allOpts = mergedOptions(ctx, opts)
+    .option('--vault-config <file>', 'vault configuration file')
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
-      const result = await pruneVaultHistory(config, keyFile, {
+      const result = await pruneVaultHistory(allOpts.config, keyFile, {
         filePath: allOpts.file,
         key: allOpts.key,
         olderThanDays:
@@ -141,15 +170,17 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
         preserveLatest: allOpts.preserveLatest,
         dryRun: allOpts.dryRun,
         autoApprove: allOpts.yes,
+        vaultConfigFile: allOpts.vaultConfig,
       })
-      if (format === 'json') {
-        getLogger().log(JSON.stringify(result, null, 2))
-      } else {
-        getLogger().log(
-          `${result.applied ? 'Pruned' : 'Would prune'} ${result.removedRecords} records from ${result.storePath}`,
-        )
-        getLogger().log(`  Kept: ${result.keptRecords}`)
-        getLogger().log(`  Groups: ${result.groups}`)
-      }
+      ctx.formatAndLog(result, {
+        format,
+        text: (res) => {
+          getLogger().log(
+            `${res.applied ? 'Pruned' : 'Would prune'} ${res.removedRecords} records from ${res.storePath}`,
+          )
+          getLogger().log(`  Kept: ${res.keptRecords}`)
+          getLogger().log(`  Groups: ${res.groups}`)
+        },
+      })
     })
 }

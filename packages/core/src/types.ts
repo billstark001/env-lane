@@ -5,6 +5,7 @@ export interface EnvSortTargetConfig {
   file?: string
   template?: string
   files?: Record<string, string>
+  create?: boolean
 }
 
 export interface EnvValueSourceConfig {
@@ -91,6 +92,14 @@ export interface EnvLaneConfig {
     requireOverride?: boolean
     /** Merge process.env after dotenv files. Defaults to true. */
     includeProcessEnv?: boolean
+    /** Preserve UTF-8 BOM when writing environment files. Defaults to true. */
+    preserveBOM?: boolean
+    /** EOL format when writing files. Defaults to auto. */
+    eol?: 'auto' | 'lf' | 'crlf'
+  }
+  cli?: {
+    /** Custom CLI command aliases. */
+    aliases?: Record<string, string>
   }
   vault?: {
     enabled?: boolean
@@ -100,6 +109,8 @@ export interface EnvLaneConfig {
   output?: {
     /** Default output format for CLI. */
     format?: EnvLaneOutputFormat
+    /** Whether to include log prefixes. Defaults to true. */
+    prefix?: boolean
   }
   sort?: Record<string, EnvSortTargetConfig>
   checks?: Record<string, EnvCheckConfig>
@@ -112,9 +123,15 @@ export interface ResolvedEnvLaneConfig {
   workspace: Required<Omit<NonNullable<EnvLaneConfig['workspace']>, 'aliases'>> & {
     aliases: Record<string, string>
   }
-  dotenv: Required<NonNullable<EnvLaneConfig['dotenv']>>
+  dotenv: Required<NonNullable<EnvLaneConfig['dotenv']>> & {
+    preserveBOM: boolean
+    eol: 'auto' | 'lf' | 'crlf'
+  }
+  cli?: {
+    aliases: Record<string, string>
+  }
   vault: Required<NonNullable<EnvLaneConfig['vault']>>
-  output: Required<NonNullable<EnvLaneConfig['output']>>
+  output: Required<NonNullable<EnvLaneConfig['output']>> & { prefix: boolean }
   sort?: Record<string, EnvSortTargetConfig>
   checks?: Record<string, EnvCheckConfig>
   sync?: Record<string, EnvSyncConfig>

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { loadConfig as c12LoadConfig } from 'c12'
+import { loadConfigWithC12, loadEnvLaneConfig, type ResolvedEnvLaneConfig } from '@env-lane/core'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -8,11 +8,19 @@ const schema = z.object({
   outputDir: z.string().min(1).default('.env-lane-vault'),
   outputFile: z.string().min(1).default('store.dat'),
   trackDeletions: z.boolean().default(true),
+  autoRemapPaths: z.boolean().default(true),
+  allowUnmanaged: z.boolean().default(false),
   exclude: z
     .array(
       z.object({
-        files: z.array(z.string().min(1)).or(z.string().min(1)),
-        keys: z.array(z.string().min(1)).or(z.string().min(1)),
+        files: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
+        file: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
+        filePattern: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
+        filePatterns: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
+        keys: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
+        key: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
+        keyPattern: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
+        keyPatterns: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
       }),
     )
     .default([]),
@@ -30,6 +38,7 @@ const schema = z.object({
 })
 
 function stringList(value: unknown, fieldName: string): string[] {
+  if (value === undefined || value === null) return []
   const values = Array.isArray(value) ? value : [value]
   return values.map((item) => {
     if (typeof item !== 'string' || !item.trim()) {
@@ -82,6 +91,8 @@ export interface VaultConfig {
   outputFile: string
   storePath: string
   trackDeletions: boolean
+  autoRemapPaths: boolean
+  allowUnmanaged: boolean
   exclude: Array<{ files: string[]; keys: string[] }>
   sort?: Record<string, { file: string; template: string; files?: Record<string, string> }>
   disableUnsafeWarning: boolean
@@ -91,44 +102,113 @@ export function defineVaultConfig(config: z.input<typeof schema>): z.input<typeo
   return config
 }
 
-export async function loadVaultConfig(configPath: string): Promise<VaultConfig> {
-  const abs = path.resolve(configPath)
-  if (!existsSync(abs)) throw new Error(`Vault config does not exist: ${abs}`)
-  const baseDir = path.dirname(abs)
-  const raw =
-    path.extname(abs) === '.json'
-      ? (JSON.parse(readFileSync(abs, 'utf8').replace(/^\uFEFF/, '')) as Record<string, unknown>)
-      : ((
-          await c12LoadConfig<Record<string, unknown>>({
-            cwd: baseDir,
-            configFile: abs,
-            packageJson: false,
-            dotenv: false,
-            rcFile: false,
-            globalRc: false,
-            configFileRequired: true,
-          })
-        ).config ?? {})
+function isVaultConfig(obj: any): boolean {
+  if (!obj || typeof obj !== 'object') return false
+  return 'envFiles' in obj || 'outputDir' in obj || 'outputFile' in obj
+}
+
+export async function loadVaultConfig(
+  configPath?: string,
+  options?: {
+    cwd?: string
+    vaultConfigFile?: string
+    autoRemapPaths?: boolean
+    allowUnmanaged?: boolean
+  },
+): Promise<VaultConfig> {
+  let mainConfigPath: string | undefined
+  let vaultConfigPath: string | undefined = options?.vaultConfigFile
+
+  if (configPath && !vaultConfigPath) {
+    const resolvedPath = path.resolve(options?.cwd ?? process.cwd(), configPath)
+    let rawConfig: any = null
+    try {
+      if (path.extname(resolvedPath) === '.json' && existsSync(resolvedPath)) {
+        rawConfig = JSON.parse(readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, ''))
+      } else {
+        const loaded = await loadConfigWithC12<Record<string, any>>({
+          cwd: path.dirname(resolvedPath),
+          configFile: resolvedPath,
+          name: 'env-lane.vault',
+        })
+        rawConfig = loaded.config
+      }
+    } catch {
+      // ignore
+    }
+
+    if (isVaultConfig(rawConfig)) {
+      vaultConfigPath = configPath
+    } else {
+      mainConfigPath = configPath
+    }
+  } else if (configPath && vaultConfigPath) {
+    mainConfigPath = configPath
+  }
+
+  let mainConfig: ResolvedEnvLaneConfig | undefined
+  try {
+    mainConfig = await loadEnvLaneConfig({ cwd: options?.cwd, configFile: mainConfigPath })
+  } catch {
+    // ignore
+  }
+
+  const baseDir = mainConfig?.rootDir ?? options?.cwd ?? process.cwd()
+  let configFileToLoad: string
+
+  if (vaultConfigPath) {
+    configFileToLoad = path.resolve(baseDir, vaultConfigPath)
+  } else if (mainConfig) {
+    configFileToLoad = path.resolve(baseDir, mainConfig.vault.configFile)
+  } else {
+    configFileToLoad = path.resolve(baseDir, 'env-lane.vault')
+  }
+
+  const hasJsonExt = path.extname(configFileToLoad) === '.json'
+  let raw: Record<string, unknown>
+
+  if (hasJsonExt && existsSync(configFileToLoad)) {
+    raw = JSON.parse(readFileSync(configFileToLoad, 'utf8').replace(/^\uFEFF/, '')) as Record<
+      string,
+      unknown
+    >
+  } else {
+    const loaded = await loadConfigWithC12<Record<string, unknown>>({
+      cwd: path.dirname(configFileToLoad),
+      configFile: configFileToLoad,
+      name: 'env-lane.vault',
+      configFileRequired: true,
+    })
+    if (!loaded.configFile) {
+      throw new Error(`Vault config does not exist: ${configFileToLoad}`)
+    }
+    configFileToLoad = loaded.configFile
+    raw = loaded.config ?? {}
+  }
+
+  const baseDirOfConfig = path.dirname(configFileToLoad)
   const parsed = schema.parse({
     ...raw,
     exclude: normalizeExclude(raw.exclude ?? raw.excludes),
   })
-  const outputDir = path.resolve(baseDir, parsed.outputDir)
-  const envFiles = uniqueResolvedFiles(baseDir, parsed.envFiles)
+  const outputDir = path.resolve(baseDirOfConfig, parsed.outputDir)
+  const envFiles = uniqueResolvedFiles(baseDirOfConfig, parsed.envFiles)
   const storePath = path.resolve(outputDir, parsed.outputFile)
   if (envFiles.includes(storePath)) {
     throw new Error('The vault store file must not overlap with any env file.')
   }
   return {
-    baseDir,
+    baseDir: baseDirOfConfig,
     envFiles,
     outputDir,
     outputFile: parsed.outputFile,
     storePath,
     trackDeletions: parsed.trackDeletions,
+    autoRemapPaths: options?.autoRemapPaths ?? parsed.autoRemapPaths,
+    allowUnmanaged: options?.allowUnmanaged ?? parsed.allowUnmanaged,
     exclude: parsed.exclude.map((rule) => ({
-      files: Array.isArray(rule.files) ? rule.files : [rule.files],
-      keys: Array.isArray(rule.keys) ? rule.keys : [rule.keys],
+      files: Array.isArray(rule.files) ? rule.files : rule.files ? [rule.files] : [],
+      keys: Array.isArray(rule.keys) ? rule.keys : rule.keys ? [rule.keys] : [],
     })),
     sort: parsed.sort,
     disableUnsafeWarning: parsed.disableUnsafeWarning ?? false,
