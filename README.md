@@ -132,13 +132,14 @@ If no child workspace package exists, the repository root is treated as the only
 
 ## CLI
 
-### Output Formatting
+### Output Formatting & Prefixing
 
-You can control how `env-lane` formats its output globally across commands using the `--format` option or the `--json` shorthand.
+You can control how `env-lane` formats its output globally across commands using the `--format` option or the `--json` shorthand, and toggle logging prefixes (e.g. `[env-lane]`) using `--no-prefix`.
 
 - `--format text` (Default): Human-readable tables and lists.
 - `--format json`: Machine-readable JSON, perfect for piping into `jq`. (Shorthand: `--json`)
 - `--format dotenv`: Specific to the `print` command, outputs strict `KEY=VALUE` pairs suitable for shell evaluation or `.env` file generation.
+- `--no-prefix`: Suppress logging prefixes such as `[env-lane]` and `[env-lane:vault]`.
 
 **Configuration Equivalent:**
 
@@ -146,6 +147,7 @@ You can control how `env-lane` formats its output globally across commands using
 export default defineConfig({
   output: {
     format: 'text', // 'text' | 'json' | 'dotenv'
+    prefix: true // toggle console log prefixes (defaults to true)
   }
 })
 ```
@@ -284,7 +286,17 @@ export default defineConfig({
     // Override file for local build. Defaults to .env.local.
     localOverrideFile: '.env.local',
     // Merge process.env after dotenv files. Defaults to true.
-    includeProcessEnv: true
+    includeProcessEnv: true,
+    // Preserve UTF-8 BOM when writing environment files. Defaults to true.
+    preserveBOM: true,
+    // EOL format when writing files. Defaults to auto.
+    eol: 'auto' // 'auto' | 'lf' | 'crlf'
+  },
+  cli: {
+    // Custom CLI subcommand/argument aliases
+    aliases: {
+      dev: 'run api --build local -- pnpm dev'
+    }
   },
   sort: {
     // Manual configuration: baseDir is optional if key matches a workspace alias.
@@ -293,7 +305,9 @@ export default defineConfig({
       files: {
         // Additional custom files to sort using the same template
         ci: '.env.ci'
-      }
+      },
+      // Create the sorting target files or templates if missing. Defaults to false.
+      create: true
     },
     // Explicit path configuration
     legacy: {
@@ -330,7 +344,8 @@ export default defineConfig({
   },
   vault: {
     enabled: false,
-    configFile: 'env-lane.vault.json',
+    // Configuration file path relative to root. Defaults to 'env-lane.vault'.
+    configFile: 'env-lane.vault',
     disableUnsafeWarning: false
   }
 });
@@ -375,7 +390,7 @@ Vault commands print a warning unless warnings are disabled through config or th
 }
 ```
 
-Example vault config:
+By default, the vault configuration is loaded from `env-lane.vault` (or configured via `vault.configFile` in your main config). Example vault config:
 
 ```ts
 export default {
@@ -383,27 +398,36 @@ export default {
   outputDir: '.env-lane-vault',
   outputFile: 'store.dat',
   trackDeletions: true,
-  exclude: {
-    'apps/api/.env.local': ['PUBLIC_*']
-  }
+  // Remap absolute paths to workspace-relative paths. Defaults to true.
+  autoRemapPaths: true,
+  // Allow decrypt/restore of unmanaged files. Defaults to false.
+  allowUnmanaged: false,
+  // Exclude keys matching patterns from specific files.
+  // Supports key-value object mappings or rules array with keys/files aliases:
+  exclude: [
+    {
+      files: ['apps/api/.env.local'],
+      keys: ['PUBLIC_*']
+    }
+  ]
 };
 ```
 
-CLI:
+CLI commands do not require the configuration path argument by default (it is loaded automatically or can be specified with `--vault-config <file>`). They only require the `<keyFile>` argument:
 
 ```bash
-env-lane vault encrypt env-lane.vault.json key.aes
-env-lane vault plan env-lane.vault.json key.aes
-env-lane vault decrypt env-lane.vault.json key.aes --dry-run
-env-lane vault decrypt env-lane.vault.json key.aes --yes
+env-lane vault encrypt key.aes
+env-lane vault plan key.aes
+env-lane vault decrypt key.aes --dry-run
+env-lane vault decrypt key.aes --yes
 ```
 
 Optional local sync state provides git-like conflict detection without changing the encrypted vault record format. It is disabled unless you explicitly choose a directory, so env-lane will not silently create a system cache of environment data. The sync file stores per-key metadata and value hashes, not plaintext values:
 
 ```bash
-env-lane vault encrypt env-lane.vault.json key.aes --sync-dir .env-lane-sync
-env-lane vault plan env-lane.vault.json key.aes --sync-dir .env-lane-sync
-env-lane vault decrypt env-lane.vault.json key.aes --sync-dir .env-lane-sync --conflicts ask
+env-lane vault encrypt key.aes --sync-dir .env-lane-sync
+env-lane vault plan key.aes --sync-dir .env-lane-sync
+env-lane vault decrypt key.aes --sync-dir .env-lane-sync --conflicts ask
 ```
 
 When both the local dotenv value and the latest vault record changed since the last sync baseline, env-lane reports a conflict. Use `--conflicts ask`, `--conflicts overwrite`, or `--conflicts ignore` on `vault encrypt` and `vault decrypt` to decide per item or apply a consistent policy. If no sync baseline exists yet, env-lane falls back to the dotenv file mtime when it can.
@@ -411,9 +435,9 @@ When both the local dotenv value and the latest vault record changed since the l
 Vault history can be compacted by age or by keeping only the latest records for each file/key pair. The latest record is preserved by default so the current restore result remains available:
 
 ```bash
-env-lane vault prune env-lane.vault.json key.aes --keep-recent 3 --dry-run
-env-lane vault prune env-lane.vault.json key.aes --older-than-days 30 --yes
-env-lane vault prune env-lane.vault.json key.aes --file apps/api/.env.local --key API_TOKEN --keep-recent 2 --yes
+env-lane vault prune key.aes --keep-recent 3 --dry-run
+env-lane vault prune key.aes --older-than-days 30 --yes
+env-lane vault prune key.aes --file apps/api/.env.local --key API_TOKEN --keep-recent 2 --yes
 ```
 
 ## Local Development
