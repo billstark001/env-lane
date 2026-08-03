@@ -10,36 +10,29 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parse as parseDotenv } from 'dotenv'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   checkDotenvSelector,
+  type Diagnostic,
+  isSecretLikeKey,
+  isSecretLikeValue,
   listEnvFiles,
   listWorkspacePackages,
   normalizeEnvFileVariant,
   parseEnvDocument,
   parseEnvLine,
+  redactObject,
+  redactValue,
   resolveInjectedEnv,
   resolveTargetPackage,
   runEnvCheck,
   runEnvSync,
   setEnvDocumentValues,
-  setLogger,
   sortEnvFile,
   sortEnvFilesFromConfig,
+  withEnvLaneContext,
   writeFileContentAtomically,
 } from '../src/index.js'
-
-beforeAll(() => {
-  setLogger({
-    log: () => {},
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-    success: () => {},
-    debug: () => {},
-    write: () => {},
-  })
-})
 
 function fixture(): string {
   const root = path.join(tmpdir(), `env-lane-${Date.now()}-${Math.random().toString(16).slice(2)}`)
@@ -675,33 +668,24 @@ describe('@env-lane/core', () => {
           selector: { builds: ['production'], buildValidation: 'warn' },
         };\n`,
       )
-      const originalLogger = (globalThis as any).__env_lane_logger__
-      const warnMock = vi.fn()
-      setLogger({
-        log: () => {},
-        info: () => {},
-        warn: warnMock,
-        error: () => {},
-        success: () => {},
-        debug: () => {},
-        write: () => {},
-      })
-      try {
-        const build = await resolveInjectedEnv({
-          cwd: root,
-          target: 'api',
-          build: 'staging',
-          includeProcessEnv: false,
-        })
-        expect(build.build).toBe('staging')
-        expect(warnMock).toHaveBeenCalledWith(
-          expect.stringContaining('is not listed in selector.builds'),
-        )
-      } finally {
-        if (originalLogger) {
-          setLogger(originalLogger)
-        }
-      }
+      const diagnostics: Array<{ code: string; message: string }> = []
+      const build = await withEnvLaneContext(
+        { logger: { diagnostic: (event) => diagnostics.push(event) } },
+        () =>
+          resolveInjectedEnv({
+            cwd: root,
+            target: 'api',
+            build: 'staging',
+            includeProcessEnv: false,
+          }),
+      )
+      expect(build.build).toBe('staging')
+      expect(diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'UNLISTED_BUILD',
+          message: expect.stringContaining('is not listed in selector.builds'),
+        }),
+      )
     })
 
     it('throws when target package resolution fails', async () => {
@@ -887,6 +871,110 @@ describe('@env-lane/core', () => {
       const crlfContent = readFileSync(envFile, 'utf8')
       expect(crlfContent.startsWith('\uFEFF')).toBe(true)
       expect(crlfContent).toContain('A=1\r\n\r\nB=2\r\n\r\nC=3\r\n')
+    })
+  })
+
+  describe('audited safety boundaries', () => {
+    it('recognizes closing quotes preceded by an even number of backslashes', () => {
+      const line = parseEnvLine(String.raw`KEY="value\\" # trailing comment`)
+      expect(line).toMatchObject({
+        kind: 'entry',
+        valueToken: String.raw`"value\\"`,
+        suffix: ' # trailing comment',
+      })
+    })
+
+    it('preserves whitespace when a sync mapping has no transform', async () => {
+      const root = fixture()
+      writeFileSync(path.join(root, 'apps/api/.env'), 'PADDED="  meaningful  "\n')
+      writeFileSync(
+        path.join(root, 'env-lane.config.ts'),
+        `export default {
+          workspace: { aliases: { api: '@acme/api' } },
+          sync: {
+            preserve: {
+              from: { target: 'api' },
+              to: { file: 'synced.env' },
+              mappings: [{ from: 'PADDED', to: 'PADDED' }]
+            }
+          }
+        };\n`,
+      )
+
+      await runEnvSync('preserve', { cwd: root })
+      expect(
+        parseEnvDocument(readFileSync(path.join(root, 'synced.env'), 'utf8')).currentMap.get(
+          'PADDED',
+        )?.effectiveValue,
+      ).toBe('  meaningful  ')
+    })
+
+    it('uses the already loaded custom config for target-backed sources', async () => {
+      const root = fixture()
+      writeFileSync(path.join(root, 'apps/api/.env.custom'), 'A=from-custom-config\n')
+      const customConfig = path.join(root, 'custom-env.config.ts')
+      writeFileSync(
+        customConfig,
+        `export default {
+          workspace: { aliases: { api: '@acme/api' } },
+          dotenv: { order: ['.env.custom'], includeProcessEnv: false },
+          sync: {
+            custom: {
+              from: { target: 'api' },
+              to: { file: 'custom-output.env' },
+              mappings: [{ from: 'A', to: 'A' }]
+            }
+          }
+        };\n`,
+      )
+
+      await runEnvSync('custom', { cwd: root, configFile: customConfig })
+      expect(readFileSync(path.join(root, 'custom-output.env'), 'utf8')).toContain(
+        'A=from-custom-config',
+      )
+    })
+
+    it('emits one build diagnostic per environment resolution', async () => {
+      const root = fixture()
+      writeFileSync(
+        path.join(root, 'env-lane.config.ts'),
+        `export default {
+          workspace: { aliases: { api: '@acme/api' } },
+          selector: { builds: ['production'], buildValidation: 'warn' }
+        };\n`,
+      )
+      const diagnostics: Diagnostic[] = []
+      await withEnvLaneContext({ logger: { diagnostic: (event) => diagnostics.push(event) } }, () =>
+        resolveInjectedEnv({ cwd: root, target: 'api', build: 'staging' }),
+      )
+      expect(diagnostics.filter((event) => event.code === 'UNLISTED_BUILD')).toHaveLength(1)
+    })
+
+    it('directly redacts secret keys, secret values, and nested objects', () => {
+      expect(isSecretLikeKey('DATABASE_URL')).toBe(true)
+      expect(isSecretLikeValue('postgres://user:password@example.test/db')).toBe(true)
+      expect(redactValue('SECRET_TOKEN', 'super-secret')).toBe('<redacted>')
+      expect(redactValue('SECRET_TOKEN', 'super-secret', true)).toBe('super-secret')
+      expect(redactObject({ nested: { apiKey: 'value' }, safe: 'visible' })).toEqual({
+        nested: { apiKey: '<redacted>' },
+        safe: 'visible',
+      })
+    })
+
+    it('rejects sources that specify both target and file', async () => {
+      const root = fixture()
+      writeFileSync(
+        path.join(root, 'env-lane.config.ts'),
+        `export default {
+          checks: {
+            invalid: {
+              sources: { ambiguous: { target: 'api', file: '.env' } },
+              rules: [{ type: 'required', source: 'ambiguous', key: 'A' }]
+            }
+          }
+        };\n`,
+      )
+      await expect(runEnvCheck('invalid', { cwd: root })).rejects.toThrow(/but not both/)
     })
   })
 })

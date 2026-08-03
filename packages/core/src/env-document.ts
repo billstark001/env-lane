@@ -97,7 +97,7 @@ function splitValueAndSuffix(raw: string): { valueToken: string; suffix: string 
   for (let index = 0; index < raw.length; index++) {
     if (!quoteClosed && quote) {
       if (index === 0 || raw[index] !== quote) continue
-      if (raw[index - 1] !== '\\') quoteClosed = true
+      if (!isEscapedAt(raw, index)) quoteClosed = true
       continue
     }
     if (raw[index] === '#') {
@@ -110,13 +110,21 @@ function splitValueAndSuffix(raw: string): { valueToken: string; suffix: string 
   return { valueToken, suffix: raw.slice(valueToken.length) }
 }
 
+function isEscapedAt(value: string, index: number): boolean {
+  let precedingBackslashes = 0
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor -= 1) {
+    precedingBackslashes += 1
+  }
+  return precedingBackslashes % 2 === 1
+}
+
 function parseActiveEnvEntry(line: string): Extract<EnvLineData, { kind: 'entry' }> | undefined {
   const match = line.match(ENV_ENTRY_PREFIX_RE)
   if (!match) return undefined
   const key = match[2] ?? match[4]
   const separator = (match[3] ?? match[5]) as '=' | ':'
   const parsed = parseDotenv(line)
-  if (!Object.prototype.hasOwnProperty.call(parsed, key)) return undefined
+  if (!Object.hasOwn(parsed, key)) return undefined
   const prefix = match[1]
   const { valueToken, suffix } = splitValueAndSuffix(line.slice(prefix.length))
   return {
@@ -170,12 +178,7 @@ export function isEnvEntryLikeLine(line: EnvLine): line is EnvLine & {
   return line.kind === 'entry' || line.kind === 'commented-entry'
 }
 
-function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocument {
-  const document = createEnvTextDocument(content)
-  const parsedLines: EnvLine[] = document.lines.map((line, index) => ({
-    lineNumber: index + 1,
-    ...parseEnvLine(line),
-  }))
+function markMultilineContinuations(parsedLines: EnvLine[]): void {
   for (let index = 0; index < parsedLines.length; index++) {
     const line = parsedLines[index]
     if (line.kind !== 'entry') continue
@@ -185,7 +188,7 @@ function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocu
     let closed = false
     for (let cursor = 1; cursor < token.length; cursor++) {
       if (token[cursor] !== quote) continue
-      if (token[cursor - 1] !== '\\') {
+      if (!isEscapedAt(token, cursor)) {
         closed = true
         break
       }
@@ -196,7 +199,7 @@ function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocu
       const candidate = parsedLines[cursor]
       for (let charIndex = 0; charIndex < candidate.rawLine.length; charIndex++) {
         if (candidate.rawLine[charIndex] !== quote) continue
-        if (candidate.rawLine[charIndex - 1] !== '\\') {
+        if (!isEscapedAt(candidate.rawLine, charIndex)) {
           closingLineIndex = cursor
           break
         }
@@ -215,6 +218,14 @@ function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocu
     }
     index = closingLineIndex
   }
+}
+
+function collectEnvEntries(parsedLines: EnvLine[]): {
+  currentMap: LoadedEnvDocument['currentMap']
+  occurrencesMap: LoadedEnvDocument['occurrencesMap']
+  invalidLineCount: number
+  shadowedEntryCount: number
+} {
   const currentMap = new Map<string, { effectiveValue: string; lineNumber?: number }>()
   const occurrencesMap = new Map<
     string,
@@ -240,6 +251,15 @@ function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocu
       invalidLineCount++
     }
   }
+  return { currentMap, occurrencesMap, invalidLineCount, shadowedEntryCount }
+}
+
+function applyDocumentEffectiveValues(
+  content: string,
+  parsedLines: EnvLine[],
+  currentMap: LoadedEnvDocument['currentMap'],
+  occurrencesMap: LoadedEnvDocument['occurrencesMap'],
+): void {
   for (const [key, effectiveValue] of Object.entries(parseDotenv(content))) {
     const current = currentMap.get(key)
     currentMap.set(key, { effectiveValue, lineNumber: current?.lineNumber })
@@ -250,6 +270,18 @@ function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocu
       : undefined
     if (currentLine?.kind === 'entry') currentLine.effectiveValue = effectiveValue
   }
+}
+
+function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocument {
+  const document = createEnvTextDocument(content)
+  const parsedLines: EnvLine[] = document.lines.map((line, index) => ({
+    lineNumber: index + 1,
+    ...parseEnvLine(line),
+  }))
+  markMultilineContinuations(parsedLines)
+  const { currentMap, occurrencesMap, invalidLineCount, shadowedEntryCount } =
+    collectEnvEntries(parsedLines)
+  applyDocumentEffectiveValues(content, parsedLines, currentMap, occurrencesMap)
   return {
     exists,
     document,

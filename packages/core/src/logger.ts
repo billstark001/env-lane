@@ -1,61 +1,43 @@
-export interface Logger {
-  log(message: any, ...args: any[]): void
-  info(message: any, ...args: any[]): void
-  warn(message: any, ...args: any[]): void
-  error(message: any, ...args: any[]): void
-  success(message: any, ...args: any[]): void
-  debug(message: any, ...args: any[]): void
-  /** For interactive prompts or raw stdout writes */
-  write(message: string): void
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+export type DiagnosticLevel = 'info' | 'warning' | 'error'
+export type DiagnosticScope = 'core' | 'vault'
+
+export interface Diagnostic {
+  code: string
+  level: DiagnosticLevel
+  scope: DiagnosticScope
+  message: string
+  details?: Record<string, unknown>
 }
 
-let currentLogger: Logger = {
-  log: (...args) => console.log(...args),
-  info: (...args) => console.info(...args),
-  warn: (...args) => console.warn(...args),
-  error: (...args) => console.error(...args),
-  success: (...args) => console.log(...args),
-  debug: (...args) => console.debug(...args),
-  write: (msg) => process.stdout.write(msg),
+export interface DiagnosticLogger {
+  diagnostic(event: Diagnostic): void
 }
 
-let prefixEnabled = true
-
-export function setPrefixEnabled(enabled: boolean): void {
-  prefixEnabled = enabled
+export interface EnvLaneContext {
+  logger: DiagnosticLogger
 }
 
-export function isPrefixEnabled(): boolean {
-  return prefixEnabled
+export interface DiagnosticFormatOptions {
+  prefix?: boolean
 }
 
-export function setLogger(logger: Logger) {
-  currentLogger = logger
+const contextStorage = new AsyncLocalStorage<EnvLaneContext>()
+
+export function withEnvLaneContext<T>(context: EnvLaneContext, operation: () => T): T {
+  return contextStorage.run(context, operation)
 }
 
-function formatMessage(msg: any): any {
-  if (!prefixEnabled && typeof msg === 'string') {
-    return msg.replace(/^\[env-lane:vault\]\s*/, '').replace(/^\[env-lane\]\s*/, '')
-  }
-  return msg
+export function emitDiagnostic(event: Diagnostic): void {
+  contextStorage.getStore()?.logger.diagnostic(event)
 }
 
-export function getLogger(): Logger {
-  return {
-    log: (msg, ...args) => currentLogger.log(formatMessage(msg), ...args),
-    info: (msg, ...args) => currentLogger.info(formatMessage(msg), ...args),
-    warn: (msg, ...args) => currentLogger.warn(formatMessage(msg), ...args),
-    error: (msg, ...args) => currentLogger.error(formatMessage(msg), ...args),
-    success: (msg, ...args) => currentLogger.success(formatMessage(msg), ...args),
-    debug: (msg, ...args) => currentLogger.debug(formatMessage(msg), ...args),
-    write: (msg) => {
-      if (!prefixEnabled && typeof msg === 'string') {
-        currentLogger.write(
-          msg.replace(/^\[env-lane:vault\]\s*/, '').replace(/^\[env-lane\]\s*/, ''),
-        )
-      } else {
-        currentLogger.write(msg)
-      }
-    },
-  }
+export function formatDiagnostic(event: Diagnostic, options: DiagnosticFormatOptions = {}): string {
+  const scope = event.scope === 'vault' ? 'env-lane:vault' : 'env-lane'
+  const prefix = options.prefix === false ? '' : `[${scope}] `
+  return event.message
+    .split('\n')
+    .map((line) => `${prefix}${event.level} ${event.code}: ${line}`)
+    .join('\n')
 }

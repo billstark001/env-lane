@@ -10,11 +10,11 @@ export interface EnvSortTargetConfig {
   unlistedVariablesComment?: string
 }
 
-export interface EnvValueSourceConfig {
-  target?: string
-  file?: string
-  includeProcessEnv?: boolean
-}
+export type EnvValueSourceConfig =
+  | { target: string; file?: never; includeProcessEnv?: boolean }
+  | { target?: never; file: string; includeProcessEnv?: boolean }
+
+export type EnvValueTargetConfig = EnvValueSourceConfig & { variant?: string }
 
 export type EnvCheckSeverity = 'warn' | 'error'
 export type EnvValueTransform = 'trim' | 'lowercase' | 'uppercase' | 'url-base' | 'url-base-slash'
@@ -56,7 +56,7 @@ export interface EnvSyncMappingConfig {
 
 export interface EnvSyncConfig {
   from: EnvValueSourceConfig
-  to: EnvValueSourceConfig & { variant?: string }
+  to: EnvValueTargetConfig
   mappings: EnvSyncMappingConfig[]
 }
 
@@ -171,8 +171,7 @@ export interface ResolveEnvOptions {
   build?: string
   includeProcessEnv?: boolean
   requireOverride?: boolean
-  redact?: boolean
-  showSecrets?: boolean
+  config?: ResolvedEnvLaneConfig
 }
 
 export interface ResolvedEnv {

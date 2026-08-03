@@ -8,7 +8,6 @@ import {
   renderEnvTextDocument,
   writeEnvDocumentContent,
 } from './env-document.js'
-import { getLogger } from './logger.js'
 import type { EnvSortTargetConfig, ResolvedEnvLaneConfig, WorkspacePackage } from './types.js'
 import { DEFAULT_ENV_FILE_VARIANT, normalizeEnvFileVariant } from './variants.js'
 import { listWorkspacePackagesForConfig } from './workspace.js'
@@ -64,10 +63,6 @@ export interface EnvSortPlan {
   }
 }
 
-function portable(file: string): string {
-  return file.replace(/\\/g, '/').replaceAll(path.sep, '/')
-}
-
 async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
   let config: ResolvedEnvLaneConfig
   if (configPath) {
@@ -115,13 +110,6 @@ async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
     selector: config.selector,
     packages,
   }
-}
-
-function emitCommandChange(
-  command: 'sort',
-  payload: Record<string, string | number | boolean | undefined>,
-): void {
-  getLogger().info(`[env-lane] ${JSON.stringify({ command, ...payload })}`)
 }
 
 function buildEnvSortLayout(envDoc: ReturnType<typeof loadEnvDocument>) {
@@ -294,6 +282,26 @@ function renderUnlistedVariablesComment(value: string): string[] {
   })
 }
 
+function summarizeSortOperations(operations: EnvSortPlan['operations']): EnvSortPlan['summary'] {
+  return operations.reduce(
+    (summary, operation) => {
+      if (operation.action === 'move') summary.movedCount++
+      else if (operation.action === 'insert-commented') summary.insertedCommentedCount++
+      else if (operation.action === 'append-extra') summary.appendedExtraCount++
+      else if (operation.action === 'append-duplicate') summary.appendedDuplicateCount++
+      else if (operation.action === 'group-duplicate') summary.groupedDuplicateCount++
+      return summary
+    },
+    {
+      movedCount: 0,
+      insertedCommentedCount: 0,
+      appendedExtraCount: 0,
+      appendedDuplicateCount: 0,
+      groupedDuplicateCount: 0,
+    },
+  )
+}
+
 export function buildEnvSortPlan(
   envFilePath: string,
   templateFilePath: string,
@@ -393,23 +401,7 @@ export function buildEnvSortPlan(
     ? renderEnvTextDocument(envDoc.document, envDoc.document.lines)
     : ''
   const nextContent = renderEnvTextDocument(renderDocument, renderedLines, options)
-  const summary = operations.reduce(
-    (acc, operation) => {
-      if (operation.action === 'move') acc.movedCount++
-      else if (operation.action === 'insert-commented') acc.insertedCommentedCount++
-      else if (operation.action === 'append-extra') acc.appendedExtraCount++
-      else if (operation.action === 'append-duplicate') acc.appendedDuplicateCount++
-      else if (operation.action === 'group-duplicate') acc.groupedDuplicateCount++
-      return acc
-    },
-    {
-      movedCount: 0,
-      insertedCommentedCount: 0,
-      appendedExtraCount: 0,
-      appendedDuplicateCount: 0,
-      groupedDuplicateCount: 0,
-    },
-  )
+  const summary = summarizeSortOperations(operations)
 
   return {
     filePath: resolvedEnvFilePath,
@@ -441,6 +433,7 @@ export async function sortEnvFile(
       applied: false,
       filePath: resolvedEnvFilePath,
       templateFilePath: resolvedTemplateFilePath,
+      operations: [],
       movedCount: 0,
       insertedCommentedCount: 0,
       appendedExtraCount: 0,
@@ -455,27 +448,16 @@ export async function sortEnvFile(
       applied: false,
       filePath: plan.filePath,
       templateFilePath: plan.templateFilePath,
+      operations: plan.operations,
       ...plan.summary,
     }
   }
   writeEnvDocumentContent(plan.filePath, plan.nextContent)
-  for (const operation of plan.operations) {
-    emitCommandChange('sort', {
-      action: operation.action,
-      filePath: portable(plan.filePath),
-      templateFilePath: portable(plan.templateFilePath),
-      key: operation.key,
-    })
-  }
-  emitCommandChange('sort', {
-    action: 'write-file',
-    filePath: portable(plan.filePath),
-    templateFilePath: portable(plan.templateFilePath),
-  })
   return {
     applied: true,
     filePath: plan.filePath,
     templateFilePath: plan.templateFilePath,
+    operations: plan.operations,
     ...plan.summary,
   }
 }

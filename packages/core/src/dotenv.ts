@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { loadEnvLaneConfig } from './config.js'
 import { parseEnvDocument } from './env-document.js'
-import { getLogger } from './logger.js'
+import { emitDiagnostic } from './logger.js'
 import type {
   EnvFileRef,
   EnvSource,
@@ -17,7 +17,10 @@ export function resolveBuildName(
   options: ResolveEnvOptions,
   envKey: string,
   defaultBuild: string,
-  validation: { builds?: string[]; mode?: 'off' | 'warn' | 'error' } = {},
+  validation: {
+    builds?: string[]
+    mode?: 'off' | 'warn' | 'error'
+  } = {},
 ): string {
   const raw = String(options.build ?? process.env[envKey] ?? defaultBuild).trim()
   if (!raw) throw new Error('Build name is empty.')
@@ -27,7 +30,13 @@ export function resolveBuildName(
   if (builds.length > 0 && !builds.includes(raw) && mode !== 'off') {
     const message = `Build '${raw}' is not listed in selector.builds: ${builds.join(', ')}.`
     if (mode === 'error') throw new Error(message)
-    getLogger().warn(message)
+    emitDiagnostic({
+      code: 'UNLISTED_BUILD',
+      level: 'warning',
+      scope: 'core',
+      message,
+      details: { build: raw, allowedBuilds: builds },
+    })
   }
   return raw
 }
@@ -52,11 +61,14 @@ export function listEnvFilesForTarget(
   config: ResolvedEnvLaneConfig,
   target: WorkspacePackage,
   options: ResolveEnvOptions = {},
+  resolvedBuild?: string,
 ): EnvFileRef[] {
-  const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild, {
-    builds: config.selector.builds,
-    mode: config.selector.buildValidation,
-  })
+  const build =
+    resolvedBuild ??
+    resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild, {
+      builds: config.selector.builds,
+      mode: config.selector.buildValidation,
+    })
   return config.dotenv.order.map((pattern, index) => {
     const fileName = patternToFile(
       pattern,
@@ -77,13 +89,13 @@ export function listEnvFilesForTarget(
 }
 
 export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promise<ResolvedEnv> {
-  const config = await loadEnvLaneConfig(options)
+  const config = options.config ?? (await loadEnvLaneConfig(options))
   const target = await resolveTargetPackage(options.target, { ...options, config })
   const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild, {
     builds: config.selector.builds,
     mode: config.selector.buildValidation,
   })
-  const files = listEnvFilesForTarget(config, target, options)
+  const files = listEnvFilesForTarget(config, target, options, build)
   const values: Record<string, string> = {}
   const sources: Record<string, EnvSource> = {}
 
@@ -116,7 +128,7 @@ export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promi
   if (options.includeProcessEnv ?? config.dotenv.includeProcessEnv) {
     for (const [key, value] of Object.entries(process.env)) {
       if (value === undefined) continue
-      if (Object.prototype.hasOwnProperty.call(values, key)) {
+      if (Object.hasOwn(values, key)) {
         sources[key] = { source: 'process', shellOverride: true }
       } else {
         sources[key] = { source: 'process' }
@@ -128,7 +140,7 @@ export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promi
   values[config.selector.envKey] = build
   sources[config.selector.envKey] = {
     source: 'selector',
-    shellOverride: Object.prototype.hasOwnProperty.call(process.env, config.selector.envKey),
+    shellOverride: Object.hasOwn(process.env, config.selector.envKey),
   }
 
   return {

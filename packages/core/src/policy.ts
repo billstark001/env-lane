@@ -62,8 +62,9 @@ function isBlank(value: unknown): boolean {
 }
 
 function transformValue(value: string, transform?: EnvValueTransform): string {
+  if (!transform) return String(value ?? '')
   const trimmed = String(value ?? '').trim()
-  if (!transform || transform === 'trim') return trimmed
+  if (transform === 'trim') return trimmed
   if (transform === 'lowercase') return trimmed.toLowerCase()
   if (transform === 'uppercase') return trimmed.toUpperCase()
   if (transform === 'url-base') return trimmed.replace(/\/+$/, '')
@@ -99,6 +100,7 @@ async function loadSource(
   if (!source.target) throw new Error(`Source '${name}' must include target or file.`)
   const resolved = await resolveInjectedEnv({
     cwd: config.rootDir,
+    config,
     target: source.target,
     build: options.build,
     includeProcessEnv: source.includeProcessEnv ?? false,
@@ -205,7 +207,11 @@ function summarize(findings: EnvCheckFinding[]) {
 
 export async function runEnvCheck(
   checkName: string,
-  options: { cwd?: string; configFile?: string; build?: string } = {},
+  options: {
+    cwd?: string
+    configFile?: string
+    build?: string
+  } = {},
 ): Promise<EnvCheckResult> {
   const config = await loadEnvLaneConfig(options)
   const check = config.checks?.[checkName]
@@ -254,7 +260,12 @@ async function resolveSyncTargetFile(
 
 export async function runEnvSync(
   syncName: string,
-  options: { cwd?: string; configFile?: string; build?: string; dryRun?: boolean } = {},
+  options: {
+    cwd?: string
+    configFile?: string
+    build?: string
+    dryRun?: boolean
+  } = {},
 ): Promise<EnvSyncResult> {
   const config = await loadEnvLaneConfig(options)
   const sync = config.sync?.[syncName]

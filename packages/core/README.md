@@ -18,4 +18,15 @@ await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 
 Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
+Core and Vault APIs are silent unless called inside an explicit async context. Diagnostics are emitted through the context logger and are not mixed into operation results:
+
+```ts
+import { withEnvLaneContext } from '@env-lane/core';
+
+await withEnvLaneContext(
+  { logger: { diagnostic: event => process.stderr.write(`${JSON.stringify(event)}\n`) } },
+  () => resolveInjectedEnv({ target: 'api' })
+);
+```
+
 See the full documentation at https://github.com/billstark001/env-lane#readme.

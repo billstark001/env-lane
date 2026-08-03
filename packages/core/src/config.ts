@@ -20,10 +20,20 @@ const valueSourceSchema = z
     target: z.string().min(1).optional(),
     file: z.string().min(1).optional(),
     includeProcessEnv: z.boolean().optional(),
+  })
+  .refine((source) => Number(Boolean(source.target)) + Number(Boolean(source.file)) === 1, {
+    message: 'source must include target or file, but not both',
+  })
+
+const syncTargetSchema = z
+  .object({
+    target: z.string().min(1).optional(),
+    file: z.string().min(1).optional(),
+    includeProcessEnv: z.boolean().optional(),
     variant: z.string().min(1).optional(),
   })
-  .refine((source) => Boolean(source.target || source.file), {
-    message: 'source must include target or file',
+  .refine((source) => Number(Boolean(source.target)) + Number(Boolean(source.file)) === 1, {
+    message: 'source must include target or file, but not both',
   })
 
 const checkRuleSchema = z.discriminatedUnion('type', [
@@ -53,7 +63,7 @@ const checkRuleSchema = z.discriminatedUnion('type', [
 
 const syncSchema = z.object({
   from: valueSourceSchema,
-  to: valueSourceSchema,
+  to: syncTargetSchema,
   mappings: z
     .array(
       z.object({
@@ -163,7 +173,7 @@ export interface LoadConfigOptionsWithC12 {
   configFileRequired?: boolean
 }
 
-export async function loadConfigWithC12<T extends Record<string, any>>(
+export async function loadConfigWithC12<T extends object>(
   options: LoadConfigOptionsWithC12,
 ): Promise<{ config: T; configFile?: string; rootDir: string }> {
   const rootDir = await findWorkspaceRoot(options.cwd)
@@ -238,7 +248,7 @@ export async function loadEnvLaneConfig(
       prefix: parsed.output?.prefix ?? true,
     },
     sort: parsed.sort,
-    checks: parsed.checks,
-    sync: parsed.sync,
+    checks: parsed.checks as EnvLaneConfig['checks'],
+    sync: parsed.sync as EnvLaneConfig['sync'],
   }
 }
