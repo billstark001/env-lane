@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RestorePlan, RestorePlanEntry } from '../src/store.js'
+import type { RestorePlan, RestorePlanEntry } from '../src/types.js'
 
 const promptMocks = vi.hoisted(() => ({
   checkbox: vi.fn(),

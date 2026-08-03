@@ -1,8 +1,11 @@
-export * from './approval.js'
 export * from './cli/index.js'
 export * from './config.js'
 export * from './crypto.js'
-export * from './fail-on.js'
-export * from './selection.js'
-export * from './store.js'
+export { type EncryptOptions, encryptEnvFiles } from './push.js'
+export * from './restore.js'
+export {
+  pruneVaultHistory,
+  sanitizeVaultHistory,
+} from './storage.js'
+export * from './types.js'
 export * from './warning.js'

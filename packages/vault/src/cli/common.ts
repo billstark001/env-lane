@@ -1,7 +1,7 @@
 import { emitDiagnostic } from '@env-lane/core'
 import { loadVaultConfig, type VaultConfig } from '../config.js'
-import { parseVaultFailCondition, restorePlanMatchesFailCondition } from '../fail-on.js'
-import type { RestorePlan } from '../store.js'
+import { parseVaultFailCondition, restorePlanMatchesFailCondition } from '../restore.js'
+import type { RestorePlan } from '../types.js'
 import { warnUnsafeVault } from '../warning.js'
 import type { VaultCommandOptions } from './types.js'
 

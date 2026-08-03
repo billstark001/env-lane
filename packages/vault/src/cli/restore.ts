@@ -1,14 +1,18 @@
 import path from 'node:path'
 import { EnvLaneError } from '@env-lane/core'
 import type { Command } from 'commander'
-import { createApprovalDocument, readApprovalDocument, writeApprovalDocument } from '../approval.js'
 import {
+  applyRestorePlan,
   buildDefaultRestoreDecisions,
+  buildRestorePlan,
+  createApprovalDocument,
   hasUnresolvedSelectedConflict,
+  readApprovalDocument,
   selectRestorePlan,
   selectRestorePlanByDecisions,
-} from '../selection.js'
-import { applyRestorePlan, buildRestorePlan, type RestoreDecision } from '../store.js'
+  writeApprovalDocument,
+} from '../restore.js'
+import type { RestoreDecision } from '../types.js'
 import { applyRestoreFailOn, emitPlanDiagnostics, emitUnsafeWarning } from './common.js'
 import {
   addFailOnOption,

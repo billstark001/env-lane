@@ -1,4 +1,12 @@
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, scryptSync } from 'node:crypto'
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  hkdfSync,
+  randomBytes,
+  scryptSync,
+} from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { EnvLaneError } from '@env-lane/core'
@@ -8,6 +16,14 @@ const IV_LEN = 12
 const TAG_LEN = 16
 const KDF_SALT = Buffer.from('env-store-v1-kdf-salt', 'utf8')
 const KDF_OPTS = { N: 16384, r: 8, p: 1 }
+
+export function stableHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+export function keyedDigest(key: Buffer, value: string): string {
+  return createHmac('sha256', key).update(value).digest('hex')
+}
 
 export function deriveVaultKey(keyFilePath: string): Buffer {
   const abs = path.resolve(keyFilePath)
