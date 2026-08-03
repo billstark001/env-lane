@@ -106,7 +106,7 @@ export function defineVaultConfig(config: z.input<typeof schema>): z.input<typeo
   return config
 }
 
-function isVaultConfig(obj: any): boolean {
+function isVaultConfig(obj: unknown): boolean {
   if (!obj || typeof obj !== 'object') return false
   return 'envFiles' in obj || 'outputDir' in obj || 'outputFile' in obj
 }
@@ -125,47 +125,40 @@ export async function loadVaultConfig(
 
   if (configPath && !vaultConfigPath) {
     const resolvedPath = path.resolve(options?.cwd ?? process.cwd(), configPath)
-    let rawConfig: any = null
-    try {
-      if (path.extname(resolvedPath) === '.json' && existsSync(resolvedPath)) {
-        rawConfig = JSON.parse(readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, ''))
-      } else {
-        const loaded = await loadConfigWithC12<Record<string, any>>({
-          cwd: path.dirname(resolvedPath),
-          configFile: resolvedPath,
-          name: 'env-lane.vault',
-        })
-        rawConfig = loaded.config
-      }
-    } catch {
-      // ignore
+    let rawConfig: unknown
+    if (path.extname(resolvedPath) === '.json' && existsSync(resolvedPath)) {
+      rawConfig = JSON.parse(readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, ''))
+    } else {
+      const loaded = await loadConfigWithC12<Record<string, unknown>>({
+        cwd: path.dirname(resolvedPath),
+        configFile: resolvedPath,
+        name: 'env-lane.vault',
+        configFileRequired: true,
+      })
+      rawConfig = loaded.config
     }
 
     if (isVaultConfig(rawConfig)) {
-      vaultConfigPath = configPath
+      vaultConfigPath = resolvedPath
     } else {
-      mainConfigPath = configPath
+      mainConfigPath = resolvedPath
     }
   } else if (configPath && vaultConfigPath) {
     mainConfigPath = configPath
   }
 
-  let mainConfig: ResolvedEnvLaneConfig | undefined
-  try {
-    mainConfig = await loadEnvLaneConfig({ cwd: options?.cwd, configFile: mainConfigPath })
-  } catch {
-    // ignore
-  }
+  const mainConfig: ResolvedEnvLaneConfig = await loadEnvLaneConfig({
+    cwd: options?.cwd,
+    configFile: mainConfigPath,
+  })
 
-  const baseDir = mainConfig?.rootDir ?? options?.cwd ?? process.cwd()
+  const baseDir = mainConfig.rootDir
   let configFileToLoad: string
 
   if (vaultConfigPath) {
     configFileToLoad = path.resolve(baseDir, vaultConfigPath)
-  } else if (mainConfig) {
-    configFileToLoad = path.resolve(baseDir, mainConfig.vault.configFile)
   } else {
-    configFileToLoad = path.resolve(baseDir, 'env-lane.vault')
+    configFileToLoad = path.resolve(baseDir, mainConfig.vault.configFile)
   }
 
   const hasJsonExt = path.extname(configFileToLoad) === '.json'
