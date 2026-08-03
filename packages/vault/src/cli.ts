@@ -1,6 +1,12 @@
 import { type EnvLaneOutputFormat, getLogger } from '@env-lane/core'
 import type { Command } from 'commander'
-import { buildRestorePlan, decryptEnvFiles, encryptEnvFiles, pruneVaultHistory } from './store.js'
+import {
+  buildRestorePlan,
+  decryptEnvFiles,
+  encryptEnvFiles,
+  pruneVaultHistory,
+  sanitizeVaultHistory,
+} from './store.js'
 
 export interface VaultCliContext {
   addCommonOptions(command: Command): Command
@@ -26,8 +32,9 @@ export interface VaultCliContext {
 
 function parseVaultConflictStrategy(value: string | undefined) {
   if (value === undefined) return undefined
-  if (value === 'ask' || value === 'overwrite' || value === 'ignore') return value
-  throw new Error('--conflicts must be one of: ask, overwrite, ignore')
+  if (value === 'ask' || value === 'abort' || value === 'keep-local' || value === 'take-vault')
+    return value
+  throw new Error('--conflicts must be one of: abort, keep-local, take-vault, ask')
 }
 
 export function registerVaultCommands(program: Command, ctx: VaultCliContext): void {
@@ -37,13 +44,16 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
 
   ctx
     .addCommonOptions(vault.command('encrypt <keyFile>'))
-    .option('--sync-dir <dir>', 'enable local vault sync state in the manually specified directory')
+    .option(
+      '--sync-dir <dir>',
+      'explicitly allow creation of additional keyed-fingerprint sync state in this directory',
+    )
     .option('--vault-config <file>', 'vault configuration file')
     .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
     .option(
       '--conflicts <mode>',
-      'when --sync-dir detects a conflict: ask, overwrite, or ignore',
-      'ask',
+      'when --sync-dir detects a conflict: abort, keep-local, take-vault, or ask',
+      'abort',
     )
     .action(async (keyFile, opts) => {
       const allOpts = ctx.mergeOptions(opts)
@@ -63,8 +73,8 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
           getLogger().log(`  Skipped unchanged: ${res.skippedUnchanged}`)
           if (res.conflicts > 0) {
             getLogger().log(`  Conflicts: ${res.conflicts}`)
-            getLogger().log(`  Conflicts overwritten: ${res.conflictsOverwritten}`)
-            getLogger().log(`  Conflicts ignored: ${res.conflictsIgnored}`)
+            getLogger().log(`  Conflicts kept local: ${res.conflictsKeptLocal}`)
+            getLogger().log(`  Conflicts took vault: ${res.conflictsTookVault}`)
           }
           if (res.syncStatePath) getLogger().log(`  Sync state: ${res.syncStatePath}`)
         },
@@ -74,7 +84,10 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
   ctx
     .addCommonOptions(vault.command('plan <keyFile>'))
     .description('Print the vault restore plan without writing files.')
-    .option('--sync-dir <dir>', 'include local vault sync-state conflict detection')
+    .option(
+      '--sync-dir <dir>',
+      'explicitly allow use of additional keyed-fingerprint sync state in this directory',
+    )
     .option('--vault-config <file>', 'vault configuration file')
     .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
     .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
@@ -109,14 +122,17 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
     .addCommonOptions(vault.command('decrypt <keyFile>'))
     .option('--dry-run', 'show planned restore without writing files')
     .option('-y, --yes', 'apply restore without interactive confirmation')
-    .option('--sync-dir <dir>', 'enable local vault sync state in the manually specified directory')
+    .option(
+      '--sync-dir <dir>',
+      'explicitly allow creation of additional keyed-fingerprint sync state in this directory',
+    )
     .option('--vault-config <file>', 'vault configuration file')
     .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
     .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
     .option(
       '--conflicts <mode>',
-      'when --sync-dir detects a conflict: ask, overwrite, or ignore',
-      'ask',
+      'when --sync-dir detects a conflict: abort, keep-local, take-vault, or ask',
+      'abort',
     )
     .action(async (keyFile, opts) => {
       const allOpts = ctx.mergeOptions(opts)
@@ -134,12 +150,43 @@ export function registerVaultCommands(program: Command, ctx: VaultCliContext): v
         format,
         text: (res) => {
           getLogger().log(`Decrypted ${res.filesWritten} files from ${res.storePath}`)
-          if ('conflictsIgnored' in res && res.conflictsIgnored) {
-            getLogger().log(`  Conflicts ignored: ${res.conflictsIgnored}`)
+          if ('conflictsKeptLocal' in res && res.conflictsKeptLocal) {
+            getLogger().log(`  Conflicts kept local: ${res.conflictsKeptLocal}`)
+          }
+          if ('conflictsTookVault' in res && res.conflictsTookVault) {
+            getLogger().log(`  Conflicts took vault: ${res.conflictsTookVault}`)
           }
           if ('syncStatePath' in res && res.syncStatePath) {
             getLogger().log(`  Sync state: ${res.syncStatePath}`)
           }
+        },
+      })
+    })
+
+  ctx
+    .addCommonOptions(vault.command('sanitize <keyFile>'))
+    .description('Remove all historical records matched by local-only exclude rules.')
+    .requiredOption('--excluded', 'sanitize every record matched by configured exclude rules')
+    .option('--dry-run', 'show excluded history without rewriting the store')
+    .option('-y, --yes', 'atomically rewrite the vault store without interactive confirmation')
+    .option('--vault-config <file>', 'vault configuration file')
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
+      const format = await ctx.resolveOutputFormat(allOpts)
+      const result = await sanitizeVaultHistory(allOpts.config, keyFile, {
+        excluded: allOpts.excluded,
+        dryRun: allOpts.dryRun,
+        autoApprove: allOpts.yes,
+        vaultConfigFile: allOpts.vaultConfig,
+      })
+      ctx.formatAndLog(result, {
+        format,
+        text: (res) => {
+          getLogger().log(
+            `${res.applied ? 'Sanitized' : 'Would sanitize'} ${res.removedRecords} excluded historical records from ${res.storePath}`,
+          )
+          getLogger().log(`  Affected file/key pairs: ${res.affectedEntries.length}`)
+          getLogger().log(`  Kept: ${res.keptRecords}`)
         },
       })
     })

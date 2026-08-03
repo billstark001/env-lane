@@ -67,16 +67,20 @@ function normalizeExclude(rawExclude: unknown): Array<{ files: string[]; keys: s
       throw new Error(`config.exclude[${index}] must be an object.`)
     }
     const rule = rawRule as Record<string, unknown>
-    return {
-      files: stringList(
-        rule.files ?? rule.file ?? rule.filePattern ?? rule.filePatterns,
-        `config.exclude[${index}].files`,
-      ),
-      keys: stringList(
-        rule.keys ?? rule.key ?? rule.keyPattern ?? rule.keyPatterns,
-        `config.exclude[${index}].keys`,
-      ),
+    const files = stringList(
+      rule.files ?? rule.file ?? rule.filePattern ?? rule.filePatterns,
+      `config.exclude[${index}].files`,
+    )
+    const keys = stringList(
+      rule.keys ?? rule.key ?? rule.keyPattern ?? rule.keyPatterns,
+      `config.exclude[${index}].keys`,
+    )
+    if (files.length === 0 || keys.length === 0) {
+      throw new Error(
+        `config.exclude[${index}] must define at least one file pattern and one key pattern for the local-only boundary.`,
+      )
     }
+    return { files, keys }
   })
 }
 

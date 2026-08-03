@@ -1,4 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -24,10 +31,13 @@ import {
   decryptEnvFiles,
   decryptRecord,
   deriveVaultKey,
+  deriveVaultSyncKey,
   encryptEnvFiles,
   encryptRecord,
   loadVaultConfig,
   pruneVaultHistory,
+  sanitizeVaultHistory,
+  VAULT_UNSAFE_WARNING,
   warnUnsafeVault,
 } from '../src/index.js'
 
@@ -48,6 +58,10 @@ describe('@env-lane/vault', () => {
     const write = vi.fn()
     warnUnsafeVault({ stderr: { write } })
     expect(write).toHaveBeenCalled()
+    expect(VAULT_UNSAFE_WARNING).toMatch(/cannot prevent Git, cloud-sync, backup, logs/i)
+    expect(VAULT_UNSAFE_WARNING).toMatch(
+      /exclude rules keep matching values out of this vault only/i,
+    )
     write.mockClear()
     warnUnsafeVault({ disableUnsafeWarning: true, stderr: { write } })
     expect(write).not.toHaveBeenCalled()
@@ -271,7 +285,7 @@ describe('@env-lane/vault', () => {
       disableUnsafeWarning: true,
     })
     expect(enc.setRecordsWritten).toBe(1)
-    expect(enc.excludedEntriesIgnored).toBe(1)
+    expect(enc.localOnlyEntriesSkipped).toBe(1)
 
     writeFileSync(
       path.join(root, 'overlap.json'),
@@ -310,8 +324,9 @@ describe('@env-lane/vault', () => {
     expect(config.exclude).toEqual([{ files: ['.env'], keys: ['SECRET_*'] }])
   })
 
-  it('does not record deletions for keys excluded after they were stored', async () => {
+  it('fails closed until excluded historical records are sanitized', async () => {
     const root = path.join(tmpdir(), `env-lane-vault-exclude-delete-${Date.now()}`)
+    const syncDir = path.join(root, '.sync-state')
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(path.join(root, '.env'), 'SECRET_TOKEN=one\n')
@@ -322,6 +337,7 @@ describe('@env-lane/vault', () => {
 
     await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
       disableUnsafeWarning: true,
+      syncDir,
     })
     writeFileSync(path.join(root, '.env'), 'SECRET_TOKEN=two\n')
     writeFileSync(
@@ -334,24 +350,41 @@ describe('@env-lane/vault', () => {
       }),
     )
 
+    await expect(
+      encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      }),
+    ).rejects.toThrow(/sanitize.*--excluded/i)
+    await expect(
+      buildRestorePlan(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      }),
+    ).rejects.toThrow(/sanitize.*--excluded/i)
+
+    const dryRun = await sanitizeVaultHistory(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      { disableUnsafeWarning: true, excluded: true, dryRun: true },
+    )
+    expect(dryRun).toMatchObject({ removedRecords: 1, applied: false })
+    expect(storeLineCount(root)).toBe(1)
+
+    const sanitized = await sanitizeVaultHistory(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      { disableUnsafeWarning: true, excluded: true, autoApprove: true },
+    )
+    expect(sanitized).toMatchObject({ removedRecords: 1, keptRecords: 0, applied: true })
+    expect(readFileSync(path.join(root, '.vault/store.dat'), 'utf8')).toBe('')
+
     const enc = await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
       disableUnsafeWarning: true,
+      syncDir,
     })
-    expect(enc.excludedEntriesIgnored).toBe(1)
-    expect(enc.deleteRecordsWritten).toBe(0)
-
-    writeFileSync(
-      path.join(root, 'vault.json'),
-      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
-    )
-    const plan = await buildRestorePlan(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
-      disableUnsafeWarning: true,
-    })
-    expect(plan.summary.delete).toBe(0)
-    expect(plan.files[0]?.entries[0]).toMatchObject({
-      key: 'SECRET_TOKEN',
-      action: 'modify',
-    })
+    expect(enc.localOnlyEntriesSkipped).toBe(1)
+    expect(enc.setRecordsWritten).toBe(0)
+    const syncState = JSON.parse(readFileSync(path.join(syncDir, 'vault-sync-state.json'), 'utf8'))
+    expect(syncState.entries).toEqual({})
   })
 
   it('fails closed on unreadable vault records unless explicitly ignored', async () => {
@@ -406,6 +439,19 @@ describe('@env-lane/vault', () => {
       disableUnsafeWarning: true,
       syncDir,
     })
+    const syncStatePath = path.join(syncDir, 'vault-sync-state.json')
+    const syncState = JSON.parse(readFileSync(syncStatePath, 'utf8'))
+    const syncEntry = Object.values(syncState.entries)[0] as Record<string, unknown>
+    const expectedFingerprint = createHmac(
+      'sha256',
+      deriveVaultSyncKey(deriveVaultKey(path.join(root, 'key.aes'))),
+    )
+      .update(JSON.stringify({ op: 'set', v: '1' }))
+      .digest('hex')
+    expect(syncState).toMatchObject({ version: 1, fingerprint: 'hmac-sha256' })
+    expect(syncEntry).toMatchObject({ valueFingerprint: expectedFingerprint })
+    expect(syncEntry).not.toHaveProperty('valueHash')
+    expect(statSync(syncStatePath).mode & 0o777).toBe(0o600)
     writeFileSync(path.join(root, '.env'), 'A=2\n')
     await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
       disableUnsafeWarning: true,
@@ -422,43 +468,144 @@ describe('@env-lane/vault', () => {
     )
     expect(restorePlan.summary.conflict).toBe(1)
 
-    const ignoredRestore = await decryptEnvFiles(
+    const keptLocalRestore = await decryptEnvFiles(
       path.join(root, 'vault.json'),
       path.join(root, 'key.aes'),
       {
         disableUnsafeWarning: true,
         syncDir,
-        conflictStrategy: 'ignore',
+        conflictStrategy: 'keep-local',
         autoApprove: true,
       },
     )
-    expect(ignoredRestore.filesWritten).toBe(0)
+    expect(keptLocalRestore.filesWritten).toBe(0)
     expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=3\n')
 
-    const ignoredPush = await encryptEnvFiles(
+    const tookVaultPush = await encryptEnvFiles(
       path.join(root, 'vault.json'),
       path.join(root, 'key.aes'),
       {
         disableUnsafeWarning: true,
         syncDir,
-        conflictStrategy: 'ignore',
+        conflictStrategy: 'take-vault',
       },
     )
-    expect(ignoredPush.conflictsIgnored).toBe(1)
-    expect(ignoredPush.setRecordsWritten).toBe(0)
+    expect(tookVaultPush.conflictsTookVault).toBe(1)
+    expect(tookVaultPush.setRecordsWritten).toBe(0)
 
-    const overwrittenRestore = await decryptEnvFiles(
+    const tookVaultRestore = await decryptEnvFiles(
       path.join(root, 'vault.json'),
       path.join(root, 'key.aes'),
       {
         disableUnsafeWarning: true,
         syncDir,
-        conflictStrategy: 'overwrite',
+        conflictStrategy: 'take-vault',
         autoApprove: true,
       },
     )
-    expect(overwrittenRestore.filesWritten).toBe(1)
+    expect(tookVaultRestore.filesWritten).toBe(1)
     expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=2\n')
+  })
+
+  it.each([undefined, 0, 1])(
+    'migrates legacy unkeyed sync state version %s as schema v0 into keyed schema v1',
+    async (legacyVersion) => {
+      const root = path.join(tmpdir(), `env-lane-vault-sync-v0-${legacyVersion}-${Date.now()}`)
+      const syncDir = path.join(root, '.sync-state')
+      mkdirSync(syncDir, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+      writeFileSync(path.join(root, '.env'), 'A=1\n')
+      writeFileSync(
+        path.join(root, 'vault.json'),
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+      await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+      })
+      writeFileSync(
+        path.join(syncDir, 'vault-sync-state.json'),
+        `${JSON.stringify({
+          version: legacyVersion,
+          entries: {
+            legacy: {
+              filePath: '.env',
+              key: 'A',
+              op: 'set',
+              valueHash: 'legacy-unkeyed-hash',
+              vaultTimestamp: 1,
+              syncedAt: 1,
+            },
+          },
+        })}\n`,
+      )
+
+      const migrated = await encryptEnvFiles(
+        path.join(root, 'vault.json'),
+        path.join(root, 'key.aes'),
+        { disableUnsafeWarning: true, syncDir },
+      )
+
+      expect(migrated.syncStateMigratedFromVersion0).toBe(true)
+      const state = JSON.parse(readFileSync(path.join(syncDir, 'vault-sync-state.json'), 'utf8'))
+      expect(state).toMatchObject({ version: 1, fingerprint: 'hmac-sha256' })
+      expect(Object.values(state.entries)[0]).toHaveProperty('valueFingerprint')
+    },
+  )
+
+  it('treats a differing first sync as unbased and never uses file mtime', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-sync-unbased-${Date.now()}`)
+    const syncDir = path.join(root, '.sync-state')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=vault\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    writeFileSync(path.join(root, '.env'), 'A=local\n')
+
+    const plan = await buildRestorePlan(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+      syncDir,
+    })
+
+    expect(plan.files[0]?.entries[0]).toMatchObject({
+      action: 'conflict',
+      conflictReason: 'local and vault differ without a sync baseline',
+    })
+  })
+
+  it('does not partially append records when conflict resolution aborts', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-atomic-encrypt-${Date.now()}`)
+    const syncDir = path.join(root, '.sync-state')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'B=base\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+      syncDir,
+    })
+    writeFileSync(path.join(root, '.env'), 'B=vault-change\n')
+    await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    const recordsBefore = storeLineCount(root)
+    writeFileSync(path.join(root, '.env'), 'NEW=pending\nB=local-change\n')
+
+    await expect(
+      encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+        disableUnsafeWarning: true,
+        syncDir,
+      }),
+    ).rejects.toThrow(/resolution aborted/i)
+    expect(storeLineCount(root)).toBe(recordsBefore)
   })
 
   it('prunes vault history by recent count and age while preserving latest records', async () => {
@@ -688,6 +835,17 @@ describe('@env-lane/vault', () => {
       await expect(
         encryptEnvFiles(configFile, path.join(root, 'key.aes'), { disableUnsafeWarning: true }),
       ).rejects.toThrow(/must be an object/)
+
+      writeFileSync(
+        configFile,
+        JSON.stringify({
+          envFiles: ['.env'],
+          exclude: [{ keys: ['SECRET_*'] }],
+        }),
+      )
+      await expect(
+        encryptEnvFiles(configFile, path.join(root, 'key.aes'), { disableUnsafeWarning: true }),
+      ).rejects.toThrow(/must define at least one file pattern and one key pattern/)
     })
 
     it('throws when sync state file is invalid or unsupported JSON', async () => {
@@ -756,6 +914,12 @@ describe('@env-lane/vault', () => {
           olderThanDays: -1,
         }),
       ).rejects.toThrow(/olderThanDays must be a non-negative number/)
+
+      await expect(
+        sanitizeVaultHistory(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+        }),
+      ).rejects.toThrow(/requires --excluded/)
     })
 
     it('throws when interactive terminal is required in TTY check', async () => {
@@ -786,6 +950,7 @@ describe('@env-lane/vault', () => {
           decryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
             disableUnsafeWarning: true,
             syncDir,
+            conflictStrategy: 'ask',
             autoApprove: false, // forces prompt
           }),
         ).rejects.toThrow(/Interactive terminal is required/)
@@ -912,3 +1077,5 @@ describe('@env-lane/vault', () => {
     })
   })
 })
+
+import { createHmac } from 'node:crypto'

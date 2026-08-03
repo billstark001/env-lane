@@ -392,6 +392,8 @@ All dotenv consumers use env-lane's shared line AST. Assignment nodes retain the
 
 `@env-lane/vault` stores reversible encrypted dotenv records for development workflows. It depends on local key-file handling, repository access controls, and CI logging discipline. Do not use it as a production secret-management system.
 
+Encryption does not make the Vault store or its key file safe to publish. Env-lane cannot prevent Git, cloud-sync clients, backup software, shell logs, or other tools from uploading local files.
+
 Vault schema version 1 records store dotenv `effectiveValue` data. Records without a version, or with version 0, are read as the earlier raw right-hand-side format and converted through the shared dotenv AST when loaded; newly written records always use version 1.
 
 Prefer CI/CD Secrets, cloud KMS, HashiCorp Vault, SOPS, age, or a platform Secret Manager for production secrets.
@@ -418,16 +420,25 @@ export default {
   autoRemapPaths: true,
   // Allow decrypt/restore of unmanaged files. Defaults to false.
   allowUnmanaged: false,
-  // Exclude keys matching patterns from specific files.
-  // Supports key-value object mappings or rules array with keys/files aliases:
+  // Matching values are local-only and never managed, persisted, restored, or synced by Vault.
+  // This boundary applies only to env-lane Vault; it cannot prevent other tools from uploading them.
   exclude: [
     {
       files: ['apps/api/.env.local'],
-      keys: ['PUBLIC_*']
+      keys: ['ETH_PRIVATE_KEY', 'WALLET_MNEMONIC']
     }
   ]
 };
 ```
+
+`exclude` is a fail-closed local-only boundary. If the store already contains any history that is newly matched by an exclude rule, encrypt, plan, and decrypt refuse to continue. Inspect and atomically remove every matching historical record with:
+
+```bash
+env-lane vault sanitize key.aes --excluded --dry-run
+env-lane vault sanitize key.aes --excluded --yes
+```
+
+After sanitizing a secret that was previously stored, rotate it: removing local history cannot recall copies that Git, cloud storage, backups, logs, or other systems may already hold.
 
 CLI commands do not require the configuration path argument by default (it is loaded automatically or can be specified with `--vault-config <file>`). They only require the `<keyFile>` argument:
 
@@ -438,7 +449,7 @@ env-lane vault decrypt key.aes --dry-run
 env-lane vault decrypt key.aes --yes
 ```
 
-Optional local sync state provides git-like conflict detection without changing the encrypted vault record format. It is disabled unless you explicitly choose a directory, so env-lane will not silently create a system cache of environment data. The sync file stores per-key metadata and value hashes, not plaintext values:
+Optional local sync state provides three-way conflict detection without changing the encrypted Vault record format. Passing `--sync-dir` is explicit consent to create additional local state in that directory; env-lane never creates it implicitly. The file stores variable names, relative paths, timestamps, and value fingerprints keyed with a key derived from the Vault key. It does not copy dotenv files or store plaintext values. Excluded variables are not included.
 
 ```bash
 env-lane vault encrypt key.aes --sync-dir .env-lane-sync
@@ -446,7 +457,13 @@ env-lane vault plan key.aes --sync-dir .env-lane-sync
 env-lane vault decrypt key.aes --sync-dir .env-lane-sync --conflicts ask
 ```
 
-When both the local dotenv value and the latest vault record changed since the last sync baseline, env-lane reports a conflict. Use `--conflicts ask`, `--conflicts overwrite`, or `--conflicts ignore` on `vault encrypt` and `vault decrypt` to decide per item or apply a consistent policy. If no sync baseline exists yet, env-lane falls back to the dotenv file mtime when it can.
+Sync state schema v1 uses keyed HMAC-SHA256 fingerprints. Legacy unkeyed state is treated as schema v0 and safely rebased into v1; differing local and Vault values without a baseline are reported as conflicts instead of being guessed from file mtimes.
+
+Use `--conflicts abort` (the default), `--conflicts keep-local`, `--conflicts take-vault`, or the explicitly interactive `--conflicts ask`. These names always identify the preferred source regardless of whether the command is encrypt or decrypt.
+
+Without `--sync-dir`, encrypt intentionally treats local dotenv values as its source and decrypt treats Vault records as its source. Vault schema v1 contains no causal baseline, so reliable conflict detection without `--sync-dir` is unsupported and will never be inferred from timestamps or file mtimes.
+
+Vault store rewrites, batched encrypt appends, sync-state updates, and dotenv restores use same-directory temporary files followed by atomic replacement so an interrupted write does not leave a partially written target.
 
 Vault history can be compacted by age or by keeping only the latest records for each file/key pair. The latest record is preserved by default so the current restore result remains available:
 

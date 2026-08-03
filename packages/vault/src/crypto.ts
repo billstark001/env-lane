@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, scryptSync } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -14,6 +14,18 @@ export function deriveVaultKey(keyFilePath: string): Buffer {
   const material = readFileSync(abs)
   if (!material.length) throw new Error(`Key file is empty: ${abs}`)
   return scryptSync(material, KDF_SALT, 32, KDF_OPTS)
+}
+
+export function deriveVaultSyncKey(vaultKey: Buffer): Buffer {
+  return Buffer.from(
+    hkdfSync(
+      'sha256',
+      vaultKey,
+      Buffer.from('env-lane-vault-sync-state-v1', 'utf8'),
+      Buffer.from('value-fingerprint', 'utf8'),
+      32,
+    ),
+  )
 }
 
 export function encryptRecord(key: Buffer, plaintext: string): string {
