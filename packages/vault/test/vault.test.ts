@@ -2,15 +2,19 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  rmSync,
   statSync,
+  unlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { type Diagnostic, withEnvLaneContext } from '../../core/src/index.js'
-
+import { removeStaleLock, withFileLock } from '../src/file-lock.js'
 import {
   applyRestorePlan,
   buildRestorePlan,
@@ -30,6 +34,19 @@ import {
   writeApprovalDocument,
 } from '../src/index.js'
 
+const testDirectories = new Set<string>()
+
+function testDirectory(prefix: string): string {
+  const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  testDirectories.add(root)
+  return root
+}
+
+afterEach(() => {
+  for (const root of testDirectories) rmSync(root, { recursive: true, force: true })
+  testDirectories.clear()
+})
+
 function configSource(ext: string, config: unknown): string {
   const json = JSON.stringify(config)
   if (ext === 'json') return json
@@ -43,6 +60,39 @@ function storeLineCount(root: string): number {
 }
 
 describe('@env-lane/vault', () => {
+  it('keeps stale-looking locks owned by live processes and removes abandoned locks', async () => {
+    const root = testDirectory(`env-lane-vault-lock`)
+    const lockPath = path.join(root, 'store.dat.lock')
+    mkdirSync(root, { recursive: true })
+    const staleTime = new Date(Date.now() - 60_000)
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, createdAt: 0, token: 'live' }))
+    utimesSync(lockPath, staleTime, staleTime)
+
+    await removeStaleLock(lockPath)
+    expect(existsSync(lockPath)).toBe(true)
+
+    writeFileSync(lockPath, JSON.stringify({ pid: 2_147_483_647, createdAt: 0, token: 'dead' }))
+    utimesSync(lockPath, staleTime, staleTime)
+    await removeStaleLock(lockPath)
+    expect(existsSync(lockPath)).toBe(false)
+  })
+
+  it('does not remove a lock file whose ownership token changed', async () => {
+    const root = testDirectory(`env-lane-vault-lock-owner`)
+    const targetPath = path.join(root, 'store.dat')
+    const lockPath = `${targetPath}.lock`
+    mkdirSync(root, { recursive: true })
+
+    await withFileLock(targetPath, async () => {
+      writeFileSync(
+        lockPath,
+        JSON.stringify({ pid: process.pid, createdAt: Date.now(), token: 'replacement' }),
+      )
+    })
+
+    expect(existsSync(lockPath)).toBe(true)
+    unlinkSync(lockPath)
+  })
   it('emits an unsafe warning unless explicitly disabled', () => {
     const diagnostics: Diagnostic[] = []
     const context = { logger: { diagnostic: (event: Diagnostic) => diagnostics.push(event) } }
@@ -65,7 +115,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('encrypts and decrypts dotenv files', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(path.join(root, '.env'), 'A=1\nB=2\n')
@@ -84,7 +134,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('shares dotenv effective-value semantics and preserves local inline comments', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-effective-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-effective`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(path.join(root, '.env'), 'A: one # original note\nEMPTY= # empty note\n')
@@ -136,7 +186,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('reads unversioned vault records as version 0 raw values', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-v0-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-v0`)
     const envFile = path.join(root, '.env')
     const keyFile = path.join(root, 'key.aes')
     mkdirSync(path.join(root, '.vault'), { recursive: true })
@@ -172,7 +222,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('restores dotenv files without rewriting unmanaged content', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-restore-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-restore`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(
@@ -210,8 +260,8 @@ describe('@env-lane/vault', () => {
   })
 
   it('supports dry-run confirmation and remaps previous checkout paths', async () => {
-    const oldRoot = path.join(tmpdir(), `env-lane-vault-old-${Date.now()}`)
-    const newRoot = path.join(tmpdir(), `env-lane-vault-new-${Date.now()}`)
+    const oldRoot = testDirectory(`env-lane-vault-old`)
+    const newRoot = testDirectory(`env-lane-vault-new`)
     mkdirSync(path.join(oldRoot, 'nested'), { recursive: true })
     mkdirSync(path.join(newRoot, 'nested'), { recursive: true })
     writeFileSync(path.join(oldRoot, 'key.aes'), 'dev-only-key-material')
@@ -256,7 +306,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('loads object-style exclude rules, de-dupes env files, and rejects store overlap', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-config-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-config`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(path.join(root, '.env'), 'A=1\nSECRET_TOKEN=skip\n')
@@ -287,7 +337,7 @@ describe('@env-lane/vault', () => {
   })
 
   it.each(['ts', 'mjs', 'cjs', 'js', 'json'])('loads vault %s config files', async (ext) => {
-    const root = path.join(tmpdir(), `env-lane-vault-config-format-${ext}-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-config-format-${ext}`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, '.env'), 'A=1\n')
     const configFile = path.join(root, `vault.${ext}`)
@@ -309,7 +359,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('fails closed until excluded historical records are sanitized', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-exclude-delete-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-exclude-delete`)
     const syncDir = path.join(root, '.sync-state')
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -366,7 +416,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('fails closed on unreadable vault records unless explicitly ignored', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-corrupt-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-corrupt`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(path.join(root, '.env'), 'A=1\n')
@@ -397,7 +447,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('uses explicit sync state to detect restore and push conflicts', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-sync-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-sync`)
     const syncDir = path.join(root, '.sync-state')
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -475,7 +525,7 @@ describe('@env-lane/vault', () => {
   it.each([undefined, 0, 1])(
     'migrates legacy unkeyed sync state version %s as schema v0 into keyed schema v1',
     async (legacyVersion) => {
-      const root = path.join(tmpdir(), `env-lane-vault-sync-v0-${legacyVersion}-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-sync-v0-${legacyVersion}`)
       const syncDir = path.join(root, '.sync-state')
       mkdirSync(syncDir, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -516,7 +566,7 @@ describe('@env-lane/vault', () => {
   )
 
   it('treats a differing first sync as unbased and never uses file mtime', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-sync-unbased-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-sync-unbased`)
     const syncDir = path.join(root, '.sync-state')
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -539,7 +589,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('does not partially append records when conflict resolution aborts', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-atomic-encrypt-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-atomic-encrypt`)
     const syncDir = path.join(root, '.sync-state')
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -565,7 +615,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('builds redacted plans and applies only explicitly selected entries', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-partial-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-partial`)
     const configPath = path.join(root, 'vault.json')
     const keyPath = path.join(root, 'key.aes')
     mkdirSync(root, { recursive: true })
@@ -612,7 +662,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('rejects stale approval plans before writing any file', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-stale-plan-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-stale-plan`)
     const configPath = path.join(root, 'vault.json')
     const keyPath = path.join(root, 'key.aes')
     mkdirSync(root, { recursive: true })
@@ -638,7 +688,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('rejects incomplete approval documents', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-approval-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-approval`)
     const configPath = path.join(root, 'vault.json')
     const keyPath = path.join(root, 'key.aes')
     const approvalPath = path.join(root, 'approval.json')
@@ -660,7 +710,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('prunes vault history by recent count and age while preserving latest records', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-prune-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-prune`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(
@@ -708,7 +758,7 @@ describe('@env-lane/vault', () => {
   })
 
   it('implicitly resolves vault config from main config or default location', async () => {
-    const root = path.join(tmpdir(), `env-lane-vault-implicit-${Date.now()}`)
+    const root = testDirectory(`env-lane-vault-implicit`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
     writeFileSync(path.join(root, '.env'), 'A=1\nB=2\n')
@@ -718,6 +768,7 @@ describe('@env-lane/vault', () => {
       JSON.stringify({
         vault: {
           configFile: 'custom-vault.json',
+          disableUnsafeWarning: true,
         },
       }),
     )
@@ -726,6 +777,19 @@ describe('@env-lane/vault', () => {
       path.join(root, 'custom-vault.json'),
       JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
     )
+
+    const resolvedConfig = await loadVaultConfig(undefined, { cwd: root })
+    expect(resolvedConfig.disableUnsafeWarning).toBe(true)
+    writeFileSync(
+      path.join(root, 'custom-vault.json'),
+      JSON.stringify({
+        envFiles: ['.env'],
+        outputDir: '.vault',
+        outputFile: 'store.dat',
+        disableUnsafeWarning: false,
+      }),
+    )
+    expect((await loadVaultConfig(undefined, { cwd: root })).disableUnsafeWarning).toBe(false)
 
     const originalCwd = process.cwd
     process.cwd = () => root
@@ -748,7 +812,7 @@ describe('@env-lane/vault', () => {
   it.each([['ts'], ['js'], ['json']])(
     'implicitly resolves vault config in different formats: %s',
     async (ext) => {
-      const root = path.join(tmpdir(), `env-lane-vault-formats-${ext}-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-formats-${ext}`)
       mkdirSync(root, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
       writeFileSync(path.join(root, '.env'), 'A=1\n')
@@ -770,7 +834,7 @@ describe('@env-lane/vault', () => {
 
   describe('unhappy paths', () => {
     it('throws when key file does not exist or is empty', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-unhappy-key-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-unhappy-key`)
       mkdirSync(root, { recursive: true })
       const nonExistentKey = path.join(root, 'non-existent.key')
       const emptyKey = path.join(root, 'empty.key')
@@ -786,15 +850,20 @@ describe('@env-lane/vault', () => {
         await expect(encryptEnvFiles(undefined, nonExistentKey)).rejects.toThrow(
           /Key file does not exist/,
         )
+        await expect(encryptEnvFiles(undefined, nonExistentKey)).rejects.toMatchObject({
+          code: 'VAULT_KEY_NOT_FOUND',
+        })
 
-        await expect(encryptEnvFiles(undefined, emptyKey)).rejects.toThrow(/Key file is empty/)
+        await expect(encryptEnvFiles(undefined, emptyKey)).rejects.toMatchObject({
+          code: 'VAULT_KEY_EMPTY',
+        })
       } finally {
         process.cwd = originalCwd
       }
     })
 
     it('throws when encrypted record is too short or decryption fails', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-unhappy-decrypt-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-unhappy-decrypt`)
       mkdirSync(root, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
       writeFileSync(path.join(root, '.env'), 'A=1\n')
@@ -826,7 +895,7 @@ describe('@env-lane/vault', () => {
     })
 
     it('throws when loading non-existent vault config file', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-unhappy-config-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-unhappy-config`)
       mkdirSync(root, { recursive: true })
       const originalCwd = process.cwd
       process.cwd = () => root
@@ -840,7 +909,7 @@ describe('@env-lane/vault', () => {
     })
 
     it('throws when loading invalid exclude configuration format', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-unhappy-exclude-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-unhappy-exclude`)
       mkdirSync(root, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
 
@@ -882,7 +951,7 @@ describe('@env-lane/vault', () => {
     })
 
     it('throws when sync state file is invalid or unsupported JSON', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-unhappy-sync-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-unhappy-sync`)
       mkdirSync(root, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
       writeFileSync(path.join(root, '.env'), 'A=1\n')
@@ -915,7 +984,7 @@ describe('@env-lane/vault', () => {
     })
 
     it('throws when prune parameters are missing or invalid', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-unhappy-prune-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-unhappy-prune`)
       mkdirSync(root, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
       writeFileSync(
@@ -948,7 +1017,7 @@ describe('@env-lane/vault', () => {
     })
 
     it('keeps library conflict resolution independent from terminal state', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-unhappy-tty-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-unhappy-tty`)
       const syncDir = path.join(root, '.sync-state')
       mkdirSync(root, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -983,7 +1052,7 @@ describe('@env-lane/vault', () => {
 
   describe('New Features: autoRemapPaths and allowUnmanaged', () => {
     it('behaves correctly under autoRemapPaths and allowUnmanaged controls', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-features-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-features`)
       mkdirSync(root, { recursive: true })
       writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
 
@@ -1092,7 +1161,7 @@ describe('@env-lane/vault', () => {
 
   describe('audited integrity and concurrency boundaries', () => {
     it('rejects an approval that removes both a plan entry and its decision', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-plan-entry-set-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-plan-entry-set`)
       const configPath = path.join(root, 'vault.json')
       const keyPath = path.join(root, 'key.aes')
       const approvalPath = path.join(root, 'approval.json')
@@ -1123,7 +1192,7 @@ describe('@env-lane/vault', () => {
     })
 
     it('fails closed when an explicit decision map misses a current entry', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-missing-decision-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-missing-decision`)
       const configPath = path.join(root, 'vault.json')
       const keyPath = path.join(root, 'key.aes')
       mkdirSync(root, { recursive: true })
@@ -1146,7 +1215,7 @@ describe('@env-lane/vault', () => {
     })
 
     it('serializes concurrent appends without losing either update', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-concurrent-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-concurrent`)
       const keyPath = path.join(root, 'key.aes')
       const configA = path.join(root, 'vault-a.json')
       const configB = path.join(root, 'vault-b.json')
@@ -1168,8 +1237,63 @@ describe('@env-lane/vault', () => {
       expect(storeLineCount(root)).toBe(2)
     })
 
-    it('prevents concurrent prune operations from overwriting a changed store', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-concurrent-prune-${Date.now()}`)
+    it('serializes the store and sync-state transaction before reading the next snapshot', async () => {
+      const root = testDirectory(`env-lane-vault-operation-lock`)
+      const keyPath = path.join(root, 'key.aes')
+      const configPath = path.join(root, 'vault.json')
+      const syncDir = path.join(root, '.sync')
+      mkdirSync(root, { recursive: true })
+      writeFileSync(keyPath, 'dev-only-key-material')
+      writeFileSync(path.join(root, '.env'), 'A=baseline\n')
+      writeFileSync(
+        configPath,
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+      await encryptEnvFiles(configPath, keyPath, { syncDir })
+      writeFileSync(path.join(root, '.env'), 'A=vault-change\n')
+      await encryptEnvFiles(configPath, keyPath)
+      writeFileSync(path.join(root, '.env'), 'A=first\n')
+
+      let releaseFirst: (() => void) | undefined
+      const firstPaused = new Promise<void>((resolvePaused) => {
+        releaseFirst = resolvePaused
+      })
+      let markFirstEntered: (() => void) | undefined
+      const firstEntered = new Promise<void>((resolveEntered) => {
+        markFirstEntered = resolveEntered
+      })
+      const first = encryptEnvFiles(configPath, keyPath, {
+        syncDir,
+        resolveConflict: async () => {
+          markFirstEntered?.()
+          await firstPaused
+          return 'keep-local' as const
+        },
+      })
+
+      await firstEntered
+      writeFileSync(path.join(root, '.env'), 'A=second\n')
+      let secondReadSnapshot = false
+      const second = encryptEnvFiles(configPath, keyPath, {
+        syncDir,
+        selectEntry: () => {
+          secondReadSnapshot = true
+          return true
+        },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(secondReadSnapshot).toBe(false)
+
+      releaseFirst?.()
+      await Promise.all([first, second])
+      expect(secondReadSnapshot).toBe(true)
+      expect(storeLineCount(root)).toBe(4)
+      const plan = await buildRestorePlan(configPath, keyPath, { syncDir })
+      expect(plan.summary).toMatchObject({ identical: 1, conflict: 0 })
+    })
+
+    it('rejects a prune apply when the store changed after its preview', async () => {
+      const root = testDirectory(`env-lane-vault-concurrent-prune`)
       const configPath = path.join(root, 'vault.json')
       const keyPath = path.join(root, 'key.aes')
       mkdirSync(root, { recursive: true })
@@ -1183,20 +1307,25 @@ describe('@env-lane/vault', () => {
         await encryptEnvFiles(configPath, keyPath)
       }
 
-      const results = await Promise.allSettled([
-        pruneVaultHistory(configPath, keyPath, { keepRecent: 1, autoApprove: true }),
-        pruneVaultHistory(configPath, keyPath, { keepRecent: 1, autoApprove: true }),
-      ])
-      for (const result of results) {
-        if (result.status === 'rejected') {
-          expect(result.reason).toMatchObject({ code: 'VAULT_STORE_CHANGED' })
-        }
-      }
-      expect(storeLineCount(root)).toBe(1)
+      const preview = await pruneVaultHistory(configPath, keyPath, {
+        keepRecent: 1,
+        dryRun: true,
+      })
+      writeFileSync(path.join(root, '.env'), 'A=4\n')
+      await encryptEnvFiles(configPath, keyPath)
+
+      await expect(
+        pruneVaultHistory(configPath, keyPath, {
+          keepRecent: 1,
+          autoApprove: true,
+          expectedStoreDigest: preview.storeDigest,
+        }),
+      ).rejects.toMatchObject({ code: 'VAULT_STORE_CHANGED' })
+      expect(storeLineCount(root)).toBe(4)
     })
 
     it('preserves corrupt lines when pruning readable history', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-prune-corrupt-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-prune-corrupt`)
       const configPath = path.join(root, 'vault.json')
       const keyPath = path.join(root, 'key.aes')
       mkdirSync(root, { recursive: true })
@@ -1221,11 +1350,14 @@ describe('@env-lane/vault', () => {
     })
 
     it('does not swallow syntax errors from an explicit Vault config', async () => {
-      const root = path.join(tmpdir(), `env-lane-vault-config-error-${Date.now()}`)
+      const root = testDirectory(`env-lane-vault-config-error`)
       mkdirSync(root, { recursive: true })
       const configPath = path.join(root, 'broken.json')
       writeFileSync(configPath, '{ invalid json')
-      await expect(loadVaultConfig(configPath)).rejects.toThrow(/JSON/)
+      await expect(loadVaultConfig(configPath)).rejects.toMatchObject({
+        code: 'VAULT_CONFIG_LOAD_FAILED',
+        message: expect.stringMatching(/JSON/),
+      })
     })
   })
 })

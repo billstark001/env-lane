@@ -2,7 +2,12 @@ import path from 'node:path'
 import { EnvLaneError } from '@env-lane/core'
 import type { Command } from 'commander'
 import { createApprovalDocument, readApprovalDocument, writeApprovalDocument } from '../approval.js'
-import { buildDefaultRestoreDecisions, hasUnresolvedSelectedConflict } from '../selection.js'
+import {
+  buildDefaultRestoreDecisions,
+  hasUnresolvedSelectedConflict,
+  selectRestorePlan,
+  selectRestorePlanByDecisions,
+} from '../selection.js'
 import { applyRestorePlan, buildRestorePlan, type RestoreDecision } from '../store.js'
 import { applyRestoreFailOn, emitPlanDiagnostics, emitUnsafeWarning } from './common.js'
 import {
@@ -45,8 +50,9 @@ function registerVaultPlanCommand(vault: Command, ctx: VaultCliContext): void {
           createApprovalDocument(plan, allOpts),
         )
       }
-      ctx.formatAndLog(plan, { format, text: (result) => renderRestorePlan(ctx, result) })
-      applyRestoreFailOn(plan, allOpts.failOn)
+      const selectedPlan = selectRestorePlan(plan, allOpts)
+      ctx.formatAndLog(selectedPlan, { format, text: (result) => renderRestorePlan(ctx, result) })
+      applyRestoreFailOn(selectedPlan, allOpts.failOn)
     })
 }
 
@@ -75,8 +81,12 @@ function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void
       })
       emitPlanDiagnostics(plan)
       if (allOpts.dryRun) {
-        ctx.formatAndLog(plan, { format, text: (result) => renderRestorePlan(ctx, result) })
-        applyRestoreFailOn(plan, allOpts.failOn)
+        const selectedPlan = selectRestorePlan(plan, allOpts)
+        ctx.formatAndLog(selectedPlan, {
+          format,
+          text: (result) => renderRestorePlan(ctx, result),
+        })
+        applyRestoreFailOn(selectedPlan, allOpts.failOn)
         return
       }
 
@@ -119,7 +129,7 @@ function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void
           ctx.output(`  Skipped entries: ${res.skippedEntries}`)
         },
       })
-      applyRestoreFailOn(plan, allOpts.failOn)
+      applyRestoreFailOn(selectRestorePlanByDecisions(result, result.decisions), allOpts.failOn)
     })
 }
 
@@ -157,7 +167,7 @@ function registerVaultApplyCommand(vault: Command, ctx: VaultCliContext): void {
         text: (res) =>
           ctx.output(`Applied ${res.appliedEntries} entries to ${res.filesWritten} files.`),
       })
-      applyRestoreFailOn(document.plan, allOpts.failOn)
+      applyRestoreFailOn(selectRestorePlanByDecisions(result, result.decisions), allOpts.failOn)
     })
 }
 

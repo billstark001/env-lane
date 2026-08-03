@@ -34,6 +34,7 @@ export interface VaultCommandOptions extends Record<string, unknown> {
 export interface VaultCliContext {
   readonly logger: DiagnosticLogger
   addCommonOptions(command: Command): Command
+  setDiagnosticPrefix(enabled: boolean): void
   resolveOutputFormat(opts: {
     format?: string
     json?: boolean

@@ -8,6 +8,8 @@ import {
   type RestorePlan,
   type RestorePlanEntry,
   restorePlanMatchesFailCondition,
+  selectRestorePlan,
+  selectRestorePlanByDecisions,
 } from '../src/index.js'
 
 function entry(
@@ -83,6 +85,62 @@ describe('Vault selection and fail-on policies', () => {
     expect(buildDefaultRestoreDecisions(plan([deletion]), { approveDeletes: true })).toEqual([
       { entryId: deletion.entryId, decision: 'apply-vault' },
     ])
+  })
+
+  it('projects plans and summaries to the selected entries', () => {
+    const auditedPlan = plan([entry('add', 'NEW_KEY'), entry('modify'), entry('conflict', 'OLD')])
+    const selected = selectRestorePlan(auditedPlan, { key: 'API_*', only: 'modify' })
+
+    expect(selected.files.flatMap((file) => file.entries)).toEqual([entry('modify')])
+    expect(selected.summary).toEqual({
+      add: 0,
+      modify: 1,
+      delete: 0,
+      identical: 0,
+      conflict: 0,
+      filesWithChanges: 1,
+    })
+    expect(auditedPlan.summary.conflict).toBe(1)
+
+    const emptySelection = selectRestorePlan(auditedPlan, { key: 'MISSING_*' })
+    expect(emptySelection.files).toEqual([])
+    expect(emptySelection.summary).toEqual({
+      add: 0,
+      modify: 0,
+      delete: 0,
+      identical: 0,
+      conflict: 0,
+      filesWithChanges: 0,
+    })
+  })
+
+  it('projects applied plans from explicit decisions instead of editable summaries', () => {
+    const modify = entry('modify')
+    const conflict = entry('conflict', 'CONFLICT')
+    const auditedPlan = plan([modify, conflict, entry('delete', 'DELETE')])
+    auditedPlan.summary = {
+      add: 99,
+      modify: 99,
+      delete: 99,
+      identical: 99,
+      conflict: 99,
+      filesWithChanges: 99,
+    }
+
+    const selected = selectRestorePlanByDecisions(auditedPlan, [
+      { entryId: modify.entryId, decision: 'skip' },
+      { entryId: conflict.entryId, decision: 'keep-local' },
+    ])
+
+    expect(selected.files.flatMap((file) => file.entries)).toEqual([conflict])
+    expect(selected.summary).toEqual({
+      add: 0,
+      modify: 0,
+      delete: 0,
+      identical: 0,
+      conflict: 1,
+      filesWithChanges: 1,
+    })
   })
 
   it('evaluates every --fail-on condition and validates input', () => {

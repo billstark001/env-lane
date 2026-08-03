@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { loadConfigWithC12, loadEnvLaneConfig, type ResolvedEnvLaneConfig } from '@env-lane/core'
+import {
+  EnvLaneError,
+  loadConfigWithC12,
+  loadEnvLaneConfig,
+  type ResolvedEnvLaneConfig,
+} from '@env-lane/core'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -42,7 +47,7 @@ function stringList(value: unknown, fieldName: string): string[] {
   const values = Array.isArray(value) ? value : [value]
   return values.map((item) => {
     if (typeof item !== 'string' || !item.trim()) {
-      throw new Error(`${fieldName} must contain non-empty strings.`)
+      throw new EnvLaneError('VAULT_INVALID_CONFIG', `${fieldName} must contain non-empty strings.`)
     }
     return item.trim()
   })
@@ -59,12 +64,15 @@ function normalizeExclude(rawExclude: unknown): Array<{ files: string[]; keys: s
       rawRules.push({ files: [filePattern], keys: keyPatterns })
     }
   } else {
-    throw new Error('config.exclude must be an array or an object when provided.')
+    throw new EnvLaneError(
+      'VAULT_INVALID_CONFIG',
+      'config.exclude must be an array or an object when provided.',
+    )
   }
 
   return rawRules.map((rawRule, index) => {
     if (!rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule)) {
-      throw new Error(`config.exclude[${index}] must be an object.`)
+      throw new EnvLaneError('VAULT_INVALID_CONFIG', `config.exclude[${index}] must be an object.`)
     }
     const rule = rawRule as Record<string, unknown>
     const files = stringList(
@@ -76,7 +84,8 @@ function normalizeExclude(rawExclude: unknown): Array<{ files: string[]; keys: s
       `config.exclude[${index}].keys`,
     )
     if (files.length === 0 || keys.length === 0) {
-      throw new Error(
+      throw new EnvLaneError(
+        'VAULT_INVALID_CONFIG',
         `config.exclude[${index}] must define at least one file pattern and one key pattern for the local-only boundary.`,
       )
     }
@@ -111,7 +120,7 @@ function isVaultConfig(obj: unknown): boolean {
   return 'envFiles' in obj || 'outputDir' in obj || 'outputFile' in obj
 }
 
-export async function loadVaultConfig(
+async function loadVaultConfigUnchecked(
   configPath?: string,
   options?: {
     cwd?: string
@@ -177,7 +186,10 @@ export async function loadVaultConfig(
       configFileRequired: true,
     })
     if (!loaded.configFile) {
-      throw new Error(`Vault config does not exist: ${configFileToLoad}`)
+      throw new EnvLaneError(
+        'VAULT_CONFIG_NOT_FOUND',
+        `Vault config does not exist: ${configFileToLoad}`,
+      )
     }
     configFileToLoad = loaded.configFile
     raw = loaded.config ?? {}
@@ -192,7 +204,10 @@ export async function loadVaultConfig(
   const envFiles = uniqueResolvedFiles(baseDirOfConfig, parsed.envFiles)
   const storePath = path.resolve(outputDir, parsed.outputFile)
   if (envFiles.includes(storePath)) {
-    throw new Error('The vault store file must not overlap with any env file.')
+    throw new EnvLaneError(
+      'VAULT_STORE_OVERLAP',
+      'The vault store file must not overlap with any env file.',
+    )
   }
   return {
     baseDir: baseDirOfConfig,
@@ -208,6 +223,29 @@ export async function loadVaultConfig(
       keys: Array.isArray(rule.keys) ? rule.keys : rule.keys ? [rule.keys] : [],
     })),
     sort: parsed.sort,
-    disableUnsafeWarning: parsed.disableUnsafeWarning ?? false,
+    disableUnsafeWarning:
+      parsed.disableUnsafeWarning ?? mainConfig.vault.disableUnsafeWarning ?? false,
+  }
+}
+
+export async function loadVaultConfig(
+  configPath?: string,
+  options?: {
+    cwd?: string
+    vaultConfigFile?: string
+    autoRemapPaths?: boolean
+    allowUnmanaged?: boolean
+  },
+): Promise<VaultConfig> {
+  try {
+    return await loadVaultConfigUnchecked(configPath, options)
+  } catch (error) {
+    if (error instanceof EnvLaneError && error.code.startsWith('VAULT_')) throw error
+    const cause = error instanceof Error ? error.message : String(error)
+    throw new EnvLaneError('VAULT_CONFIG_LOAD_FAILED', `Failed to load Vault config: ${cause}`, {
+      cause,
+      configPath,
+      vaultConfigFile: options?.vaultConfigFile,
+    })
   }
 }

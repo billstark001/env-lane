@@ -211,11 +211,17 @@ function loadSyncContext(syncDir: string | undefined, vaultKey: Buffer): SyncCon
     }
   const parsed = JSON.parse(readFileSync(statePath, 'utf8').replace(/^\uFEFF/, '')) as unknown
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`Invalid vault sync state file: ${statePath}`)
+    throw new EnvLaneError(
+      'VAULT_INVALID_SYNC_STATE',
+      `Invalid vault sync state file: ${statePath}`,
+    )
   }
   const raw = parsed as Record<string, unknown>
   if (!raw.entries || typeof raw.entries !== 'object' || Array.isArray(raw.entries)) {
-    throw new Error(`Unsupported vault sync state file: ${statePath}`)
+    throw new EnvLaneError(
+      'VAULT_UNSUPPORTED_SYNC_STATE',
+      `Unsupported vault sync state file: ${statePath}`,
+    )
   }
   const entries = Object.values(raw.entries as Record<string, unknown>)
   const isLegacyVersion0 =
@@ -241,7 +247,10 @@ function loadSyncContext(syncDir: string | undefined, vaultKey: Buffer): SyncCon
     }
   }
   if (raw.version !== 1 || raw.fingerprint !== 'hmac-sha256') {
-    throw new Error(`Unsupported vault sync state file: ${statePath}`)
+    throw new EnvLaneError(
+      'VAULT_UNSUPPORTED_SYNC_STATE',
+      `Unsupported vault sync state file: ${statePath}`,
+    )
   }
   for (const entry of entries) {
     if (
@@ -249,7 +258,10 @@ function loadSyncContext(syncDir: string | undefined, vaultKey: Buffer): SyncCon
       typeof entry !== 'object' ||
       typeof (entry as Record<string, unknown>).valueFingerprint !== 'string'
     ) {
-      throw new Error(`Invalid vault sync state entry: ${statePath}`)
+      throw new EnvLaneError(
+        'VAULT_INVALID_SYNC_STATE',
+        `Invalid vault sync state entry: ${statePath}`,
+      )
     }
   }
   return {
@@ -503,7 +515,10 @@ function readEncryptedStoreLines(
 ): string[] {
   if (!existsSync(config.storePath)) {
     if (options.allowMissing) return []
-    throw new Error(`Store file does not exist: ${config.storePath}`)
+    throw new EnvLaneError(
+      'VAULT_STORE_NOT_FOUND',
+      `Store file does not exist: ${config.storePath}`,
+    )
   }
   return readFileSync(config.storePath, 'utf8')
     .split(/\r?\n/)
@@ -538,10 +553,14 @@ function readStoreRecordLines(
     }
   })
   if (lines.length > 0 && parsedRecords === 0) {
-    throw new Error(`No readable vault records found in ${config.storePath}. Check the key file.`)
+    throw new EnvLaneError(
+      'VAULT_NO_READABLE_RECORDS',
+      `No readable vault records found in ${config.storePath}. Check the key file.`,
+    )
   }
   if (failedRecords > 0 && !options.ignoreCorruptRecords) {
-    throw new Error(
+    throw new EnvLaneError(
+      'VAULT_CORRUPT_STORE',
       `Vault store contains ${failedRecords} unreadable record(s) in ${config.storePath}. Refusing to continue from partial state; pass ignoreCorruptRecords only after inspecting the store.`,
     )
   }
@@ -616,6 +635,10 @@ async function rewriteStoreAtomically(
   })
 }
 
+function withVaultOperationLock<T>(config: VaultConfig, operation: () => Promise<T>): Promise<T> {
+  return withFileLock(`${config.storePath}.operation`, operation)
+}
+
 function excludedHistoricalRecords(config: VaultConfig, records: StoreRecordLine[]) {
   return records.filter((item) => isExcluded(config, item.groupFilePath, item.record.k))
 }
@@ -626,7 +649,8 @@ function assertNoExcludedHistory(
   failedRecords: number,
 ): void {
   if (config.exclude.length > 0 && failedRecords > 0) {
-    throw new Error(
+    throw new EnvLaneError(
+      'VAULT_EXCLUDE_AUDIT_FAILED',
       `Cannot verify the local-only exclude boundary because ${failedRecords} vault record(s) are unreadable. Sanitize or repair the store before continuing; ignoreCorruptRecords cannot bypass exclude auditing.`,
     )
   }
@@ -639,7 +663,8 @@ function assertNoExcludedHistory(
       ),
     ),
   ].slice(0, 3)
-  throw new Error(
+  throw new EnvLaneError(
+    'VAULT_EXCLUDED_HISTORY',
     `Vault store contains ${excluded.length} historical record(s) now matched by exclude (${examples.join(', ')}). Excluded values are local-only; run "env-lane vault sanitize <keyFile> --excluded --dry-run" and then repeat with --yes before continuing. Rotate any secret that may already have been shared.`,
   )
 }
@@ -1055,13 +1080,7 @@ async function processEnvFileForEncryption(
   accumulator.shadowedEntriesIgnored += envDoc.shadowedEntryCount
 }
 
-export async function encryptEnvFiles(
-  configPath: string | undefined,
-  keyFilePath: string,
-  options: EncryptOptions = {},
-) {
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
-  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+async function encryptEnvFilesLocked(config: VaultConfig, key: Buffer, options: EncryptOptions) {
   const syncContext = loadSyncContext(
     options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
     key,
@@ -1109,21 +1128,31 @@ export async function encryptEnvFiles(
   }
 }
 
-export async function buildRestorePlan(
+export async function encryptEnvFiles(
   configPath: string | undefined,
   keyFilePath: string,
-  options: {
-    cwd?: string
-    ignoreCorruptRecords?: boolean
-    syncDir?: string
-    vaultConfigFile?: string
-    autoRemapPaths?: boolean
-    allowUnmanaged?: boolean
-    resolvedConfig?: VaultConfig
-  } = {},
+  options: EncryptOptions = {},
 ) {
   const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  return withVaultOperationLock(config, () => encryptEnvFilesLocked(config, key, options))
+}
+
+interface BuildRestorePlanOptions {
+  cwd?: string
+  ignoreCorruptRecords?: boolean
+  syncDir?: string
+  vaultConfigFile?: string
+  autoRemapPaths?: boolean
+  allowUnmanaged?: boolean
+  resolvedConfig?: VaultConfig
+}
+
+function buildRestorePlanLocked(
+  config: VaultConfig,
+  key: Buffer,
+  options: BuildRestorePlanOptions,
+): RestorePlan {
   const syncContext = loadSyncContext(
     options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
     key,
@@ -1132,6 +1161,16 @@ export async function buildRestorePlan(
   const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
   assertNoExcludedHistory(config, store.records, store.failedRecords)
   return publicRestorePlan(buildRestorePlanFromState(config, store, key, syncContext))
+}
+
+export async function buildRestorePlan(
+  configPath: string | undefined,
+  keyFilePath: string,
+  options: BuildRestorePlanOptions = {},
+) {
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
+  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  return withVaultOperationLock(config, async () => buildRestorePlanLocked(config, key, options))
 }
 
 export async function decryptEnvFiles(
@@ -1278,30 +1317,30 @@ function assertFreshRestorePlan(submitted: RestorePlan, current: InternalRestore
   }
 }
 
-export async function applyRestorePlan(
-  configPath: string | undefined,
-  keyFilePath: string,
+interface ApplyRestoreOptions {
+  cwd?: string
+  autoApprove?: boolean
+  ignoreCorruptRecords?: boolean
+  syncDir?: string
+  conflictStrategy?: VaultConflictStrategy
+  vaultConfigFile?: string
+  autoRemapPaths?: boolean
+  allowUnmanaged?: boolean
+  resolvedConfig?: VaultConfig
+  approveDeletes?: boolean
+  decisions?: RestoreDecision[]
+  selectEntry?: (entry: RestorePlanEntry) => boolean
+  resolveConflict?: (
+    entry: RestorePlanEntry,
+  ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault'
+}
+
+async function applyRestorePlanLocked(
+  config: VaultConfig,
+  key: Buffer,
   submittedPlan: RestorePlan,
-  options: {
-    cwd?: string
-    autoApprove?: boolean
-    ignoreCorruptRecords?: boolean
-    syncDir?: string
-    conflictStrategy?: VaultConflictStrategy
-    vaultConfigFile?: string
-    autoRemapPaths?: boolean
-    allowUnmanaged?: boolean
-    resolvedConfig?: VaultConfig
-    approveDeletes?: boolean
-    decisions?: RestoreDecision[]
-    selectEntry?: (entry: RestorePlanEntry) => boolean
-    resolveConflict?: (
-      entry: RestorePlanEntry,
-    ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault'
-  } = {},
+  options: ApplyRestoreOptions,
 ) {
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
-  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
   const syncContext = loadSyncContext(
     options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
     key,
@@ -1386,6 +1425,19 @@ export async function applyRestorePlan(
   }
 }
 
+export async function applyRestorePlan(
+  configPath: string | undefined,
+  keyFilePath: string,
+  submittedPlan: RestorePlan,
+  options: ApplyRestoreOptions = {},
+) {
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
+  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  return withVaultOperationLock(config, () =>
+    applyRestorePlanLocked(config, key, submittedPlan, options),
+  )
+}
+
 async function confirmStoreRewrite(
   operation: 'history prune' | 'sanitize',
   options: { autoApprove?: boolean; dryRun?: boolean } = {},
@@ -1433,88 +1485,96 @@ export async function pruneVaultHistory(
   } = {},
 ) {
   if (options.keepRecent === undefined && options.olderThanDays === undefined) {
-    throw new Error('History prune requires --keep-recent or --older-than-days.')
+    throw new EnvLaneError(
+      'VAULT_INVALID_PRUNE_OPTIONS',
+      'History prune requires --keep-recent or --older-than-days.',
+    )
   }
   if (
     options.keepRecent !== undefined &&
     (!Number.isInteger(options.keepRecent) || options.keepRecent < 1)
   ) {
-    throw new Error('keepRecent must be a positive integer.')
+    throw new EnvLaneError('VAULT_INVALID_PRUNE_OPTIONS', 'keepRecent must be a positive integer.')
   }
   if (
     options.olderThanDays !== undefined &&
     (!Number.isFinite(options.olderThanDays) || options.olderThanDays < 0)
   ) {
-    throw new Error('olderThanDays must be a non-negative number.')
+    throw new EnvLaneError(
+      'VAULT_INVALID_PRUNE_OPTIONS',
+      'olderThanDays must be a non-negative number.',
+    )
   }
   const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
-  const store = readStoreRecordLines(config, key, {
-    ignoreCorruptRecords: options.ignoreCorruptRecords,
-  })
-  const storeDigest = stableHash(store.rawLines.join('\n'))
-  if (options.expectedStoreDigest && options.expectedStoreDigest !== storeDigest) {
-    throw new EnvLaneError(
-      'VAULT_STORE_CHANGED',
-      'The Vault store changed after the prune preview. Preview the operation again.',
-    )
-  }
-  const targetFilePath = options.filePath
-    ? path.resolve(config.baseDir, options.filePath)
-    : undefined
-  const groups = new Map<string, PruneCandidate[]>()
-  store.records.forEach((record) => {
-    if (targetFilePath && record.groupFilePath !== targetFilePath) return
-    if (options.key && record.record.k !== options.key) return
-    const group = groups.get(pruneGroupKey(record)) ?? []
-    group.push({ index: record.lineIndex, record: record.record })
-    groups.set(pruneGroupKey(record), group)
-  })
-
-  const keep = new Set(store.rawLines.map((_, index) => index))
-  const olderThanMs =
-    options.olderThanDays === undefined
-      ? undefined
-      : Date.now() - options.olderThanDays * 24 * 60 * 60 * 1000
-  const preserveLatest = options.preserveLatest ?? true
-  for (const group of groups.values()) {
-    const sorted = [...group].sort((left, right) => {
-      if (isNewerRecord(left.record, right.record)) return -1
-      if (isNewerRecord(right.record, left.record)) return 1
-      return 0
+  return withVaultOperationLock(config, async () => {
+    const store = readStoreRecordLines(config, key, {
+      ignoreCorruptRecords: options.ignoreCorruptRecords,
     })
-    sorted.forEach((candidate, rank) => {
-      if (
-        shouldPruneCandidate(candidate, rank, {
-          keepRecent: options.keepRecent,
-          olderThanMs,
-          preserveLatest,
-        })
-      ) {
-        keep.delete(candidate.index)
-      }
+    const storeDigest = stableHash(store.rawLines.join('\n'))
+    if (options.expectedStoreDigest && options.expectedStoreDigest !== storeDigest) {
+      throw new EnvLaneError(
+        'VAULT_STORE_CHANGED',
+        'The Vault store changed after the prune preview. Preview the operation again.',
+      )
+    }
+    const targetFilePath = options.filePath
+      ? path.resolve(config.baseDir, options.filePath)
+      : undefined
+    const groups = new Map<string, PruneCandidate[]>()
+    store.records.forEach((record) => {
+      if (targetFilePath && record.groupFilePath !== targetFilePath) return
+      if (options.key && record.record.k !== options.key) return
+      const group = groups.get(pruneGroupKey(record)) ?? []
+      group.push({ index: record.lineIndex, record: record.record })
+      groups.set(pruneGroupKey(record), group)
     })
-  }
 
-  const keptLines = store.rawLines.filter((_, index) => keep.has(index))
-  const removedRecords = store.rawLines.length - keptLines.length
-  const result = {
-    storePath: config.storePath,
-    storeDigest,
-    rawRecords: store.rawRecords,
-    parsedRecords: store.parsedRecords,
-    failedRecords: store.failedRecords,
-    aliasedRecords: store.aliasedRecords,
-    groups: groups.size,
-    removedRecords,
-    keptRecords: keptLines.length,
-    applied: false,
-  }
-  if (removedRecords === 0 || options.dryRun) return result
-  const confirmed = await confirmStoreRewrite('history prune', options)
-  if (!confirmed) return result
-  await rewriteStoreAtomically(config, store.rawLines, keptLines)
-  return { ...result, applied: true }
+    const keep = new Set(store.rawLines.map((_, index) => index))
+    const olderThanMs =
+      options.olderThanDays === undefined
+        ? undefined
+        : Date.now() - options.olderThanDays * 24 * 60 * 60 * 1000
+    const preserveLatest = options.preserveLatest ?? true
+    for (const group of groups.values()) {
+      const sorted = [...group].sort((left, right) => {
+        if (isNewerRecord(left.record, right.record)) return -1
+        if (isNewerRecord(right.record, left.record)) return 1
+        return 0
+      })
+      sorted.forEach((candidate, rank) => {
+        if (
+          shouldPruneCandidate(candidate, rank, {
+            keepRecent: options.keepRecent,
+            olderThanMs,
+            preserveLatest,
+          })
+        ) {
+          keep.delete(candidate.index)
+        }
+      })
+    }
+
+    const keptLines = store.rawLines.filter((_, index) => keep.has(index))
+    const removedRecords = store.rawLines.length - keptLines.length
+    const result = {
+      storePath: config.storePath,
+      storeDigest,
+      rawRecords: store.rawRecords,
+      parsedRecords: store.parsedRecords,
+      failedRecords: store.failedRecords,
+      aliasedRecords: store.aliasedRecords,
+      groups: groups.size,
+      removedRecords,
+      keptRecords: keptLines.length,
+      applied: false,
+    }
+    if (removedRecords === 0 || options.dryRun) return result
+    const confirmed = await confirmStoreRewrite('history prune', options)
+    if (!confirmed) return result
+    await rewriteStoreAtomically(config, store.rawLines, keptLines)
+    return { ...result, applied: true }
+  })
 }
 
 export async function sanitizeVaultHistory(
@@ -1531,39 +1591,45 @@ export async function sanitizeVaultHistory(
   } = {},
 ) {
   if (!options.excluded) {
-    throw new Error('Vault sanitize requires --excluded so the removal scope is explicit.')
+    throw new EnvLaneError(
+      'VAULT_SANITIZE_SCOPE_REQUIRED',
+      'Vault sanitize requires --excluded so the removal scope is explicit.',
+    )
   }
   const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
-  const store = readStoreRecordLines(config, key)
-  const storeDigest = stableHash(store.rawLines.join('\n'))
-  if (options.expectedStoreDigest && options.expectedStoreDigest !== storeDigest) {
-    throw new EnvLaneError(
-      'VAULT_STORE_CHANGED',
-      'The Vault store changed after the sanitize preview. Preview the operation again.',
-    )
-  }
-  const removed = excludedHistoricalRecords(config, store.records)
-  const removedLineIndexes = new Set(removed.map((record) => record.lineIndex))
-  const keptLines = store.rawLines.filter((_, index) => !removedLineIndexes.has(index))
-  const affectedEntries = [
-    ...new Set(
-      removed.map(
-        (item) => `${portable(path.relative(config.baseDir, item.groupFilePath))}:${item.record.k}`,
+  return withVaultOperationLock(config, async () => {
+    const store = readStoreRecordLines(config, key)
+    const storeDigest = stableHash(store.rawLines.join('\n'))
+    if (options.expectedStoreDigest && options.expectedStoreDigest !== storeDigest) {
+      throw new EnvLaneError(
+        'VAULT_STORE_CHANGED',
+        'The Vault store changed after the sanitize preview. Preview the operation again.',
+      )
+    }
+    const removed = excludedHistoricalRecords(config, store.records)
+    const removedLineIndexes = new Set(removed.map((record) => record.lineIndex))
+    const keptLines = store.rawLines.filter((_, index) => !removedLineIndexes.has(index))
+    const affectedEntries = [
+      ...new Set(
+        removed.map(
+          (item) =>
+            `${portable(path.relative(config.baseDir, item.groupFilePath))}:${item.record.k}`,
+        ),
       ),
-    ),
-  ].sort()
-  const result = {
-    storePath: config.storePath,
-    storeDigest,
-    removedRecords: removed.length,
-    keptRecords: keptLines.length,
-    affectedEntries,
-    applied: false,
-  }
-  if (removed.length === 0 || options.dryRun) return result
-  const confirmed = await confirmStoreRewrite('sanitize', options)
-  if (!confirmed) return result
-  await rewriteStoreAtomically(config, store.rawLines, keptLines)
-  return { ...result, applied: true }
+    ].sort()
+    const result = {
+      storePath: config.storePath,
+      storeDigest,
+      removedRecords: removed.length,
+      keptRecords: keptLines.length,
+      affectedEntries,
+      applied: false,
+    }
+    if (removed.length === 0 || options.dryRun) return result
+    const confirmed = await confirmStoreRewrite('sanitize', options)
+    if (!confirmed) return result
+    await rewriteStoreAtomically(config, store.rawLines, keptLines)
+    return { ...result, applied: true }
+  })
 }

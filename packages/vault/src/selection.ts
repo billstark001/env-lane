@@ -62,6 +62,46 @@ export function matchesVaultPushSelection(
   return !deletes || Boolean(options.approveDeletes)
 }
 
+export function selectRestorePlan(plan: RestorePlan, options: VaultSelectionOptions): RestorePlan {
+  return filterRestorePlan(plan, (entry) => matchesVaultSelection(entry, options))
+}
+
+export function selectRestorePlanByDecisions(
+  plan: RestorePlan,
+  decisions: readonly RestoreDecision[],
+): RestorePlan {
+  const selectedIds = new Set(
+    decisions.filter((item) => item.decision !== 'skip').map((item) => item.entryId),
+  )
+  return filterRestorePlan(plan, (entry) => selectedIds.has(entry.entryId))
+}
+
+function filterRestorePlan(
+  plan: RestorePlan,
+  predicate: (entry: RestorePlanEntry) => boolean,
+): RestorePlan {
+  const files = plan.files
+    .map((file) => {
+      const entries = file.entries.filter(predicate)
+      return {
+        ...file,
+        entries,
+        changed: entries.some((entry) => entry.action !== 'identical'),
+      }
+    })
+    .filter((file) => file.entries.length > 0)
+  const summary: RestorePlan['summary'] = {
+    add: 0,
+    modify: 0,
+    delete: 0,
+    identical: 0,
+    conflict: 0,
+    filesWithChanges: files.filter((file) => file.changed).length,
+  }
+  for (const entry of files.flatMap((file) => file.entries)) summary[entry.action] += 1
+  return { ...plan, files, summary }
+}
+
 export function buildDefaultRestoreDecisions(
   plan: RestorePlan,
   options: VaultSelectionOptions,
