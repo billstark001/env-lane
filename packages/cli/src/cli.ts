@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { EnvLaneError, loadEnvLaneConfig, withEnvLaneContext } from '@env-lane/core'
+import { EnvLaneError, withEnvLaneContext } from '@env-lane/core'
 import { Command, CommanderError } from 'commander'
 import packageJson from '../package.json' with { type: 'json' }
-import { applyCliAliases } from './aliases.js'
+import { readCliBootstrapOptions } from './bootstrap-options.js'
 import { registerCoreCommands } from './commands/core.js'
 import { registerSortCommands } from './commands/sort.js'
 import { type CliContext, createCliContext } from './context.js'
@@ -37,7 +37,8 @@ async function loadVaultCliModule(): Promise<VaultCliModule | undefined> {
         .command('vault')
         .description('Optional unsafe development vault helpers. Requires @env-lane/vault.')
         .action(() => {
-          throw new Error(
+          throw new EnvLaneError(
+            'VAULT_NOT_INSTALLED',
             'Vault commands require the optional @env-lane/vault package. Install it with: pnpm add -D @env-lane/vault',
           )
         })
@@ -56,10 +57,15 @@ registerCoreCommands(program, ctx)
 registerSortCommands(program, ctx)
 await registerOptionalVaultCommands(program, ctx)
 
-// Apply custom CLI command aliases
+let bootstrapJson = false
+const argv = process.argv.slice(2)
+
+// Apply output defaults before Commander handles argument errors.
 try {
-  const config = await loadEnvLaneConfig()
-  if (config.cli?.aliases) applyCliAliases(program, config.cli.aliases)
+  const bootstrapOptions = readCliBootstrapOptions(argv)
+  ctx.setDiagnosticPrefix(bootstrapOptions.prefix !== false)
+  bootstrapJson = Boolean(bootstrapOptions.json || bootstrapOptions.format === 'json')
+  bootstrapJson = (await ctx.resolveOutputFormat(bootstrapOptions)) === 'json'
 } catch {
   // ignore config load errors here
 }
@@ -80,7 +86,7 @@ try {
       error instanceof CommanderError
         ? new EnvLaneError('CLI_ARGUMENT_ERROR', error.message)
         : error
-    const json = wantsJson(program)
+    const json = wantsJson(program) || bootstrapJson
     ctx.renderError(renderedError, json)
     process.exitCode = 1
   }

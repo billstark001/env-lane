@@ -2,6 +2,7 @@ import {
   checkDotenvSelector,
   EnvLaneError,
   emitDiagnostic,
+  formatEnvValue,
   listEnvFiles,
   listWorkspacePackages,
   redactValue,
@@ -276,7 +277,7 @@ function registerPrintCommand(program: Command, ctx: CliContext): void {
         dotenv: (res) => {
           for (const key of keys) {
             const value = redactValue(key, res.values[key], allOpts.showSecrets)
-            ctx.output(`${key}=${JSON.stringify(value)}`)
+            ctx.output(`${key}=${formatEnvValue(value)}`)
           }
         },
         text: (res) => {
@@ -354,10 +355,16 @@ function registerCheckCommand(program: Command, ctx: CliContext): void {
       const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
       if (allOpts.policy && allOpts.target) {
-        throw new Error('Use either --policy or --target, not both.')
+        throw new EnvLaneError(
+          'INVALID_CHECK_SELECTION',
+          'Use either --policy or --target, not both.',
+        )
       }
       if (!allOpts.policy && !allOpts.target) {
-        throw new Error('Missing check selection. Use --policy <name> or --target <target>.')
+        throw new EnvLaneError(
+          'MISSING_CHECK_SELECTION',
+          'Missing check selection. Use --policy <name> or --target <target>.',
+        )
       }
 
       if (allOpts.policy) {

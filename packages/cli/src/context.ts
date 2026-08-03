@@ -41,6 +41,7 @@ export interface CliOptionValues extends Record<string, unknown> {
 export interface CliContext {
   readonly logger: DiagnosticLogger
   addCommonOptions(command: Command): Command
+  setDiagnosticPrefix(enabled: boolean): void
   resolveOutputFormat(opts: {
     format?: string
     json?: boolean
@@ -85,6 +86,9 @@ export function createCliContext(
         .option('--json', 'use json output format (shorthand for --format json)')
         .option('--non-interactive', 'disable prompts and require every decision explicitly')
         .option('--no-prefix', 'do not include diagnostic scope prefixes')
+    },
+    setDiagnosticPrefix(enabled) {
+      diagnosticPrefixEnabled = enabled
     },
     async resolveOutputFormat(opts) {
       const config = await loadEnvLaneConfig({ configFile: opts.config, cwd: opts.cwd })

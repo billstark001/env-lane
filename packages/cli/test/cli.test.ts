@@ -1,14 +1,27 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { EnvLaneError, withEnvLaneContext } from '@env-lane/core'
+import { EnvLaneError, parseEnvDocument, withEnvLaneContext } from '@env-lane/core'
 import { Command } from 'commander'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { registerVaultCommands } from '../../vault/src/cli/index.js'
-import { applyCliAliases } from '../src/aliases.js'
+import { readCliBootstrapOptions } from '../src/bootstrap-options.js'
 import { registerCoreCommands } from '../src/commands/core.js'
 import { registerSortCommands } from '../src/commands/sort.js'
 import { createCliContext } from '../src/context.js'
+
+const testDirectories = new Set<string>()
+
+function testDirectory(prefix: string): string {
+  const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  testDirectories.add(root)
+  return root
+}
+
+afterEach(() => {
+  for (const root of testDirectories) rmSync(root, { recursive: true, force: true })
+  testDirectories.clear()
+})
 
 function testContext(program: Command) {
   let stdout = ''
@@ -29,10 +42,7 @@ function testContext(program: Command) {
 }
 
 function fixture(): string {
-  const root = path.join(
-    tmpdir(),
-    `env-lane-cli-test-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-  )
+  const root = testDirectory(`env-lane-cli-test`)
   mkdirSync(path.join(root, 'apps/api'), { recursive: true })
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
   writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n')
@@ -218,6 +228,85 @@ describe('CLI context & commands', () => {
     await program.parseAsync(['node', 'cli', 'print', 'api', '--cwd', root, '--format', 'json'])
     const output = JSON.parse(harness.stdout())
     expect(output.A.value).toBe('1')
+    expect(output.SECRET_TOKEN.value).toBe('<redacted>')
+
+    harness.clear()
+    await program.parseAsync([
+      'node',
+      'cli',
+      'print',
+      'api',
+      '--cwd',
+      root,
+      '--format',
+      'json',
+      '--show-secrets',
+    ])
+    expect(JSON.parse(harness.stdout()).SECRET_TOKEN.value).toBe('abc')
+  })
+
+  it('renders dotenv output that preserves escaped control characters', async () => {
+    const root = fixture()
+    const source = 'CONTROL="line\\nnext\tend"\nQUOTE="a\\"b"\n'
+    writeFileSync(path.join(root, 'apps/api/.env'), source)
+    const program = new Command()
+    program.enablePositionalOptions()
+    const harness = testContext(program)
+    registerCoreCommands(program, harness.ctx)
+
+    await program.parseAsync([
+      'node',
+      'cli',
+      'print',
+      'api',
+      '--cwd',
+      root,
+      '--format',
+      'dotenv',
+      '--show-secrets',
+    ])
+
+    const values = (document: string) =>
+      Object.fromEntries(
+        [...parseEnvDocument(document).currentMap].map(([key, entry]) => [
+          key,
+          entry.effectiveValue,
+        ]),
+      )
+    expect(values(harness.stdout())).toMatchObject(values(source))
+  })
+
+  it('reads bootstrap options without consuming run child options', () => {
+    expect(
+      readCliBootstrapOptions([
+        'run',
+        '--cwd',
+        '/workspace',
+        '.',
+        'node',
+        '--config',
+        'child.json',
+        '--json',
+      ]),
+    ).toEqual({ cwd: '/workspace' })
+    expect(readCliBootstrapOptions(['sort-env', 'api', 'all', '--cwd', '/workspace'])).toEqual({
+      cwd: '/workspace',
+    })
+    expect(
+      readCliBootstrapOptions([
+        'unknown',
+        '-cconfig.json',
+        '--cwd=/workspace',
+        '--format=json',
+        '--no-prefix',
+      ]),
+    ).toEqual({
+      config: 'config.json',
+      cwd: '/workspace',
+      format: 'json',
+      prefix: false,
+    })
+    expect(readCliBootstrapOptions(['run', '.', 'node', '--json'])).toEqual({})
   })
 
   it('runs check command with validations and outputs', async () => {
@@ -241,11 +330,11 @@ describe('CLI context & commands', () => {
         '--cwd',
         root,
       ]),
-    ).rejects.toThrow('Use either --policy or --target, not both.')
+    ).rejects.toMatchObject({ code: 'INVALID_CHECK_SELECTION' })
 
     // Option error: neither policy nor target
-    await expect(program.parseAsync(['node', 'cli', 'check', '--cwd', root])).rejects.toThrow(
-      'Missing check selection. Use --policy <name> or --target <target>.',
+    await expect(program.parseAsync(['node', 'cli', 'check', '--cwd', root])).rejects.toMatchObject(
+      { code: 'MISSING_CHECK_SELECTION' },
     )
 
     // Policy check (happy path)
@@ -334,7 +423,7 @@ describe('CLI context & commands', () => {
   })
 
   it('resolves relative Vault config, key, and store paths from --cwd', async () => {
-    const root = path.join(tmpdir(), `env-lane-cli-vault-cwd-${Date.now()}`)
+    const root = testDirectory(`env-lane-cli-vault-cwd`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'vault-cwd' }))
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -417,7 +506,7 @@ describe('CLI context & commands', () => {
   })
 
   it('supports redacted Vault approval files and non-interactive partial apply', async () => {
-    const root = path.join(tmpdir(), `env-lane-cli-vault-${Date.now()}`)
+    const root = testDirectory(`env-lane-cli-vault`)
     const keyPath = path.join(root, 'key.aes')
     const configPath = path.join(root, 'vault.json')
     const planPath = path.join(root, 'restore-plan.json')
@@ -540,37 +629,5 @@ describe('CLI context & commands', () => {
     ])
     const sortResult = JSON.parse(harness.stdout())
     expect(sortResult.count).toBeGreaterThan(0)
-  })
-
-  it('applies custom CLI command aliases from configuration', async () => {
-    const root = fixture()
-    const configPath = path.join(root, 'env-lane.config.ts')
-    writeFileSync(
-      configPath,
-      `export default {
-        workspace: { aliases: { api: '@acme/api' } },
-        cli: {
-          aliases: {
-            "print": "show-env",
-            "check": "validate-env"
-          }
-        }
-      };\n`,
-    )
-
-    const program = new Command()
-    program.enablePositionalOptions()
-    const { ctx } = testContext(program)
-    registerCoreCommands(program, ctx)
-
-    const { loadEnvLaneConfig } = await import('@env-lane/core')
-    const config = await loadEnvLaneConfig({ configFile: configPath, cwd: root })
-    applyCliAliases(program, config.cli?.aliases ?? {})
-
-    const printCmd = program.commands.find((c) => c.name() === 'print')
-    expect(printCmd?.aliases()).toContain('show-env')
-
-    const checkCmd = program.commands.find((c) => c.name() === 'check')
-    expect(checkCmd?.aliases()).toContain('validate-env')
   })
 })
