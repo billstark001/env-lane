@@ -27,11 +27,40 @@
       },
       "suspicious": {
         "noExplicitAny": "off",
-        "noPrototypeBuiltins": "off",
-        "noTemplateCurlyInString": "off"
+        "noPrototypeBuiltins": "error",
+        "noTemplateCurlyInString": "error"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["packages/*/src/**/*", "scripts/**/*"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "error"
+          },
+          "suspicious": {
+            "noConsole": "error",
+            "noExplicitAny": "error"
+          },
+          "security": {
+            "noSecrets": "error"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": {
+              "level": "error",
+              "options": { "maxAllowedComplexity": 40 }
+            },
+            "noExcessiveLinesPerFunction": {
+              "level": "error",
+              "options": { "maxLines": 100 }
+            }
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

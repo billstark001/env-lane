@@ -33,8 +33,5 @@ jobs:
       - name: Check
         run: pnpm check
 
-      - name: Build
-        run: pnpm build
-
       - name: Pack dry run
         run: pnpm pack:dry-run
