@@ -6,6 +6,7 @@ import {
   loadEnvDocument,
   setEnvDocumentValues,
 } from './env-document.js'
+import { EnvLaneError } from './errors.js'
 import type {
   EnvCheckConfig,
   EnvCheckRuleConfig,
@@ -97,7 +98,9 @@ async function loadSource(
     }
   }
 
-  if (!source.target) throw new Error(`Source '${name}' must include target or file.`)
+  if (!source.target) {
+    throw new EnvLaneError('INVALID_ENV_SOURCE', `Source '${name}' must include target or file.`)
+  }
   const resolved = await resolveInjectedEnv({
     cwd: config.rootDir,
     config,
@@ -138,7 +141,9 @@ function finding(
 
 function sourceOrThrow(sources: Map<string, LoadedValueSource>, name: string): LoadedValueSource {
   const source = sources.get(name)
-  if (!source) throw new Error(`Unknown env check source: ${name}`)
+  if (!source) {
+    throw new EnvLaneError('UNKNOWN_ENV_CHECK_SOURCE', `Unknown env check source: ${name}`)
+  }
   return source
 }
 
@@ -215,7 +220,7 @@ export async function runEnvCheck(
 ): Promise<EnvCheckResult> {
   const config = await loadEnvLaneConfig(options)
   const check = config.checks?.[checkName]
-  if (!check) throw new Error(`Unknown env check '${checkName}'.`)
+  if (!check) throw new EnvLaneError('UNKNOWN_ENV_CHECK', `Unknown env check '${checkName}'.`)
   const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild, {
     builds: config.selector.builds,
     mode: config.selector.buildValidation,
@@ -251,7 +256,9 @@ async function resolveSyncTargetFile(
     const buildForPattern = variant === DEFAULT_ENV_FILE_VARIANT ? '' : variant
     return path.resolve(config.rootDir, interpolateBuild(sync.to.file, buildForPattern))
   }
-  if (!sync.to.target) throw new Error('Sync target must include target or file.')
+  if (!sync.to.target) {
+    throw new EnvLaneError('INVALID_ENV_SYNC_TARGET', 'Sync target must include target or file.')
+  }
   const target = await resolveTargetPackage(sync.to.target, { cwd: config.rootDir, config })
   if (variant === DEFAULT_ENV_FILE_VARIANT) return path.join(target.dir, '.env')
   const files = listEnvFilesForTarget(config, target, { build: variant })
@@ -269,7 +276,7 @@ export async function runEnvSync(
 ): Promise<EnvSyncResult> {
   const config = await loadEnvLaneConfig(options)
   const sync = config.sync?.[syncName]
-  if (!sync) throw new Error(`Unknown env sync '${syncName}'.`)
+  if (!sync) throw new EnvLaneError('UNKNOWN_ENV_SYNC', `Unknown env sync '${syncName}'.`)
   const build = resolveBuildName(options, config.selector.envKey, config.selector.defaultBuild, {
     builds: config.selector.builds,
     mode: config.selector.buildValidation,

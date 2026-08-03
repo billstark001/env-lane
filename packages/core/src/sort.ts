@@ -8,6 +8,7 @@ import {
   renderEnvTextDocument,
   writeEnvDocumentContent,
 } from './env-document.js'
+import { EnvLaneError } from './errors.js'
 import type { EnvSortTargetConfig, ResolvedEnvLaneConfig, WorkspacePackage } from './types.js'
 import { DEFAULT_ENV_FILE_VARIANT, normalizeEnvFileVariant } from './variants.js'
 import { listWorkspacePackagesForConfig } from './workspace.js'
@@ -67,7 +68,9 @@ async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
   let config: ResolvedEnvLaneConfig
   if (configPath) {
     const abs = path.resolve(configPath)
-    if (!existsSync(abs)) throw new Error(`Sort config does not exist: ${abs}`)
+    if (!existsSync(abs)) {
+      throw new EnvLaneError('SORT_CONFIG_NOT_FOUND', `Sort config does not exist: ${abs}`)
+    }
     config = await loadEnvLaneConfig({ cwd: path.dirname(abs), configFile: abs })
   } else {
     config = await loadEnvLaneConfig({ cwd: process.cwd() })
@@ -282,6 +285,18 @@ function renderUnlistedVariablesComment(value: string): string[] {
   })
 }
 
+function removeRenderedUnlistedVariablesComment(lines: string[], comment: string[]): string[] {
+  if (comment.length === 0 || lines.length < comment.length) return lines
+  const nextLines = [...lines]
+  for (let index = nextLines.length - comment.length; index >= 0; index -= 1) {
+    const matches = comment.every((line, offset) => nextLines[index + offset] === line)
+    if (!matches) continue
+    const removeFrom = index > 0 && isBlankLine(nextLines[index - 1]) ? index - 1 : index
+    nextLines.splice(removeFrom, index + comment.length - removeFrom)
+  }
+  return normalizeBlankLineRuns(nextLines)
+}
+
 function summarizeSortOperations(operations: EnvSortPlan['operations']): EnvSortPlan['summary'] {
   return operations.reduce(
     (summary, operation) => {
@@ -314,7 +329,10 @@ export function buildEnvSortPlan(
   const resolvedEnvFilePath = path.resolve(envFilePath)
   const resolvedTemplateFilePath = path.resolve(templateFilePath)
   if (!existsSync(resolvedTemplateFilePath)) {
-    throw new Error(`Template env file does not exist: ${resolvedTemplateFilePath}`)
+    throw new EnvLaneError(
+      'SORT_TEMPLATE_NOT_FOUND',
+      `Template env file does not exist: ${resolvedTemplateFilePath}`,
+    )
   }
 
   const envDoc = loadEnvDocument(resolvedEnvFilePath)
@@ -378,6 +396,9 @@ export function buildEnvSortPlan(
   )
   let renderedUnlistedVariablesComment = false
   for (const group of leftoverGroups) {
+    const leadingLines = !templateKeys.has(group.key)
+      ? removeRenderedUnlistedVariablesComment(group.leadingLines, unlistedVariablesComment)
+      : group.leadingLines
     if (
       !templateKeys.has(group.key) &&
       !renderedUnlistedVariablesComment &&
@@ -387,7 +408,7 @@ export function buildEnvSortPlan(
       renderedLines.push(...unlistedVariablesComment)
       renderedUnlistedVariablesComment = true
     }
-    renderedLines.push(...group.leadingLines, ...group.rawLines)
+    renderedLines.push(...leadingLines, ...group.rawLines)
     operations.push({
       action: templateKeys.has(group.key) ? 'append-duplicate' : 'append-extra',
       key: group.key,
@@ -496,7 +517,9 @@ export async function sortEnvFilesFromConfig(
   const selectedTargets = Object.entries(config.sort).filter(
     ([key]) => keySelector === 'all' || key === keySelector,
   )
-  if (selectedTargets.length === 0) throw new Error(`Unknown sort key: ${keySelector}`)
+  if (selectedTargets.length === 0) {
+    throw new EnvLaneError('SORT_UNKNOWN_KEY', `Unknown sort key: ${keySelector}`)
+  }
 
   const results = []
   const seenFiles = new Set<string>()
@@ -520,7 +543,10 @@ export async function sortEnvFilesFromConfig(
     if (target.files) {
       for (const [suffix, file] of Object.entries(target.files)) {
         if (suffix === 'default')
-          throw new Error(`config.sort.${key}.files must not use reserved suffix "default".`)
+          throw new EnvLaneError(
+            'SORT_INVALID_CONFIG',
+            `config.sort.${key}.files must not use reserved suffix "default".`,
+          )
         files.set(suffix, path.resolve(baseDir, interpolateSortFilePattern(file, suffix)))
       }
     }

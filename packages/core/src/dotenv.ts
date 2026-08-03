@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { loadEnvLaneConfig } from './config.js'
 import { parseEnvDocument } from './env-document.js'
+import { EnvLaneError } from './errors.js'
 import { emitDiagnostic } from './logger.js'
 import type {
   EnvFileRef,
@@ -23,13 +24,15 @@ export function resolveBuildName(
   } = {},
 ): string {
   const raw = String(options.build ?? process.env[envKey] ?? defaultBuild).trim()
-  if (!raw) throw new Error('Build name is empty.')
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(raw)) throw new Error(`Invalid build name '${raw}'.`)
+  if (!raw) throw new EnvLaneError('INVALID_BUILD', 'Build name is empty.')
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(raw)) {
+    throw new EnvLaneError('INVALID_BUILD', `Invalid build name '${raw}'.`)
+  }
   const builds = validation.builds ?? []
   const mode = validation.mode ?? 'warn'
   if (builds.length > 0 && !builds.includes(raw) && mode !== 'off') {
     const message = `Build '${raw}' is not listed in selector.builds: ${builds.join(', ')}.`
-    if (mode === 'error') throw new Error(message)
+    if (mode === 'error') throw new EnvLaneError('UNLISTED_BUILD', message)
     emitDiagnostic({
       code: 'UNLISTED_BUILD',
       level: 'warning',
@@ -101,7 +104,8 @@ export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promi
 
   const missingRequired = files.filter((file) => file.required && !file.exists)
   if (missingRequired.length)
-    throw new Error(
+    throw new EnvLaneError(
+      'MISSING_REQUIRED_ENV_FILE',
       `Missing required env file(s): ${missingRequired.map((file) => file.relativePath).join(', ')}`,
     )
 
@@ -110,7 +114,8 @@ export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promi
     const content = readFileSync(file.path, 'utf8')
     const envDocument = parseEnvDocument(content)
     if (config.selector.forbidInDotenv && envDocument.currentMap.has(config.selector.envKey)) {
-      throw new Error(
+      throw new EnvLaneError(
+        'SELECTOR_IN_DOTENV',
         `${config.selector.envKey} is a selector and must not be stored in dotenv files (${file.relativePath}).`,
       )
     }

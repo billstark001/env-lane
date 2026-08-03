@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import fg from 'fast-glob'
 import { loadEnvLaneConfig } from './config.js'
+import { EnvLaneError } from './errors.js'
 import type { ResolvedEnvLaneConfig, ResolveEnvOptions, WorkspacePackage } from './types.js'
 
 type WorkspaceResolveOptions = Pick<ResolveEnvOptions, 'cwd' | 'configFile'> & {
@@ -119,12 +120,16 @@ export function resolveTargetPackageFromList(
       }
     }
 
-    throw new Error(`Missing target. Available targets: ${formatAvailableTargets(packages)}`)
+    throw new EnvLaneError(
+      'MISSING_TARGET',
+      `Missing target. Available targets: ${formatAvailableTargets(packages)}`,
+    )
   }
 
   const matches = packages.filter((pkg) => targetMatchesPackage(pkg, value))
   if (matches.length > 1) {
-    throw new Error(
+    throw new EnvLaneError(
+      'AMBIGUOUS_TARGET',
       `Ambiguous target '${value}'. Matches: ${matches
         .map((pkg) => pkg.name ?? pkg.relativeDir)
         .join(', ')}. Use a package name, relative directory, or configure a unique alias.`,
@@ -132,7 +137,8 @@ export function resolveTargetPackageFromList(
   }
   const matched = matches[0]
   if (!matched) {
-    throw new Error(
+    throw new EnvLaneError(
+      'UNKNOWN_TARGET',
       `Unknown target '${value}'. Available targets: ${formatAvailableTargets(packages)}`,
     )
   }

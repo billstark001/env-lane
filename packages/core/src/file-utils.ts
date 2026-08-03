@@ -3,8 +3,10 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
+  realpathSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -13,11 +15,19 @@ import {
 import path from 'node:path'
 
 export function writeFileContentAtomically(filePath: string, content: string): void {
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  const mode = existsSync(filePath) ? statSync(filePath).mode & 0o777 : 0o600
+  let writePath = filePath
+  let fileIsSymbolicLink = false
+  try {
+    fileIsSymbolicLink = lstatSync(filePath).isSymbolicLink()
+  } catch (error) {
+    if (existsSync(filePath)) throw error
+  }
+  if (fileIsSymbolicLink) writePath = realpathSync(filePath)
+  mkdirSync(path.dirname(writePath), { recursive: true })
+  const mode = existsSync(writePath) ? statSync(writePath).mode & 0o777 : 0o600
   const temporaryPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`,
+    path.dirname(writePath),
+    `.${path.basename(writePath)}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`,
   )
   const descriptor = openSync(temporaryPath, 'wx', mode)
   let closed = false
@@ -26,7 +36,7 @@ export function writeFileContentAtomically(filePath: string, content: string): v
     fsyncSync(descriptor)
     closeSync(descriptor)
     closed = true
-    renameSync(temporaryPath, filePath)
+    renameSync(temporaryPath, writePath)
   } catch (error) {
     if (!closed) {
       try {

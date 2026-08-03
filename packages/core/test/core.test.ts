@@ -1,16 +1,20 @@
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parse as parseDotenv } from 'dotenv'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   checkDotenvSelector,
   type Diagnostic,
@@ -22,20 +26,35 @@ import {
   parseEnvDocument,
   parseEnvLine,
   redactObject,
+  redactRecord,
   redactValue,
   resolveInjectedEnv,
   resolveTargetPackage,
   runEnvCheck,
   runEnvSync,
   setEnvDocumentValues,
+  shouldRedact,
   sortEnvFile,
   sortEnvFilesFromConfig,
   withEnvLaneContext,
   writeFileContentAtomically,
 } from '../src/index.js'
 
+const testDirectories = new Set<string>()
+
+function testDirectory(prefix: string): string {
+  const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  testDirectories.add(root)
+  return root
+}
+
+afterEach(() => {
+  for (const root of testDirectories) rmSync(root, { recursive: true, force: true })
+  testDirectories.clear()
+})
+
 function fixture(): string {
-  const root = path.join(tmpdir(), `env-lane-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+  const root = testDirectory(`env-lane`)
   mkdirSync(path.join(root, 'apps/api'), { recursive: true })
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
   writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n')
@@ -58,7 +77,7 @@ function configSource(ext: string, config: unknown): string {
 
 describe('@env-lane/core', () => {
   it('atomically replaces file content without leaving temporary files', () => {
-    const root = path.join(tmpdir(), `env-lane-file-utils-${Date.now()}`)
+    const root = testDirectory(`env-lane-file-utils`)
     const filePath = path.join(root, 'nested', '.env')
     mkdirSync(path.dirname(filePath), { recursive: true })
     writeFileSync(filePath, 'before\n')
@@ -70,6 +89,23 @@ describe('@env-lane/core', () => {
     if (process.platform !== 'win32') expect(statSync(filePath).mode & 0o777).toBe(0o640)
     expect(readdirSync(path.dirname(filePath))).toEqual(['.env'])
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'atomically updates a symbolic-link target without replacing the link',
+    () => {
+      const root = testDirectory(`env-lane-file-utils-link`)
+      const targetPath = path.join(root, 'target.env')
+      const linkPath = path.join(root, '.env')
+      mkdirSync(root, { recursive: true })
+      writeFileSync(targetPath, 'before\n')
+      symlinkSync(targetPath, linkPath)
+
+      writeFileContentAtomically(linkPath, 'after\n')
+
+      expect(lstatSync(linkPath).isSymbolicLink()).toBe(true)
+      expect(readFileSync(targetPath, 'utf8')).toBe('after\n')
+    },
+  )
 
   describe('dotenv line AST', () => {
     it.each([
@@ -143,7 +179,7 @@ describe('@env-lane/core', () => {
     })
 
     it('preserves inline comments and activates a matching commented assignment', () => {
-      const root = path.join(tmpdir(), `env-lane-ast-write-${Date.now()}`)
+      const root = testDirectory(`env-lane-ast-write`)
       mkdirSync(root, { recursive: true })
       const envFile = path.join(root, '.env')
       writeFileSync(envFile, '# KEY: old # keep this note\n')
@@ -156,7 +192,7 @@ describe('@env-lane/core', () => {
     })
 
     it('replaces a multiline assignment without leaving continuation lines behind', () => {
-      const root = path.join(tmpdir(), `env-lane-ast-multiline-write-${Date.now()}`)
+      const root = testDirectory(`env-lane-ast-multiline-write`)
       mkdirSync(root, { recursive: true })
       const envFile = path.join(root, '.env')
       writeFileSync(envFile, 'MULTI="one\ntwo"\nNEXT=value\n')
@@ -170,7 +206,7 @@ describe('@env-lane/core', () => {
   })
 
   it('uses the shared effective-value model across runtime, checks, sync, and sort', async () => {
-    const root = path.join(tmpdir(), `env-lane-shared-ast-${Date.now()}`)
+    const root = testDirectory(`env-lane-shared-ast`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'shared-ast' }))
     writeFileSync(
@@ -223,7 +259,7 @@ describe('@env-lane/core', () => {
   })
 
   it('falls back to root when there are no subpackages', async () => {
-    const root = path.join(tmpdir(), `env-lane-root-${Date.now()}`)
+    const root = testDirectory(`env-lane-root`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'single' }))
     await expect(resolveTargetPackage(undefined, { cwd: root })).resolves.toMatchObject({
@@ -232,7 +268,7 @@ describe('@env-lane/core', () => {
   })
 
   it('rejects ambiguous workspace target aliases', async () => {
-    const root = path.join(tmpdir(), `env-lane-ambiguous-${Date.now()}`)
+    const root = testDirectory(`env-lane-ambiguous`)
     mkdirSync(path.join(root, 'apps/api'), { recursive: true })
     mkdirSync(path.join(root, 'packages/api'), { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
@@ -336,7 +372,7 @@ describe('@env-lane/core', () => {
   })
 
   it('sorts env file using template order', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
     writeFileSync(path.join(root, '.env.example'), 'A=\nB=\nC=\n')
@@ -349,7 +385,7 @@ describe('@env-lane/core', () => {
   })
 
   it('sorts env files while preserving comments, bom, newline style, and extras', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-layout-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort-layout`)
     mkdirSync(root, { recursive: true })
     writeFileSync(
       path.join(root, '.env'),
@@ -372,7 +408,7 @@ describe('@env-lane/core', () => {
   })
 
   it('labels variables missing from the template with a configured multiline comment', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-unlisted-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort-unlisted`)
     mkdirSync(root, { recursive: true })
     const configFile = path.join(root, 'env-lane.config.json')
     writeFileSync(
@@ -393,8 +429,11 @@ describe('@env-lane/core', () => {
     writeFileSync(path.join(root, '.env.example'), 'A=\n')
 
     await sortEnvFilesFromConfig(configFile, 'root', 'all')
+    const firstResult = readFileSync(path.join(root, '.env'), 'utf8')
+    await sortEnvFilesFromConfig(configFile, 'root', 'all')
 
-    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe(
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe(firstResult)
+    expect(firstResult).toBe(
       [
         'A=1',
         '',
@@ -410,7 +449,7 @@ describe('@env-lane/core', () => {
   it.each(['ts', 'mjs', 'cjs', 'js', 'json'])(
     'sorts env files from env-lane %s config sort section',
     async (ext) => {
-      const root = path.join(tmpdir(), `env-lane-sort-config-${ext}-${Date.now()}`)
+      const root = testDirectory(`env-lane-sort-config-${ext}`)
       mkdirSync(root, { recursive: true })
       const configFile = path.join(root, `env-lane.config.${ext}`)
       writeFileSync(
@@ -439,7 +478,7 @@ describe('@env-lane/core', () => {
   )
 
   it('infers sort targets from workspace packages and builds', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-inference-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort-inference`)
     mkdirSync(path.join(root, 'packages/api'), { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root', private: true }))
     writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n')
@@ -471,7 +510,7 @@ describe('@env-lane/core', () => {
   })
 
   it('fills missing file/template defaults in manual sort config', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-defaults-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort-defaults`)
     const customDir = path.join(root, 'custom')
     mkdirSync(customDir, { recursive: true })
     const configFile = path.join(root, 'env-lane.config.json')
@@ -493,7 +532,7 @@ describe('@env-lane/core', () => {
   })
 
   it('runs configured env checks and sync mappings', async () => {
-    const root = path.join(tmpdir(), `env-lane-policy-${Date.now()}`)
+    const root = testDirectory(`env-lane-policy`)
     mkdirSync(path.join(root, 'packages/w3'), { recursive: true })
     mkdirSync(path.join(root, 'packages/web'), { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
@@ -557,7 +596,7 @@ describe('@env-lane/core', () => {
   })
 
   it('skips non-existent files when create is false in sort options', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-skip-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort-skip`)
     mkdirSync(root, { recursive: true })
     const envFile = path.join(root, '.env')
     const templateFile = path.join(root, '.env.example')
@@ -569,7 +608,7 @@ describe('@env-lane/core', () => {
   })
 
   it('deduplicates jobs to avoid sorting the same file multiple times', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-dedup-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort-dedup`)
     mkdirSync(root, { recursive: true })
     const configFile = path.join(root, 'env-lane.config.json')
     writeFileSync(
@@ -594,7 +633,7 @@ describe('@env-lane/core', () => {
   })
 
   it('correctly deduplicates root package even if matched by workspace globs', async () => {
-    const root = path.join(tmpdir(), `env-lane-root-glob-${Date.now()}`)
+    const root = testDirectory(`env-lane-root-glob`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'root' }))
     writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
@@ -613,7 +652,7 @@ describe('@env-lane/core', () => {
   })
 
   it('implicitly resolves and sorts env files from default config file', async () => {
-    const root = path.join(tmpdir(), `env-lane-sort-implicit-${Date.now()}`)
+    const root = testDirectory(`env-lane-sort-implicit`)
     mkdirSync(root, { recursive: true })
     const configFile = path.join(root, 'env-lane.config.json')
     writeFileSync(
@@ -656,7 +695,7 @@ describe('@env-lane/core', () => {
       ).rejects.toThrow(/Invalid build name/)
       await expect(
         resolveInjectedEnv({ cwd: root, build: 'a space', includeProcessEnv: false }),
-      ).rejects.toThrow(/Invalid build name/)
+      ).rejects.toMatchObject({ code: 'INVALID_BUILD' })
     })
 
     it('warns when build name validation mode is warn and not listed', async () => {
@@ -729,7 +768,7 @@ describe('@env-lane/core', () => {
     })
 
     it('sets env values and removes duplicate entries using setEnvDocumentValues', () => {
-      const tempFile = path.join(tmpdir(), `env-doc-set-test-${Date.now()}.env`)
+      const tempFile = path.join(testDirectory('env-doc-set-test'), '.env')
       writeFileSync(tempFile, 'A=1\nB=2\nA=3\n')
       const result = setEnvDocumentValues(tempFile, [
         ['B', '20'],
@@ -850,7 +889,7 @@ describe('@env-lane/core', () => {
 
   describe('BOM and EOL configuration feature', () => {
     it('applies preserveBOM and eol configurations when patching documents', async () => {
-      const root = path.join(tmpdir(), `env-lane-bom-eol-${Date.now()}`)
+      const root = testDirectory(`env-lane-bom-eol`)
       mkdirSync(root, { recursive: true })
       const envFile = path.join(root, '.env')
 
@@ -959,6 +998,63 @@ describe('@env-lane/core', () => {
         nested: { apiKey: '<redacted>' },
         safe: 'visible',
       })
+    })
+
+    it('covers redaction key allowlists, denylists, and provider credential values', () => {
+      for (const key of [
+        'password',
+        'clientSecret',
+        'DATABASE_URL',
+        'authorization',
+        'webhook-url',
+      ]) {
+        expect(isSecretLikeKey(key)).toBe(true)
+      }
+      for (const key of ['PUBLIC_KEY', 'token_count', 'key_id', 'certificate']) {
+        expect(isSecretLikeKey(key)).toBe(false)
+      }
+      expect(isSecretLikeKey('PUBLIC_KEY', { denyListKeys: [/^PUBLIC_KEY$/] })).toBe(true)
+      expect(isSecretLikeKey('PASSWORD', { allowListKeys: [/^PASSWORD$/] })).toBe(false)
+
+      for (const value of [
+        `ghp_${'A'.repeat(36)}`,
+        `sk-proj-${'aB0_'.repeat(8)}`,
+        'Bearer abcdefghijklmnopqrstuvwxyz',
+        'https://user:password@example.test/database',
+        'https://example.test/callback?access_token=abcdefgh1234',
+        'config={"client_secret":"abcdefgh1234"}',
+      ]) {
+        expect(isSecretLikeValue(value)).toBe(true)
+      }
+      for (const value of [
+        'https://example.test/public',
+        '1234567890123456789012345678901234567890',
+        '550e8400-e29b-41d4-a716-446655440000',
+        '0123456789abcdef0123456789abcdef0123456789abcdef',
+      ]) {
+        expect(isSecretLikeValue(value)).toBe(false)
+      }
+    })
+
+    it('honors redaction options across records, values, arrays, and circular objects', () => {
+      expect(shouldRedact('safe', 'https://user:password@example.test')).toBe(true)
+      expect(
+        shouldRedact('safe', 'https://user:password@example.test', { detectValues: false }),
+      ).toBe(false)
+      expect(redactValue('PASSWORD', 'secret', { redactionText: '[hidden]' })).toBe('[hidden]')
+      expect(redactRecord({ PASSWORD: 'secret', SAFE: 'visible' })).toEqual({
+        PASSWORD: '<redacted>',
+        SAFE: 'visible',
+      })
+      expect(redactObject({ tokens: [{ password: 'secret' }], safe: ['visible'] })).toEqual({
+        tokens: [{ password: '<redacted>' }],
+        safe: ['visible'],
+      })
+
+      const circular: { safe: string; self?: unknown } = { safe: 'visible' }
+      circular.self = circular
+      expect(redactObject(circular)).toEqual({ safe: 'visible', self: '[Circular]' })
+      expect(redactObject({ PASSWORD: 'secret' }, true)).toEqual({ PASSWORD: 'secret' })
     })
 
     it('rejects sources that specify both target and file', async () => {

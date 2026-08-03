@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { parse as parseDotenv } from 'dotenv'
+import { EnvLaneError } from './errors.js'
 import { writeFileContentAtomically } from './file-utils.js'
 
 export interface EnvTextDocument {
@@ -318,7 +319,10 @@ export function formatEnvValue(value: string): string {
   for (const candidate of candidates) {
     if (parseDotenv(`ENV_LANE_VALUE=${candidate}`).ENV_LANE_VALUE === value) return candidate
   }
-  throw new Error('Value cannot be represented by dotenv without changing its effective value.')
+  throw new EnvLaneError(
+    'UNREPRESENTABLE_ENV_VALUE',
+    'Value cannot be represented by dotenv without changing its effective value.',
+  )
 }
 
 export function writeEnvDocumentContent(filePath: string, content: string): boolean {

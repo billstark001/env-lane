@@ -99,10 +99,6 @@ export interface EnvLaneConfig {
     /** EOL format when writing files. Defaults to auto. */
     eol?: 'auto' | 'lf' | 'crlf'
   }
-  cli?: {
-    /** Custom CLI command aliases. */
-    aliases?: Record<string, string>
-  }
   vault?: {
     enabled?: boolean
     disableUnsafeWarning?: boolean
@@ -128,9 +124,6 @@ export interface ResolvedEnvLaneConfig {
   dotenv: Required<NonNullable<EnvLaneConfig['dotenv']>> & {
     preserveBOM: boolean
     eol: 'auto' | 'lf' | 'crlf'
-  }
-  cli?: {
-    aliases: Record<string, string>
   }
   vault: Required<NonNullable<EnvLaneConfig['vault']>>
   output: Required<NonNullable<EnvLaneConfig['output']>> & { prefix: boolean }

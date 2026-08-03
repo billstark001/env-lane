@@ -4,6 +4,7 @@ import { loadConfig as c12LoadConfig } from 'c12'
 import { findUp } from 'find-up'
 import YAML from 'yaml'
 import { z } from 'zod'
+import { EnvLaneError } from './errors.js'
 import type { EnvLaneConfig, ResolvedEnvLaneConfig } from './types.js'
 
 const sortTargetSchema = z.object({
@@ -107,11 +108,6 @@ const schema = z
         eol: z.enum(['auto', 'lf', 'crlf']).optional(),
       })
       .optional(),
-    cli: z
-      .object({
-        aliases: z.record(z.string(), z.string().min(1)).optional(),
-      })
-      .optional(),
     vault: z
       .object({
         enabled: z.boolean().optional(),
@@ -199,7 +195,7 @@ export async function loadConfigWithC12<T extends object>(
   }
 }
 
-export async function loadEnvLaneConfig(
+async function loadEnvLaneConfigUnchecked(
   options: { cwd?: string; configFile?: string } = {},
 ): Promise<ResolvedEnvLaneConfig> {
   const { config, rootDir } = await loadConfigWithC12<EnvLaneConfig>({
@@ -233,11 +229,6 @@ export async function loadEnvLaneConfig(
       preserveBOM: parsed.dotenv?.preserveBOM ?? true,
       eol: parsed.dotenv?.eol ?? 'auto',
     },
-    cli: parsed.cli
-      ? {
-          aliases: parsed.cli.aliases ?? {},
-        }
-      : undefined,
     vault: {
       enabled: parsed.vault?.enabled ?? false,
       disableUnsafeWarning: parsed.vault?.disableUnsafeWarning ?? false,
@@ -250,5 +241,20 @@ export async function loadEnvLaneConfig(
     sort: parsed.sort,
     checks: parsed.checks as EnvLaneConfig['checks'],
     sync: parsed.sync as EnvLaneConfig['sync'],
+  }
+}
+
+export async function loadEnvLaneConfig(
+  options: { cwd?: string; configFile?: string } = {},
+): Promise<ResolvedEnvLaneConfig> {
+  try {
+    return await loadEnvLaneConfigUnchecked(options)
+  } catch (error) {
+    if (error instanceof EnvLaneError) throw error
+    const cause = error instanceof Error ? error.message : String(error)
+    throw new EnvLaneError('CONFIG_LOAD_FAILED', `Failed to load env-lane config: ${cause}`, {
+      cause,
+      configFile: options.configFile,
+    })
   }
 }

@@ -1,3 +1,5 @@
+import { EnvLaneError } from './errors.js'
+
 export const DEFAULT_ENV_FILE_VARIANT = ''
 export const ALL_ENV_FILE_VARIANTS = 'all'
 
@@ -12,7 +14,8 @@ export function normalizeEnvFileVariant(
   if (!normalized) return fallback
   if (options.allowAll && normalized === ALL_ENV_FILE_VARIANTS) return ALL_ENV_FILE_VARIANTS
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(normalized)) {
-    throw new Error(
+    throw new EnvLaneError(
+      'INVALID_ENV_VARIANT',
       `Invalid ${options.fieldName ?? 'env file variant'} '${value}'. Use values like production, staging, or default.`,
     )
   }
