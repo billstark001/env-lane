@@ -1,0 +1,168 @@
+import path from 'node:path'
+import { EnvLaneError } from '@env-lane/core'
+import type { Command } from 'commander'
+import { createApprovalDocument, readApprovalDocument, writeApprovalDocument } from '../approval.js'
+import { buildDefaultRestoreDecisions, hasUnresolvedSelectedConflict } from '../selection.js'
+import { applyRestorePlan, buildRestorePlan, type RestoreDecision } from '../store.js'
+import { applyRestoreFailOn, emitPlanDiagnostics, emitUnsafeWarning } from './common.js'
+import {
+  addFailOnOption,
+  addSelectionOptions,
+  assertVaultFormat,
+  parseVaultConflictStrategy,
+  validateFailOnOption,
+} from './options.js'
+import { promptRestoreDecisions } from './prompts.js'
+import { renderRestorePlan } from './render.js'
+import type { VaultCliContext } from './types.js'
+
+function registerVaultPlanCommand(vault: Command, ctx: VaultCliContext): void {
+  addFailOnOption(addSelectionOptions(ctx.addCommonOptions(vault.command('plan <keyFile>'))))
+    .description('Create a redacted, verifiable Vault restore plan.')
+    .option('--output <file>', 'write an editable approval document')
+    .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')
+    .option('--vault-config <file>', 'vault configuration file')
+    .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
+    .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
+      const format = await ctx.resolveOutputFormat(allOpts)
+      assertVaultFormat(format)
+      validateFailOnOption(allOpts.failOn)
+      const resolvedConfig = await emitUnsafeWarning(allOpts)
+      const plan = await buildRestorePlan(allOpts.config, keyFile, {
+        cwd: allOpts.cwd,
+        syncDir: allOpts.syncDir,
+        vaultConfigFile: allOpts.vaultConfig,
+        autoRemapPaths: allOpts.autoRemap,
+        allowUnmanaged: allOpts.allowUnmanaged,
+        resolvedConfig,
+      })
+      emitPlanDiagnostics(plan)
+      if (allOpts.output) {
+        writeApprovalDocument(
+          path.resolve(allOpts.cwd ?? process.cwd(), allOpts.output),
+          createApprovalDocument(plan, allOpts),
+        )
+      }
+      ctx.formatAndLog(plan, { format, text: (result) => renderRestorePlan(ctx, result) })
+      applyRestoreFailOn(plan, allOpts.failOn)
+    })
+}
+
+function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void {
+  addFailOnOption(addSelectionOptions(ctx.addCommonOptions(vault.command('decrypt <keyFile>'))))
+    .option('--dry-run', 'show the redacted plan without writing files')
+    .option('-y, --yes', 'apply the selected entries without confirmation')
+    .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')
+    .option('--vault-config <file>', 'vault configuration file')
+    .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
+    .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
+    .option('--conflicts <mode>', 'abort, keep-local, or take-vault', 'abort')
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
+      const format = await ctx.resolveOutputFormat(allOpts)
+      assertVaultFormat(format)
+      validateFailOnOption(allOpts.failOn)
+      const resolvedConfig = await emitUnsafeWarning(allOpts)
+      const plan = await buildRestorePlan(allOpts.config, keyFile, {
+        cwd: allOpts.cwd,
+        syncDir: allOpts.syncDir,
+        vaultConfigFile: allOpts.vaultConfig,
+        autoRemapPaths: allOpts.autoRemap,
+        allowUnmanaged: allOpts.allowUnmanaged,
+        resolvedConfig,
+      })
+      emitPlanDiagnostics(plan)
+      if (allOpts.dryRun) {
+        ctx.formatAndLog(plan, { format, text: (result) => renderRestorePlan(ctx, result) })
+        applyRestoreFailOn(plan, allOpts.failOn)
+        return
+      }
+
+      let decisions: RestoreDecision[]
+      if (allOpts.yes) {
+        const strategy = parseVaultConflictStrategy(allOpts.conflicts)
+        decisions = buildDefaultRestoreDecisions(plan, allOpts, strategy)
+        if (hasUnresolvedSelectedConflict(plan, decisions, allOpts)) {
+          throw new EnvLaneError(
+            'VAULT_CONFLICT_DECISION_REQUIRED',
+            'Selected conflicts require --conflicts keep-local or --conflicts take-vault.',
+          )
+        }
+      } else {
+        if (allOpts.nonInteractive) {
+          throw new EnvLaneError(
+            'VAULT_CONFIRMATION_REQUIRED',
+            'Non-interactive restore requires --yes.',
+          )
+        }
+        decisions = await promptRestoreDecisions(plan, allOpts)
+      }
+
+      const result = await applyRestorePlan(allOpts.config, keyFile, plan, {
+        cwd: allOpts.cwd,
+        autoApprove: true,
+        decisions,
+        approveDeletes: allOpts.approveDeletes,
+        syncDir: allOpts.syncDir,
+        vaultConfigFile: allOpts.vaultConfig,
+        autoRemapPaths: allOpts.autoRemap,
+        allowUnmanaged: allOpts.allowUnmanaged,
+        resolvedConfig,
+      })
+      ctx.formatAndLog(result, {
+        format,
+        text: (res) => {
+          ctx.output(`Decrypted ${res.filesWritten} files from ${res.storePath}`)
+          ctx.output(`  Applied entries: ${res.appliedEntries}`)
+          ctx.output(`  Skipped entries: ${res.skippedEntries}`)
+        },
+      })
+      applyRestoreFailOn(plan, allOpts.failOn)
+    })
+}
+
+function registerVaultApplyCommand(vault: Command, ctx: VaultCliContext): void {
+  addFailOnOption(ctx.addCommonOptions(vault.command('apply <keyFile>')))
+    .requiredOption('--plan <file>', 'approval document created by vault plan --output')
+    .requiredOption('-y, --yes', 'apply the approval document')
+    .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')
+    .option('--vault-config <file>', 'vault configuration file')
+    .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
+    .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
+    .action(async (keyFile, opts) => {
+      const allOpts = ctx.mergeOptions(opts)
+      const format = await ctx.resolveOutputFormat(allOpts)
+      assertVaultFormat(format)
+      validateFailOnOption(allOpts.failOn)
+      const resolvedConfig = await emitUnsafeWarning(allOpts)
+      if (!allOpts.plan) throw new EnvLaneError('VAULT_PLAN_REQUIRED', 'Missing --plan file.')
+      const document = readApprovalDocument(
+        path.resolve(allOpts.cwd ?? process.cwd(), allOpts.plan),
+      )
+      const result = await applyRestorePlan(allOpts.config, keyFile, document.plan, {
+        cwd: allOpts.cwd,
+        autoApprove: true,
+        decisions: document.decisions,
+        syncDir: allOpts.syncDir,
+        vaultConfigFile: allOpts.vaultConfig,
+        autoRemapPaths: allOpts.autoRemap,
+        allowUnmanaged: allOpts.allowUnmanaged,
+        resolvedConfig,
+      })
+      emitPlanDiagnostics(result)
+      ctx.formatAndLog(result, {
+        format,
+        text: (res) =>
+          ctx.output(`Applied ${res.appliedEntries} entries to ${res.filesWritten} files.`),
+      })
+      applyRestoreFailOn(document.plan, allOpts.failOn)
+    })
+}
+
+export function registerVaultRestoreCommands(vault: Command, ctx: VaultCliContext): void {
+  registerVaultPlanCommand(vault, ctx)
+  registerVaultDecryptCommand(vault, ctx)
+  registerVaultApplyCommand(vault, ctx)
+}

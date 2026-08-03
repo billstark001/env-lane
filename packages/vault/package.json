@@ -54,6 +54,7 @@
   },
   "dependencies": {
     "@env-lane/core": "workspace:*",
+    "@inquirer/prompts": "^7.10.1",
     "c12": "^3.3.4",
     "commander": "^15.0.0",
     "picomatch": "^4.0.5",

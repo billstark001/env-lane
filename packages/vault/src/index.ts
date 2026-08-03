@@ -1,4 +1,5 @@
 export * from './approval.js'
+export * from './cli/index.js'
 export * from './config.js'
 export * from './crypto.js'
 export * from './fail-on.js'
