@@ -1,6 +1,7 @@
 import {
   checkDotenvSelector,
-  getLogger,
+  EnvLaneError,
+  emitDiagnostic,
   listEnvFiles,
   listWorkspacePackages,
   redactValue,
@@ -10,10 +11,127 @@ import {
   runEnvSync,
   runWithInjectedEnv,
 } from '@env-lane/core'
-import type { Command } from 'commander'
+import { Command, type Option, type ParseOptionsResult } from 'commander'
 import type { CliContext } from '../context.js'
 
-export function registerCoreCommands(program: Command, ctx: CliContext): void {
+function optionConsumesNextArgument(option: Option): boolean {
+  return option.required || option.optional
+}
+
+function matchingRunOption(options: readonly Option[], argument: string): Option | undefined {
+  const exactMatch = options.find((option) => argument === option.short || argument === option.long)
+  if (exactMatch) return exactMatch
+
+  if (argument.startsWith('--')) {
+    const equalsIndex = argument.indexOf('=')
+    if (equalsIndex !== -1) {
+      const flag = argument.slice(0, equalsIndex)
+      return options.find((option) => option.long === flag)
+    }
+    return undefined
+  }
+
+  if (argument.startsWith('-') && argument.length > 2) {
+    return options.find(
+      (option) => option.short === argument.slice(0, 2) && optionConsumesNextArgument(option),
+    )
+  }
+  return undefined
+}
+
+/**
+ * Move env-lane options between the target and child command ahead of the target.
+ * The child starts at `--`, or at the first non-option after the target when the
+ * explicit boundary is omitted. Commander then preserves every child argument.
+ */
+export function normalizeRunArguments(
+  args: readonly string[],
+  options: readonly Option[],
+): string[] {
+  const boundaryIndex = args.indexOf('--')
+  const cliEndIndex = boundaryIndex === -1 ? args.length : boundaryIndex
+  const beforeTarget: string[] = []
+  let targetIndex = -1
+
+  for (let index = 0; index < cliEndIndex; index += 1) {
+    const argument = args[index]
+    const option = matchingRunOption(options, argument)
+    if (option) {
+      beforeTarget.push(argument)
+      const hasInlineValue = argument.startsWith('--') && argument.includes('=')
+      const hasAttachedShortValue =
+        Boolean(option.short) &&
+        argument.startsWith(option.short as string) &&
+        argument !== option.short
+      if (optionConsumesNextArgument(option) && !hasInlineValue && !hasAttachedShortValue) {
+        const value = args[index + 1]
+        if (value !== undefined) {
+          beforeTarget.push(value)
+          index += 1
+        }
+      }
+      continue
+    }
+    if (argument.startsWith('-')) {
+      beforeTarget.push(argument)
+      continue
+    }
+    targetIndex = index
+    break
+  }
+
+  if (targetIndex === -1) return [...args]
+
+  const target = args[targetIndex]
+  if (boundaryIndex !== -1) {
+    return [
+      ...beforeTarget,
+      ...args.slice(targetIndex + 1, boundaryIndex),
+      target,
+      ...args.slice(boundaryIndex),
+    ]
+  }
+
+  const afterTargetOptions: string[] = []
+  let childIndex = targetIndex + 1
+  while (childIndex < args.length) {
+    const argument = args[childIndex]
+    const option = matchingRunOption(options, argument)
+    if (!option) {
+      if (argument.startsWith('-')) {
+        afterTargetOptions.push(argument)
+        childIndex += 1
+        continue
+      }
+      break
+    }
+    afterTargetOptions.push(argument)
+    childIndex += 1
+
+    const hasInlineValue = argument.startsWith('--') && argument.includes('=')
+    const hasAttachedShortValue =
+      Boolean(option.short) &&
+      argument.startsWith(option.short as string) &&
+      argument !== option.short
+    if (optionConsumesNextArgument(option) && !hasInlineValue && !hasAttachedShortValue) {
+      const value = args[childIndex]
+      if (value !== undefined) {
+        afterTargetOptions.push(value)
+        childIndex += 1
+      }
+    }
+  }
+
+  return [...beforeTarget, ...afterTargetOptions, target, ...args.slice(childIndex)]
+}
+
+class RunCommand extends Command {
+  override parseOptions(args: string[]): ParseOptionsResult {
+    return super.parseOptions(normalizeRunArguments(args, this.options))
+  }
+}
+
+function registerWorkspaceCommands(program: Command, ctx: CliContext): void {
   ctx
     .addCommonOptions(program.command('packages'))
     .description(
@@ -26,13 +144,14 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
       ctx.formatAndLog(packages, {
         format,
         text: (pkgs) => {
-          const logger = getLogger()
           for (const pkg of pkgs)
-            logger.log(`${pkg.name ?? '<unnamed>'}\t${pkg.relativeDir}\t${pkg.aliases.join(',')}`)
+            ctx.output(`${pkg.name ?? '<unnamed>'}\t${pkg.relativeDir}\t${pkg.aliases.join(',')}`)
         },
       })
     })
+}
 
+function registerResolveTargetCommand(program: Command, ctx: CliContext): void {
   ctx
     .addCommonOptions(program.command('resolve-target <target>'))
     .description('Resolve a target alias/name/path to a package.')
@@ -46,11 +165,13 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
       ctx.formatAndLog(resolved, {
         format,
         text: (res) => {
-          getLogger().log(`${res.name ?? '<unnamed>'} ${res.dir}`)
+          ctx.output(`${res.name ?? '<unnamed>'} ${res.dir}`)
         },
       })
     })
+}
 
+function registerFilesCommand(program: Command, ctx: CliContext): void {
   ctx
     .addCommonOptions(program.command('files [target]'))
     .alias('env-files')
@@ -80,9 +201,9 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
           format,
           text: (res) => {
             for (const entry of res) {
-              getLogger().log(`# ${entry.target.name ?? entry.target.relativeDir}`)
+              ctx.output(`# ${entry.target.name ?? entry.target.relativeDir}`)
               for (const file of entry.files)
-                getLogger().log(
+                ctx.output(
                   `${file.exists ? 'loaded ' : 'missing'} ${file.kind.padEnd(8)} ${file.relativePath}`,
                 )
             }
@@ -101,13 +222,15 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
         format,
         text: (res) => {
           for (const file of res)
-            getLogger().log(
+            ctx.output(
               `${file.exists ? 'loaded ' : 'missing'} ${file.kind.padEnd(8)} ${file.relativePath}`,
             )
         },
       })
     })
+}
 
+function registerPrintCommand(program: Command, ctx: CliContext): void {
   ctx
     .addCommonOptions(program.command('print <target>'))
     .alias('env-json')
@@ -150,19 +273,28 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
             ]),
           )
         },
+        dotenv: (res) => {
+          for (const key of keys) {
+            const value = redactValue(key, res.values[key], allOpts.showSecrets)
+            ctx.output(`${key}=${JSON.stringify(value)}`)
+          }
+        },
         text: (res) => {
           for (const key of keys)
-            getLogger().log(`${key}=${redactValue(key, res.values[key], allOpts.showSecrets)}`)
+            ctx.output(`${key}=${redactValue(key, res.values[key], allOpts.showSecrets)}`)
         },
       })
     })
+}
 
+function registerRunCommand(program: Command, ctx: CliContext): void {
+  const runCommand = new RunCommand('run')
+  program.addCommand(runCommand)
   ctx
     .addCommonOptions(
-      program
-        .command('run <target>')
+      runCommand
+        .argument('<target>', 'workspace target')
         .argument('<command...>', 'command and arguments to run')
-        .allowUnknownOption(true)
         .passThroughOptions(),
     )
     .description('Run a command with injected dotenv environment.')
@@ -171,18 +303,47 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
     .action(async (target, command, opts) => {
       const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
+      if (format !== 'text') {
+        throw new EnvLaneError(
+          'UNSUPPORTED_OUTPUT_FORMAT',
+          'The run command supports only text output because the child process owns stdout.',
+        )
+      }
+      const normalizedCommand = command[0] === '--' ? command.slice(1) : command
+      const resolved = !allOpts.quiet
+        ? await resolveInjectedEnv({
+            cwd: allOpts.cwd,
+            configFile: allOpts.config,
+            target,
+            build: allOpts.build,
+          })
+        : undefined
+      if (resolved) {
+        const loaded = resolved.files
+          .filter((file) => file.exists)
+          .map((file) => file.relativePath)
+          .join(', ')
+        emitDiagnostic({
+          code: 'RUN_SUMMARY',
+          level: 'info',
+          scope: 'core',
+          message: `target=${resolved.target.name ?? resolved.target.relativeDir} build=${resolved.build} loaded=${loaded || '<none>'}`,
+        })
+      }
       const code = await runWithInjectedEnv({
         cwd: allOpts.cwd,
         configFile: allOpts.config,
         target,
         build: allOpts.build,
-        command,
+        command: normalizedCommand,
         runCwd: allOpts.runCwd,
-        quiet: allOpts.quiet || format === 'json',
+        resolved,
       })
-      process.exit(code)
+      process.exitCode = code
     })
+}
 
+function registerCheckCommand(program: Command, ctx: CliContext): void {
   ctx
     .addCommonOptions(program.command('check'))
     .description('Run a configured env policy check or target dotenv selector check.')
@@ -210,14 +371,14 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
           text: (res) => {
             for (const finding of res.findings) {
               const prefix = finding.ok ? 'OK' : finding.severity.toUpperCase()
-              getLogger().log(`[${prefix}] ${finding.message}`)
+              ctx.output(`[${prefix}] ${finding.message}`)
             }
-            getLogger().log(
+            ctx.output(
               `Summary: ${res.summary.ok} ok, ${res.summary.warnings} warnings, ${res.summary.errors} errors.`,
             )
           },
         })
-        if (!result.ok) process.exit(1)
+        if (!result.ok) process.exitCode = 1
         return
       }
 
@@ -231,37 +392,53 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
 
       if (!result.ok) {
         if (format === 'json') {
-          getLogger().log(JSON.stringify(result, null, 2))
+          ctx.output(JSON.stringify(result, null, 2))
         } else {
           if (result.violations.length) {
-            getLogger().error(
-              `${result.selectorKey} must not be stored in dotenv files:\n${result.violations.map((v) => `  ${v.relativeFile}${v.line ? `:${v.line}` : ''}`).join('\n')}`,
-            )
+            emitDiagnostic({
+              code: 'SELECTOR_IN_DOTENV',
+              level: 'error',
+              scope: 'core',
+              message: `${result.selectorKey} must not be stored in dotenv files:\n${result.violations.map((v) => `  ${v.relativeFile}${v.line ? `:${v.line}` : ''}`).join('\n')}`,
+            })
           }
           if (result.missingRequired.length) {
-            getLogger().error(
-              `Missing required env file(s):\n${result.missingRequired.map((file) => `  ${file.target}: ${file.relativeFile}`).join('\n')}`,
-            )
+            emitDiagnostic({
+              code: 'MISSING_REQUIRED_ENV_FILE',
+              level: 'error',
+              scope: 'core',
+              message: `Missing required env file(s):\n${result.missingRequired.map((file) => `  ${file.target}: ${file.relativeFile}`).join('\n')}`,
+            })
           }
         }
-        process.exit(1)
+        process.exitCode = 1
+        return
       }
 
       ctx.formatAndLog(result, {
         format,
         text: (res) => {
-          getLogger().success(`[env-lane] OK: ${res.selectorKey} is absent from dotenv files.`)
+          ctx.output(`OK: ${res.selectorKey} is absent from dotenv files.`)
         },
       })
     })
+}
 
+function registerSyncCommand(program: Command, ctx: CliContext): void {
   ctx
     .addCommonOptions(program.command('sync <name>'))
     .description('Run a configured env value sync.')
     .option('--dry-run', 'show mapped values without writing files')
+    .option('--show-secrets', 'include secret-like mapped values in JSON output')
     .action(async (name, opts) => {
       const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
+      if (format === 'dotenv') {
+        throw new EnvLaneError(
+          'UNSUPPORTED_OUTPUT_FORMAT',
+          'The sync command does not support --format dotenv.',
+        )
+      }
       const result = await runEnvSync(name, {
         cwd: allOpts.cwd,
         configFile: allOpts.config,
@@ -270,17 +447,32 @@ export function registerCoreCommands(program: Command, ctx: CliContext): void {
       })
       ctx.formatAndLog(result, {
         format,
+        json: (res) => ({
+          ...res,
+          mappings: res.mappings.map((mapping) => ({
+            ...mapping,
+            value: redactValue(mapping.to, mapping.value, allOpts.showSecrets),
+          })),
+        }),
         text: (res) => {
-          getLogger().log(
-            `${res.dryRun ? 'Would sync' : 'Synced'} ${res.sync} -> ${res.targetFile}`,
-          )
+          ctx.output(`${res.dryRun ? 'Would sync' : 'Synced'} ${res.sync} -> ${res.targetFile}`)
           for (const mapping of res.mappings) {
-            getLogger().log(
+            ctx.output(
               `  ${mapping.skipped ? 'skipped' : 'mapped '} ${mapping.from} -> ${mapping.to}`,
             )
           }
-          if (!res.dryRun) getLogger().log(`  Changed: ${res.changed}`)
+          if (!res.dryRun) ctx.output(`  Changed: ${res.changed}`)
         },
       })
     })
+}
+
+export function registerCoreCommands(program: Command, ctx: CliContext): void {
+  registerWorkspaceCommands(program, ctx)
+  registerResolveTargetCommand(program, ctx)
+  registerFilesCommand(program, ctx)
+  registerPrintCommand(program, ctx)
+  registerRunCommand(program, ctx)
+  registerCheckCommand(program, ctx)
+  registerSyncCommand(program, ctx)
 }

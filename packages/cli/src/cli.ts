@@ -1,24 +1,13 @@
 #!/usr/bin/env node
-import { getLogger, loadEnvLaneConfig, setLogger } from '@env-lane/core'
-import { Command } from 'commander'
-import { createConsola } from 'consola'
+import { EnvLaneError, loadEnvLaneConfig, withEnvLaneContext } from '@env-lane/core'
+import { Command, CommanderError } from 'commander'
 import packageJson from '../package.json' with { type: 'json' }
+import { applyCliAliases } from './aliases.js'
 import { registerCoreCommands } from './commands/core.js'
 import { registerSortCommands } from './commands/sort.js'
 import { type CliContext, createCliContext } from './context.js'
 
 type VaultCliModule = typeof import('@env-lane/vault')
-
-const consola = createConsola()
-setLogger({
-  log: (msg, ...args) => consola.log(msg, ...args),
-  info: (msg, ...args) => consola.info(msg, ...args),
-  warn: (msg, ...args) => consola.warn(msg, ...args),
-  error: (msg, ...args) => consola.error(msg, ...args),
-  success: (msg, ...args) => consola.success(msg, ...args),
-  debug: (msg, ...args) => consola.debug(msg, ...args),
-  write: (msg) => process.stdout.write(msg),
-})
 
 const program = new Command()
 program
@@ -26,8 +15,10 @@ program
   .description('Workspace-aware dotenv injection and development vault tooling.')
   .version(packageJson.version)
 program.enablePositionalOptions()
+program.exitOverride()
+program.configureOutput({ writeErr: () => undefined })
 
-const ctx = createCliContext(program, consola)
+const ctx = createCliContext(program)
 ctx.addCommonOptions(program)
 
 async function loadVaultCliModule(): Promise<VaultCliModule | undefined> {
@@ -68,19 +59,29 @@ await registerOptionalVaultCommands(program, ctx)
 // Apply custom CLI command aliases
 try {
   const config = await loadEnvLaneConfig()
-  if (config.cli?.aliases) {
-    for (const [cmdName, alias] of Object.entries(config.cli.aliases)) {
-      const cmd = program.commands.find((c) => c.name() === cmdName)
-      if (cmd) {
-        cmd.alias(alias)
-      }
-    }
-  }
+  if (config.cli?.aliases) applyCliAliases(program, config.cli.aliases)
 } catch {
   // ignore config load errors here
 }
 
-program.parseAsync().catch((error: unknown) => {
-  getLogger().error(error instanceof Error ? error.message : String(error))
-  process.exit(1)
-})
+function wantsJson(command: Command): boolean {
+  const options = command.opts<{ format?: string; json?: boolean }>()
+  if (options.json || options.format === 'json') return true
+  return command.commands.some((subcommand) => wantsJson(subcommand))
+}
+
+try {
+  await withEnvLaneContext({ logger: ctx.logger }, () => program.parseAsync())
+} catch (error) {
+  if (error instanceof CommanderError && error.exitCode === 0) {
+    process.exitCode = 0
+  } else {
+    const renderedError =
+      error instanceof CommanderError
+        ? new EnvLaneError('CLI_ARGUMENT_ERROR', error.message)
+        : error
+    const json = wantsJson(program)
+    ctx.renderError(renderedError, json)
+    process.exitCode = 1
+  }
+}

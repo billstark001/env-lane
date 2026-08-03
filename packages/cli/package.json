@@ -57,8 +57,7 @@
   },
   "dependencies": {
     "@env-lane/core": "workspace:*",
-    "commander": "^15.0.0",
-    "consola": "^3.4.2"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@env-lane/vault": "workspace:*"

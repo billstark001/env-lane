@@ -1,4 +1,4 @@
-import { getLogger, sortEnvFile, sortEnvFilesFromConfig } from '@env-lane/core'
+import { EnvLaneError, sortEnvFile, sortEnvFilesFromConfig } from '@env-lane/core'
 import type { Command } from 'commander'
 import type { CliContext } from '../context.js'
 
@@ -11,6 +11,12 @@ export function registerSortCommands(program: Command, ctx: CliContext): void {
     .action(async (envFile, templateFile, opts) => {
       const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
+      if (format === 'dotenv') {
+        throw new EnvLaneError(
+          'UNSUPPORTED_OUTPUT_FORMAT',
+          'Sort commands do not support --format dotenv.',
+        )
+      }
       const result = await sortEnvFile(envFile, templateFile, {
         preserveBOM: allOpts.preserveBom,
         eol: allOpts.eol,
@@ -18,10 +24,10 @@ export function registerSortCommands(program: Command, ctx: CliContext): void {
       ctx.formatAndLog(result, {
         format,
         text: (res) => {
-          getLogger().log(`${res.applied ? 'Sorted' : 'No changes for'} ${envFile}`)
+          ctx.output(`${res.applied ? 'Sorted' : 'No changes for'} ${envFile}`)
           if (res.applied) {
-            getLogger().log(`  Moved: ${res.movedCount}`)
-            getLogger().log(`  Inserted commented: ${res.insertedCommentedCount}`)
+            ctx.output(`  Moved: ${res.movedCount}`)
+            ctx.output(`  Inserted commented: ${res.insertedCommentedCount}`)
           }
         },
       })
@@ -35,6 +41,12 @@ export function registerSortCommands(program: Command, ctx: CliContext): void {
     .action(async (key = 'all', envSuffix = 'all', opts) => {
       const allOpts = ctx.mergeOptions(opts)
       const format = await ctx.resolveOutputFormat(allOpts)
+      if (format === 'dotenv') {
+        throw new EnvLaneError(
+          'UNSUPPORTED_OUTPUT_FORMAT',
+          'Sort commands do not support --format dotenv.',
+        )
+      }
       const result = await sortEnvFilesFromConfig(allOpts.config, key, envSuffix, {
         preserveBOM: allOpts.preserveBom,
         eol: allOpts.eol,
@@ -42,9 +54,9 @@ export function registerSortCommands(program: Command, ctx: CliContext): void {
       ctx.formatAndLog(result, {
         format,
         text: (res) => {
-          getLogger().log(`Sort applied: ${res.applied}`)
+          ctx.output(`Sort applied: ${res.applied}`)
           for (const r of res.results) {
-            getLogger().log(`${r.applied ? 'SORTED ' : 'SKIPPED'} ${r.filePath}`)
+            ctx.output(`${r.applied ? 'SORTED ' : 'SKIPPED'} ${r.filePath}`)
           }
         },
       })
