@@ -34,6 +34,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "import": "./dist/cli/index.js",
+      "require": "./dist/cli/index.cjs"
     }
   },
   "files": [
@@ -46,7 +51,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json",
+    "build": "tsup src/index.ts src/cli/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",

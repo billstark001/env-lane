@@ -34,6 +34,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./env-document": {
+      "types": "./dist/env-document.d.ts",
+      "import": "./dist/env-document.js",
+      "require": "./dist/env-document.cjs"
     }
   },
   "files": [
@@ -46,7 +51,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json",
+    "build": "tsup src/index.ts src/env-document.ts --format esm,cjs --clean && tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",

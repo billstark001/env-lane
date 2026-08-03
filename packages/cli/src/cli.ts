@@ -7,7 +7,7 @@ import { registerCoreCommands } from './commands/core.js'
 import { registerSortCommands } from './commands/sort.js'
 import { type CliContext, createCliContext } from './context.js'
 
-type VaultCliModule = typeof import('@env-lane/vault')
+type VaultCliModule = typeof import('@env-lane/vault/cli')
 
 const program = new Command()
 program
@@ -23,8 +23,17 @@ ctx.addCommonOptions(program)
 
 async function loadVaultCliModule(): Promise<VaultCliModule | undefined> {
   try {
-    return await import('@env-lane/vault')
+    return await import('@env-lane/vault/cli')
   } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'ERR_PACKAGE_PATH_NOT_EXPORTED'
+    ) {
+      // Compatibility with Vault releases that predate the dedicated CLI subpath.
+      return import('@env-lane/vault')
+    }
     if (
       error &&
       typeof error === 'object' &&

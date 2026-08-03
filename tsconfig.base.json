@@ -14,7 +14,9 @@
     "resolveJsonModule": true,
     "paths": {
       "@env-lane/core": ["./packages/core/src/index.ts"],
-      "@env-lane/vault": ["./packages/vault/src/index.ts"]
+      "@env-lane/core/env-document": ["./packages/core/src/env-document.ts"],
+      "@env-lane/vault": ["./packages/vault/src/index.ts"],
+      "@env-lane/vault/cli": ["./packages/vault/src/cli/index.ts"]
     },
     "types": ["node"]
   }

@@ -1,11 +1,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import {
-  applyEnvDocumentPatches,
-  EnvLaneError,
-  loadEnvDocument,
-  writeFileContentAtomically,
-} from '@env-lane/core'
+import { EnvLaneError, writeFileContentAtomically } from '@env-lane/core'
+import { applyEnvDocumentPatches, loadEnvDocument } from '@env-lane/core/env-document'
 import picomatch from 'picomatch'
 import { z } from 'zod'
 import { loadVaultConfig, type VaultConfig } from './config.js'

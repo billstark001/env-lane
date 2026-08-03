@@ -2,7 +2,8 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { EnvLaneError, parseEnvLine, writeFileContentAtomically } from '@env-lane/core'
+import { EnvLaneError, writeFileContentAtomically } from '@env-lane/core'
+import { parseEnvLine } from '@env-lane/core/env-document'
 import picomatch from 'picomatch'
 import { loadVaultConfig, type VaultConfig } from './config.js'
 import { decryptRecord, deriveVaultKey, encryptRecord, stableHash } from './crypto.js'

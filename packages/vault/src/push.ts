@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { loadEnvDocument } from '@env-lane/core'
+import { loadEnvDocument } from '@env-lane/core/env-document'
 import { loadVaultConfig, type VaultConfig } from './config.js'
 import { deriveVaultKey, keyedDigest } from './crypto.js'
 import {
