@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import {
   applyEnvDocumentPatches,
-  getLogger,
+  EnvLaneError,
   type LoadedEnvDocument,
   loadEnvDocument,
   parseEnvLine,
@@ -14,11 +14,17 @@ import {
 import picomatch from 'picomatch'
 import { loadVaultConfig, type VaultConfig } from './config.js'
 import { decryptRecord, deriveVaultKey, deriveVaultSyncKey, encryptRecord } from './crypto.js'
-import { warnUnsafeVault } from './warning.js'
+import { withFileLock } from './file-lock.js'
 
 export type VaultOperation = 'set' | 'delete'
 export type RestoreAction = 'add' | 'modify' | 'delete' | 'identical' | 'conflict'
-export type VaultConflictStrategy = 'ask' | 'abort' | 'keep-local' | 'take-vault'
+export type VaultConflictStrategy = 'abort' | 'keep-local' | 'take-vault'
+export type RestoreDecisionChoice = 'apply-vault' | 'keep-local' | 'skip'
+
+export interface RestoreDecision {
+  entryId: string
+  decision: RestoreDecisionChoice
+}
 
 export interface VaultRecord {
   version: 0 | 1
@@ -31,15 +37,18 @@ export interface VaultRecord {
 }
 
 export interface RestorePlanEntry {
+  entryId: string
   filePath: string
   key: string
   action: RestoreAction
-  currentValues: string[]
   occurrenceCount: number
-  nextValue?: string
   conflict?: boolean
   vaultAction?: Exclude<RestoreAction, 'conflict'>
   conflictReason?: string
+  preview: {
+    current: string
+    vault: string
+  }
 }
 
 export interface RestorePlanFile {
@@ -49,6 +58,10 @@ export interface RestorePlanFile {
 }
 
 export interface RestorePlan {
+  version: 1
+  createdAt: number
+  planDigest: string
+  storeDigest: string
   storePath: string
   files: RestorePlanFile[]
   summary: Record<RestoreAction, number> & { filesWithChanges: number }
@@ -57,6 +70,19 @@ export interface RestorePlan {
   rawRecords: number
   aliasedRecords: number
   unmanagedStoreFiles: string[]
+}
+
+interface InternalRestorePlanEntry extends RestorePlanEntry {
+  currentValues: string[]
+  nextValue?: string
+}
+
+interface InternalRestorePlanFile extends Omit<RestorePlanFile, 'entries'> {
+  entries: InternalRestorePlanEntry[]
+}
+
+interface InternalRestorePlan extends Omit<RestorePlan, 'files'> {
+  files: InternalRestorePlanFile[]
 }
 
 interface StoreReadResult {
@@ -70,6 +96,7 @@ interface StoreReadResult {
 
 interface StoreRecordLine {
   encryptedLine: string
+  lineIndex: number
   record: VaultRecord
   groupFilePath: string
 }
@@ -80,6 +107,7 @@ interface StoreRecordsReadResult {
   parsedRecords: number
   rawRecords: number
   aliasedRecords: number
+  rawLines: string[]
 }
 
 interface SyncStateEntry {
@@ -101,6 +129,7 @@ interface SyncContext {
   syncDir: string
   statePath: string
   state: SyncState
+  initialEntries: Record<string, SyncStateEntry>
   syncKey: Buffer
   migratedFromVersion0: boolean
 }
@@ -115,7 +144,6 @@ interface PruneCandidate {
   record: VaultRecord
 }
 
-const PREVIEW_VALUE_LIMIT = 160
 const SYNC_STATE_FILE = 'vault-sync-state.json'
 
 type PicomatchMatcher = ReturnType<typeof picomatch>
@@ -139,6 +167,10 @@ function portable(file: string): string {
 
 function stableHash(value: string): string {
   return createHash('sha256').update(value).digest('hex')
+}
+
+function keyedDigest(key: Buffer, value: string): string {
+  return createHmac('sha256', key).update(value).digest('hex')
 }
 
 function valueFingerprint(syncKey: Buffer, op: VaultOperation, value?: string): string {
@@ -173,6 +205,7 @@ function loadSyncContext(syncDir: string | undefined, vaultKey: Buffer): SyncCon
       syncDir: resolvedSyncDir,
       statePath,
       state: emptySyncState(),
+      initialEntries: {},
       syncKey,
       migratedFromVersion0: false,
     }
@@ -202,6 +235,7 @@ function loadSyncContext(syncDir: string | undefined, vaultKey: Buffer): SyncCon
       syncDir: resolvedSyncDir,
       statePath,
       state: emptySyncState(),
+      initialEntries: {},
       syncKey,
       migratedFromVersion0: true,
     }
@@ -222,13 +256,41 @@ function loadSyncContext(syncDir: string | undefined, vaultKey: Buffer): SyncCon
     syncDir: resolvedSyncDir,
     statePath,
     state: raw as unknown as SyncState,
+    initialEntries: structuredClone((raw as unknown as SyncState).entries),
     syncKey,
     migratedFromVersion0: false,
   }
 }
 
-function saveSyncContext(context: SyncContext): void {
-  writeFileContentAtomically(context.statePath, `${JSON.stringify(context.state, null, 2)}\n`)
+async function saveSyncContext(context: SyncContext): Promise<void> {
+  await withFileLock(context.statePath, () => {
+    let latest = emptySyncState()
+    if (existsSync(context.statePath)) {
+      const parsed = JSON.parse(
+        readFileSync(context.statePath, 'utf8').replace(/^\uFEFF/, ''),
+      ) as SyncState
+      if (parsed.version !== 1 || parsed.fingerprint !== 'hmac-sha256') {
+        if (!context.migratedFromVersion0) {
+          throw new EnvLaneError(
+            'VAULT_SYNC_STATE_CHANGED',
+            `Vault sync state changed to an unsupported format: ${context.statePath}`,
+          )
+        }
+      } else {
+        latest = parsed
+      }
+    }
+    for (const entryId of Object.keys(context.initialEntries)) {
+      if (!(entryId in context.state.entries)) delete latest.entries[entryId]
+    }
+    for (const [entryId, entry] of Object.entries(context.state.entries)) {
+      const initial = context.initialEntries[entryId]
+      if (!initial || JSON.stringify(initial) !== JSON.stringify(entry)) {
+        latest.entries[entryId] = entry
+      }
+    }
+    writeFileContentAtomically(context.statePath, `${JSON.stringify(latest, null, 2)}\n`)
+  })
 }
 
 function updateSyncEntry(
@@ -328,13 +390,6 @@ function localValueFingerprintForEnvDoc(
   return current
     ? valueFingerprint(syncKey, 'set', current.effectiveValue)
     : valueFingerprint(syncKey, 'delete')
-}
-
-function emitStructuredChange(
-  command: 'encrypt' | 'decrypt' | 'sort',
-  payload: Record<string, string | number | boolean | undefined>,
-): void {
-  getLogger().info(`[env-lane:vault] ${JSON.stringify({ command, ...payload })}`)
 }
 
 function getCompiledExcludeRules(config: VaultConfig): CompiledExcludeRule[] {
@@ -473,6 +528,7 @@ function readStoreRecordLines(
       if (remapped.aliased) aliasedRecords++
       records.push({
         encryptedLine: line,
+        lineIndex: order,
         record: parsedRecord,
         groupFilePath: remapped.filePath,
       })
@@ -489,7 +545,14 @@ function readStoreRecordLines(
       `Vault store contains ${failedRecords} unreadable record(s) in ${config.storePath}. Refusing to continue from partial state; pass ignoreCorruptRecords only after inspecting the store.`,
     )
   }
-  return { records, failedRecords, parsedRecords, rawRecords: lines.length, aliasedRecords }
+  return {
+    records,
+    failedRecords,
+    parsedRecords,
+    rawRecords: lines.length,
+    aliasedRecords,
+    rawLines: lines,
+  }
 }
 
 function readStore(
@@ -515,14 +578,42 @@ function serializeRecord(key: Buffer, record: VaultRecord): string {
   return encryptRecord(key, JSON.stringify({ version, f, k, t, op, v }))
 }
 
-function appendRecordsAtomically(config: VaultConfig, key: Buffer, records: VaultRecord[]): void {
+async function appendRecordsAtomically(
+  config: VaultConfig,
+  key: Buffer,
+  records: VaultRecord[],
+): Promise<void> {
   if (records.length === 0) return
-  const existing = existsSync(config.storePath) ? readFileSync(config.storePath, 'utf8') : ''
-  const prefix = existing.length === 0 || existing.endsWith('\n') ? existing : `${existing}\n`
-  writeFileContentAtomically(
-    config.storePath,
-    `${prefix}${records.map((record) => serializeRecord(key, record)).join('\n')}\n`,
-  )
+  await withFileLock(config.storePath, () => {
+    const existing = existsSync(config.storePath) ? readFileSync(config.storePath, 'utf8') : ''
+    const prefix = existing.length === 0 || existing.endsWith('\n') ? existing : `${existing}\n`
+    writeFileContentAtomically(
+      config.storePath,
+      `${prefix}${records.map((record) => serializeRecord(key, record)).join('\n')}\n`,
+    )
+  })
+}
+
+async function rewriteStoreAtomically(
+  config: VaultConfig,
+  expectedLines: readonly string[],
+  nextLines: readonly string[],
+): Promise<void> {
+  const expectedDigest = stableHash(expectedLines.join('\n'))
+  await withFileLock(config.storePath, () => {
+    const currentLines = readEncryptedStoreLines(config)
+    if (stableHash(currentLines.join('\n')) !== expectedDigest) {
+      throw new EnvLaneError(
+        'VAULT_STORE_CHANGED',
+        'The Vault store changed while preparing the rewrite. Retry the operation.',
+        { storePath: config.storePath },
+      )
+    }
+    writeFileContentAtomically(
+      config.storePath,
+      nextLines.length > 0 ? `${nextLines.join('\n')}\n` : '',
+    )
+  })
 }
 
 function excludedHistoricalRecords(config: VaultConfig, records: StoreRecordLine[]) {
@@ -566,33 +657,29 @@ function desiredRecordsForFile(
   return desired
 }
 
-function formatPreviewValue(value: string): string {
-  const escaped = value
-    .replace(/\\/g, '\\\\')
-    .replace(/\r/g, '\\r')
-    .replace(/\n/g, '\\n')
-    .replace(/\t/g, '\\t')
-    .replace(/"/g, '\\"')
-  const quoted = `"${escaped}"`
-  if (quoted.length <= PREVIEW_VALUE_LIMIT) return quoted
-  return `"${escaped.slice(0, PREVIEW_VALUE_LIMIT - 24)}"... (${value.length} chars)`
+function redactedPreview(present: boolean): string {
+  return present ? '<redacted>' : '<missing>'
 }
 
-function formatPreviewValues(values: string[], occurrenceCount: number): string {
-  const uniqueValues = [...new Set(values)]
-  const valuePreview =
-    uniqueValues.length === 1
-      ? formatPreviewValue(uniqueValues[0])
-      : `[${uniqueValues.map(formatPreviewValue).join(', ')}]`
-  return occurrenceCount > 1 ? `${valuePreview} (${occurrenceCount} occurrences)` : valuePreview
+function publicRestorePlan(plan: InternalRestorePlan): RestorePlan {
+  return {
+    ...plan,
+    files: plan.files.map((file) => ({
+      ...file,
+      entries: file.entries.map(
+        ({ currentValues: _currentValues, nextValue: _nextValue, ...entry }) => entry,
+      ),
+    })),
+  }
 }
 
 function buildRestorePlanFromState(
   config: VaultConfig,
   store: StoreReadResult,
+  vaultKey: Buffer,
   syncContext?: SyncContext,
-): RestorePlan {
-  const files: RestorePlanFile[] = []
+): InternalRestorePlan {
+  const files: InternalRestorePlanFile[] = []
   const summary: RestorePlan['summary'] = {
     add: 0,
     modify: 0,
@@ -612,7 +699,7 @@ function buildRestorePlanFromState(
   for (const filePath of targetFiles) {
     const desired = desiredRecordsForFile(config, filePath, store.state)
     const envDoc = loadEnvDocument(filePath)
-    const entries: RestorePlanEntry[] = []
+    const entries: InternalRestorePlanEntry[] = []
     for (const record of desired.values()) {
       const occurrences = envDoc.occurrencesMap.get(record.k) ?? []
       const currentValues = occurrences.map((item) => item.effectiveValue)
@@ -626,7 +713,20 @@ function buildRestorePlanFromState(
           : restoreConflictCheck(config, syncContext, filePath, record.k, envDoc, record)
       const action: RestoreAction = conflict.conflict ? 'conflict' : vaultAction
       summary[action]++
+      const entryId = keyedDigest(
+        vaultKey,
+        JSON.stringify({
+          filePath: portable(path.relative(config.baseDir, filePath)),
+          key: record.k,
+          action,
+          vaultAction,
+          timestamp: record.t,
+          record: recordValueFingerprint(vaultKey, record),
+          local: keyedDigest(vaultKey, JSON.stringify(currentValues)),
+        }),
+      )
       entries.push({
+        entryId,
         filePath,
         key: record.k,
         action,
@@ -636,6 +736,10 @@ function buildRestorePlanFromState(
         conflict: conflict.conflict,
         vaultAction,
         conflictReason: conflict.reason,
+        preview: {
+          current: redactedPreview(occurrences.length > 0),
+          vault: record.op === 'delete' ? '<delete>' : '<redacted>',
+        },
       })
     }
     entries.sort((left, right) => left.key.localeCompare(right.key))
@@ -644,7 +748,20 @@ function buildRestorePlanFromState(
     files.push({ filePath, entries, changed })
   }
 
+  const storeDigest = stableHash(store.records.map((item) => item.encryptedLine).join('\n'))
+  const planDigest = keyedDigest(
+    vaultKey,
+    JSON.stringify({
+      storeDigest,
+      files: files.map((file) => file.entries.map((entry) => entry.entryId)),
+      unmanagedStoreFiles,
+    }),
+  )
   return {
+    version: 1,
+    createdAt: Date.now(),
+    planDigest,
+    storeDigest,
     storePath: config.storePath,
     files,
     summary,
@@ -656,158 +773,46 @@ function buildRestorePlanFromState(
   }
 }
 
-function printRestorePreview(plan: RestorePlan): void {
-  const logger = getLogger()
-  logger.log('[env-lane:vault] Restore preview:')
-  if (plan.summary.filesWithChanges === 0) {
-    logger.log('[env-lane:vault] No file changes detected.')
-    logger.log(`[env-lane:vault] Skipped identical key-value pairs: ${plan.summary.identical}`)
-    return
-  }
-
-  for (const file of plan.files) {
-    const changedEntries = file.entries.filter((entry) => entry.action !== 'identical')
-    if (changedEntries.length === 0) continue
-    logger.log(`\n[env-lane:vault] File: ${file.filePath}`)
-    for (const entry of changedEntries) {
-      if (entry.action === 'add') {
-        logger.log(`  ADD ${entry.key}=${formatPreviewValue(entry.nextValue ?? '')}`)
-      } else if (entry.action === 'modify') {
-        logger.log(
-          `  MODIFY ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)} -> ${formatPreviewValue(entry.nextValue ?? '')}`,
-        )
-      } else if (entry.action === 'delete') {
-        logger.log(
-          `  DELETE ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)}`,
-        )
-      } else {
-        const target =
-          entry.vaultAction === 'delete' ? '<delete>' : formatPreviewValue(entry.nextValue ?? '')
-        logger.log(
-          `  CONFLICT ${entry.key}: ${formatPreviewValues(entry.currentValues, entry.occurrenceCount)} -> ${target}${entry.conflictReason ? ` (${entry.conflictReason})` : ''}`,
-        )
-      }
-    }
-  }
-  logger.log('')
-  logger.log(
-    `[env-lane:vault] Summary: ${plan.summary.modify} modify, ${plan.summary.add} add, ${plan.summary.delete} delete, ${plan.summary.conflict} conflict, ${plan.summary.identical} identical skipped`,
-  )
-}
-
-async function readSingleKey(prompt: string, choices?: string[]): Promise<string> {
-  const logger = getLogger()
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error('Interactive terminal is required.')
-  }
-  logger.write(prompt)
-  return new Promise((resolve) => {
-    const stdin = process.stdin
-    const cleanup = () => {
-      stdin.off('data', onData)
-      stdin.pause()
-      if (typeof stdin.setRawMode === 'function') stdin.setRawMode(false)
-    }
-    const onData = (chunk: Buffer) => {
-      const input = String(chunk)
-      if (input === '\u0003') {
-        cleanup()
-        logger.write('\n')
-        resolve('\u0003')
-        return
-      }
-      const char = input
-        .replace(/[\r\n]+/g, '')
-        .trim()
-        .toLowerCase()
-      if (!choices || choices.includes(char)) {
-        cleanup()
-        logger.write('\n')
-        resolve(char)
-      }
-    }
-    stdin.resume()
-    if (typeof stdin.setRawMode === 'function') stdin.setRawMode(true)
-    stdin.on('data', onData)
-  })
-}
-
-async function confirmRestore(
-  options: { autoApprove?: boolean; dryRun?: boolean } = {},
-): Promise<boolean> {
-  const logger = getLogger()
-  if (options.dryRun) return false
-  if (options.autoApprove) {
-    logger.log('[env-lane:vault] Auto-approved restore.')
-    return true
-  }
-  const key = await readSingleKey(
-    '[env-lane:vault] Press y to apply restore, any other key to cancel: ',
-  )
-  return key === 'y'
-}
-
-async function promptChoice(prompt: string, choices: string[]): Promise<string> {
-  const key = await readSingleKey(prompt, choices)
-  return key
-}
-
 async function resolveConflict(
   strategy: VaultConflictStrategy | undefined,
-  prompt: string,
+  entry: RestorePlanEntry,
+  resolver?: (
+    entry: RestorePlanEntry,
+  ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault',
 ): Promise<'keep-local' | 'take-vault'> {
   const effectiveStrategy = strategy ?? 'abort'
   if (effectiveStrategy === 'keep-local' || effectiveStrategy === 'take-vault') {
     return effectiveStrategy
   }
-  if (effectiveStrategy === 'abort') {
-    throw new Error(
-      'Vault conflict resolution aborted. Re-run with --conflicts keep-local, take-vault, or ask.',
-    )
-  }
-  const choice = await promptChoice(prompt, ['l', 'v'])
-  if (choice === '\u0003') {
-    throw new Error('Vault conflict resolution aborted by user.')
-  }
-  return choice === 'l' ? 'keep-local' : 'take-vault'
-}
-
-async function resolveRestoreConflicts(
-  plan: RestorePlan,
-  strategy: VaultConflictStrategy | undefined,
-): Promise<Set<string>> {
-  const ignored = new Set<string>()
-  for (const file of plan.files) {
-    for (const entry of file.entries.filter((item) => item.action === 'conflict')) {
-      const decision = await resolveConflict(
-        strategy,
-        `[env-lane:vault] Conflict ${entry.filePath} ${entry.key}: keep local (l) or take vault (v)? `,
-      )
-      if (decision === 'keep-local') ignored.add(`${entry.filePath}\0${entry.key}`)
-    }
-  }
-  return ignored
+  if (resolver) return resolver(entry)
+  throw new EnvLaneError(
+    'VAULT_CONFLICT_DECISION_REQUIRED',
+    'Vault conflict resolution requires a decision map, resolveConflict callback, or an explicit non-interactive strategy.',
+    { entryId: entry.entryId, filePath: entry.filePath, key: entry.key },
+  )
 }
 
 function applyRestoreFile(
   config: VaultConfig,
   filePath: string,
   state: Map<string, Map<string, VaultRecord>>,
-  ignoredConflicts: Set<string> = new Set(),
+  selectedEntryIds: Set<string>,
+  entries: InternalRestorePlanEntry[],
 ): boolean {
   const desired = desiredRecordsForFile(config, filePath, state)
-  const ignoredKeys = new Set(
-    [...desired.keys()].filter((key) => ignoredConflicts.has(`${filePath}\0${key}`)),
+  const selectedKeys = new Set(
+    entries.filter((entry) => selectedEntryIds.has(entry.entryId)).map((entry) => entry.key),
   )
   return applyEnvDocumentPatches(
     filePath,
-    [...desired.entries()].map(([key, record]) =>
-      record.op === 'set'
-        ? { op: 'set' as const, key, value: record.v ?? '' }
-        : { op: 'delete' as const, key },
-    ),
+    [...desired.entries()]
+      .filter(([key]) => selectedKeys.has(key))
+      .map(([key, record]) =>
+        record.op === 'set'
+          ? { op: 'set' as const, key, value: record.v ?? '' }
+          : { op: 'delete' as const, key },
+      ),
     {
-      ignoredKeys,
       update: 'all',
       matchCommented: false,
       sortAdditions: true,
@@ -815,169 +820,290 @@ function applyRestoreFile(
   ).changed
 }
 
+interface EncryptOptions {
+  cwd?: string
+  ignoreCorruptRecords?: boolean
+  syncDir?: string
+  conflictStrategy?: VaultConflictStrategy
+  vaultConfigFile?: string
+  autoRemapPaths?: boolean
+  allowUnmanaged?: boolean
+  resolvedConfig?: VaultConfig
+  selectEntry?: (entry: RestorePlanEntry) => boolean
+  resolveConflict?: (
+    entry: RestorePlanEntry,
+  ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault'
+}
+
+interface VaultChange {
+  action: 'set' | 'update' | 'delete'
+  filePath: string
+  key: string
+}
+
+interface EncryptAccumulator {
+  pendingRecords: VaultRecord[]
+  changes: VaultChange[]
+  setRecordsWritten: number
+  deleteRecordsWritten: number
+  skippedUnchanged: number
+  localOnlyEntriesSkipped: number
+  missingFilesSkipped: number
+  invalidLinesIgnored: number
+  shadowedEntriesIgnored: number
+  selectionSkipped: number
+  conflicts: number
+  conflictsKeptLocal: number
+  conflictsTookVault: number
+}
+
+function createEncryptAccumulator(): EncryptAccumulator {
+  return {
+    pendingRecords: [],
+    changes: [],
+    setRecordsWritten: 0,
+    deleteRecordsWritten: 0,
+    skippedUnchanged: 0,
+    localOnlyEntriesSkipped: 0,
+    missingFilesSkipped: 0,
+    invalidLinesIgnored: 0,
+    shadowedEntriesIgnored: 0,
+    selectionSkipped: 0,
+    conflicts: 0,
+    conflictsKeptLocal: 0,
+    conflictsTookVault: 0,
+  }
+}
+
+async function shouldWritePushEntry(
+  entry: RestorePlanEntry,
+  options: EncryptOptions,
+  accumulator: EncryptAccumulator,
+): Promise<boolean> {
+  if (options.selectEntry && !options.selectEntry(entry)) {
+    accumulator.selectionSkipped++
+    return false
+  }
+  if (!entry.conflict) return true
+  accumulator.conflicts++
+  const decision = await resolveConflict(options.conflictStrategy, entry, options.resolveConflict)
+  if (decision === 'take-vault') {
+    accumulator.conflictsTookVault++
+    return false
+  }
+  accumulator.conflictsKeptLocal++
+  return true
+}
+
+async function processCurrentEntry(
+  config: VaultConfig,
+  key: Buffer,
+  syncContext: SyncContext | undefined,
+  filePath: string,
+  keyName: string,
+  effectiveValue: string,
+  old: VaultRecord | undefined,
+  options: EncryptOptions,
+  accumulator: EncryptAccumulator,
+): Promise<void> {
+  if (old?.op === 'set' && old.v === effectiveValue) {
+    accumulator.skippedUnchanged++
+    updateSyncEntry(config, syncContext, old)
+    return
+  }
+  const conflict = pushConflictCheck(
+    config,
+    syncContext,
+    filePath,
+    keyName,
+    syncContext ? valueFingerprint(syncContext.syncKey, 'set', effectiveValue) : '',
+    old,
+  )
+  const entry: RestorePlanEntry = {
+    entryId: keyedDigest(
+      key,
+      JSON.stringify({ direction: 'encrypt', filePath, key: keyName, value: effectiveValue }),
+    ),
+    filePath,
+    key: keyName,
+    action: conflict.conflict ? 'conflict' : old?.op === 'set' ? 'modify' : 'add',
+    occurrenceCount: 1,
+    conflict: conflict.conflict,
+    vaultAction: old?.op === 'set' ? 'modify' : 'add',
+    conflictReason: conflict.reason,
+    preview: { current: '<redacted>', vault: old?.op === 'set' ? '<redacted>' : '<missing>' },
+  }
+  if (!(await shouldWritePushEntry(entry, options, accumulator))) return
+  const record: VaultRecord = {
+    version: 1,
+    f: filePath,
+    k: keyName,
+    v: effectiveValue,
+    op: 'set',
+    t: Date.now(),
+  }
+  accumulator.pendingRecords.push(record)
+  updateSyncEntry(config, syncContext, record)
+  accumulator.changes.push({
+    action: old?.op === 'set' ? 'update' : 'set',
+    filePath: portable(filePath),
+    key: keyName,
+  })
+  accumulator.setRecordsWritten++
+}
+
+async function processDeletedEntry(
+  config: VaultConfig,
+  key: Buffer,
+  syncContext: SyncContext | undefined,
+  filePath: string,
+  keyName: string,
+  old: VaultRecord,
+  options: EncryptOptions,
+  accumulator: EncryptAccumulator,
+): Promise<void> {
+  const conflict = pushConflictCheck(
+    config,
+    syncContext,
+    filePath,
+    keyName,
+    syncContext ? valueFingerprint(syncContext.syncKey, 'delete') : '',
+    old,
+  )
+  const entry: RestorePlanEntry = {
+    entryId: keyedDigest(
+      key,
+      JSON.stringify({ direction: 'encrypt', filePath, key: keyName, op: 'delete' }),
+    ),
+    filePath,
+    key: keyName,
+    action: conflict.conflict ? 'conflict' : 'delete',
+    occurrenceCount: 0,
+    conflict: conflict.conflict,
+    vaultAction: 'delete',
+    conflictReason: conflict.reason,
+    preview: { current: '<missing>', vault: '<redacted>' },
+  }
+  if (!(await shouldWritePushEntry(entry, options, accumulator))) return
+  const record: VaultRecord = {
+    version: 1,
+    f: filePath,
+    k: keyName,
+    op: 'delete',
+    t: Date.now(),
+  }
+  accumulator.pendingRecords.push(record)
+  updateSyncEntry(config, syncContext, record)
+  accumulator.changes.push({ action: 'delete', filePath: portable(filePath), key: keyName })
+  accumulator.deleteRecordsWritten++
+}
+
+async function processEnvFileForEncryption(
+  config: VaultConfig,
+  key: Buffer,
+  syncContext: SyncContext | undefined,
+  state: StoreReadResult['state'],
+  filePath: string,
+  options: EncryptOptions,
+  accumulator: EncryptAccumulator,
+): Promise<void> {
+  if (!existsSync(filePath)) {
+    accumulator.missingFilesSkipped++
+    return
+  }
+  const envDoc = loadEnvDocument(filePath)
+  const previous = state.get(filePath) ?? new Map<string, VaultRecord>()
+  const current = new Map<string, string>()
+  for (const [keyName, { effectiveValue }] of envDoc.currentMap) {
+    if (isExcluded(config, filePath, keyName)) {
+      accumulator.localOnlyEntriesSkipped++
+      continue
+    }
+    current.set(keyName, effectiveValue)
+    await processCurrentEntry(
+      config,
+      key,
+      syncContext,
+      filePath,
+      keyName,
+      effectiveValue,
+      previous.get(keyName),
+      options,
+      accumulator,
+    )
+  }
+  if (config.trackDeletions) {
+    for (const [keyName, old] of previous) {
+      if (!isExcluded(config, filePath, keyName) && old.op === 'set' && !current.has(keyName)) {
+        await processDeletedEntry(
+          config,
+          key,
+          syncContext,
+          filePath,
+          keyName,
+          old,
+          options,
+          accumulator,
+        )
+      }
+    }
+  }
+  for (const [keyName, old] of previous) {
+    if (old.op === 'delete' && !current.has(keyName)) updateSyncEntry(config, syncContext, old)
+  }
+  accumulator.invalidLinesIgnored += envDoc.invalidLineCount
+  accumulator.shadowedEntriesIgnored += envDoc.shadowedEntryCount
+}
+
 export async function encryptEnvFiles(
   configPath: string | undefined,
   keyFilePath: string,
-  options: {
-    disableUnsafeWarning?: boolean
-    ignoreCorruptRecords?: boolean
-    syncDir?: string
-    conflictStrategy?: VaultConflictStrategy
-    vaultConfigFile?: string
-    autoRemapPaths?: boolean
-    allowUnmanaged?: boolean
-  } = {},
+  options: EncryptOptions = {},
 ) {
-  const config = await loadVaultConfig(configPath, options)
-  warnUnsafeVault({
-    disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
-  })
-  const key = deriveVaultKey(keyFilePath)
-  const syncContext = loadSyncContext(options.syncDir, key)
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
+  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  const syncContext = loadSyncContext(
+    options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
+    key,
+  )
   scrubExcludedSyncEntries(config, syncContext)
   const store = readStore(config, key, {
     allowMissing: true,
     ignoreCorruptRecords: options.ignoreCorruptRecords,
   })
   assertNoExcludedHistory(config, store.records, store.failedRecords)
-  const state = store.state
-  const pendingRecords: VaultRecord[] = []
-  const pendingChanges: Array<Record<string, string | number | boolean | undefined>> = []
-  let setRecordsWritten = 0
-  let deleteRecordsWritten = 0
-  let skippedUnchanged = 0
-  let localOnlyEntriesSkipped = 0
-  let missingFilesSkipped = 0
-  let invalidLinesIgnored = 0
-  let shadowedEntriesIgnored = 0
-  let conflicts = 0
-  let conflictsKeptLocal = 0
-  let conflictsTookVault = 0
-
+  const accumulator = createEncryptAccumulator()
   for (const filePath of config.envFiles) {
-    if (!existsSync(filePath)) {
-      missingFilesSkipped++
-      continue
-    }
-    const envDoc = loadEnvDocument(filePath)
-    const prev = state.get(filePath) ?? new Map<string, VaultRecord>()
-    const current = new Map<string, string>()
-    for (const [keyName, { effectiveValue }] of envDoc.currentMap) {
-      if (isExcluded(config, filePath, keyName)) {
-        localOnlyEntriesSkipped++
-        continue
-      }
-      current.set(keyName, effectiveValue)
-      const old = prev.get(keyName)
-      if (old?.op === 'set' && old.v === effectiveValue) {
-        skippedUnchanged++
-        updateSyncEntry(config, syncContext, old)
-        continue
-      }
-      const conflict = pushConflictCheck(
-        config,
-        syncContext,
-        filePath,
-        keyName,
-        syncContext ? valueFingerprint(syncContext.syncKey, 'set', effectiveValue) : '',
-        old,
-      )
-      if (conflict.conflict) {
-        conflicts++
-        const decision = await resolveConflict(
-          options.conflictStrategy,
-          `[env-lane:vault] Conflict ${filePath} ${keyName}: keep local (l) or take vault (v)? `,
-        )
-        if (decision === 'take-vault') {
-          conflictsTookVault++
-          continue
-        }
-        conflictsKeptLocal++
-      }
-      const record = {
-        version: 1 as const,
-        f: filePath,
-        k: keyName,
-        v: effectiveValue,
-        op: 'set' as const,
-        t: Date.now(),
-      }
-      pendingRecords.push(record)
-      updateSyncEntry(config, syncContext, record)
-      pendingChanges.push({
-        action: old?.op === 'set' ? 'update' : 'set',
-        filePath: portable(filePath),
-        key: keyName,
-      })
-      setRecordsWritten++
-    }
-    if (config.trackDeletions) {
-      for (const [keyName, old] of prev.entries()) {
-        if (isExcluded(config, filePath, keyName)) continue
-        if (old.op === 'set' && !current.has(keyName)) {
-          const conflict = pushConflictCheck(
-            config,
-            syncContext,
-            filePath,
-            keyName,
-            syncContext ? valueFingerprint(syncContext.syncKey, 'delete') : '',
-            old,
-          )
-          if (conflict.conflict) {
-            conflicts++
-            const decision = await resolveConflict(
-              options.conflictStrategy,
-              `[env-lane:vault] Conflict ${filePath} ${keyName}: keep local deletion (l) or take vault value (v)? `,
-            )
-            if (decision === 'take-vault') {
-              conflictsTookVault++
-              continue
-            }
-            conflictsKeptLocal++
-          }
-          const record = {
-            version: 1 as const,
-            f: filePath,
-            k: keyName,
-            op: 'delete' as const,
-            t: Date.now(),
-          }
-          pendingRecords.push(record)
-          updateSyncEntry(config, syncContext, record)
-          pendingChanges.push({
-            action: 'delete',
-            filePath: portable(filePath),
-            key: keyName,
-          })
-          deleteRecordsWritten++
-        }
-      }
-    }
-    for (const [keyName, old] of prev.entries()) {
-      if (old.op === 'delete' && !current.has(keyName)) updateSyncEntry(config, syncContext, old)
-    }
-    invalidLinesIgnored += envDoc.invalidLineCount
-    shadowedEntriesIgnored += envDoc.shadowedEntryCount
+    await processEnvFileForEncryption(
+      config,
+      key,
+      syncContext,
+      store.state,
+      filePath,
+      options,
+      accumulator,
+    )
   }
-  appendRecordsAtomically(config, key, pendingRecords)
-  for (const change of pendingChanges) emitStructuredChange('encrypt', change)
-  if (syncContext) saveSyncContext(syncContext)
+  await appendRecordsAtomically(config, key, accumulator.pendingRecords)
+  if (syncContext) await saveSyncContext(syncContext)
   return {
     storePath: config.storePath,
-    setRecordsWritten,
-    deleteRecordsWritten,
-    skippedUnchanged,
-    localOnlyEntriesSkipped,
-    missingFilesSkipped,
-    invalidLinesIgnored,
-    shadowedEntriesIgnored,
+    setRecordsWritten: accumulator.setRecordsWritten,
+    deleteRecordsWritten: accumulator.deleteRecordsWritten,
+    skippedUnchanged: accumulator.skippedUnchanged,
+    localOnlyEntriesSkipped: accumulator.localOnlyEntriesSkipped,
+    missingFilesSkipped: accumulator.missingFilesSkipped,
+    invalidLinesIgnored: accumulator.invalidLinesIgnored,
+    shadowedEntriesIgnored: accumulator.shadowedEntriesIgnored,
+    selectionSkipped: accumulator.selectionSkipped,
     rawRecords: store.rawRecords,
     parsedRecords: store.parsedRecords,
     failedRecords: store.failedRecords,
     aliasedRecords: store.aliasedRecords,
-    conflicts,
-    conflictsKeptLocal,
-    conflictsTookVault,
+    conflicts: accumulator.conflicts,
+    conflictsKeptLocal: accumulator.conflictsKeptLocal,
+    conflictsTookVault: accumulator.conflictsTookVault,
+    changes: accumulator.changes,
     syncStatePath: syncContext?.statePath,
     syncStateMigratedFromVersion0: syncContext?.migratedFromVersion0 ?? false,
   }
@@ -987,176 +1113,274 @@ export async function buildRestorePlan(
   configPath: string | undefined,
   keyFilePath: string,
   options: {
-    disableUnsafeWarning?: boolean
+    cwd?: string
     ignoreCorruptRecords?: boolean
     syncDir?: string
     vaultConfigFile?: string
     autoRemapPaths?: boolean
     allowUnmanaged?: boolean
+    resolvedConfig?: VaultConfig
   } = {},
 ) {
-  const config = await loadVaultConfig(configPath, options)
-  warnUnsafeVault({
-    disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
-  })
-  const key = deriveVaultKey(keyFilePath)
-  const syncContext = loadSyncContext(options.syncDir, key)
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
+  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  const syncContext = loadSyncContext(
+    options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
+    key,
+  )
   scrubExcludedSyncEntries(config, syncContext)
   const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
   assertNoExcludedHistory(config, store.records, store.failedRecords)
-  return buildRestorePlanFromState(config, store, syncContext)
+  return publicRestorePlan(buildRestorePlanFromState(config, store, key, syncContext))
 }
 
 export async function decryptEnvFiles(
   configPath: string | undefined,
   keyFilePath: string,
   options: {
+    cwd?: string
     dryRun?: boolean
     autoApprove?: boolean
-    disableUnsafeWarning?: boolean
     ignoreCorruptRecords?: boolean
     syncDir?: string
     conflictStrategy?: VaultConflictStrategy
     vaultConfigFile?: string
     autoRemapPaths?: boolean
     allowUnmanaged?: boolean
+    resolvedConfig?: VaultConfig
+    approveDeletes?: boolean
+    decisions?: RestoreDecision[]
+    selectEntry?: (entry: RestorePlanEntry) => boolean
+    resolveConflict?: (
+      entry: RestorePlanEntry,
+    ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault'
   } = {},
 ) {
-  const config = await loadVaultConfig(configPath, options)
-  warnUnsafeVault({
-    disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
-  })
-  const key = deriveVaultKey(keyFilePath)
-  const syncContext = loadSyncContext(options.syncDir, key)
+  const plan = await buildRestorePlan(configPath, keyFilePath, options)
+  if (options.dryRun) return { ...plan, applied: false, filesWritten: 0, results: [] }
+  return applyRestorePlan(configPath, keyFilePath, plan, options)
+}
+
+function decisionMap(decisions: RestoreDecision[] | undefined): Map<string, RestoreDecisionChoice> {
+  const result = new Map<string, RestoreDecisionChoice>()
+  for (const item of decisions ?? []) {
+    if (!item || typeof item.entryId !== 'string') {
+      throw new EnvLaneError('VAULT_INVALID_DECISION', 'Every decision requires an entryId.')
+    }
+    if (
+      item.decision !== 'apply-vault' &&
+      item.decision !== 'keep-local' &&
+      item.decision !== 'skip'
+    ) {
+      throw new EnvLaneError(
+        'VAULT_INVALID_DECISION',
+        `Invalid decision for ${item.entryId}: ${String(item.decision)}`,
+      )
+    }
+    result.set(item.entryId, item.decision)
+  }
+  if (decisions && result.size !== decisions.length) {
+    throw new EnvLaneError('VAULT_INVALID_DECISION', 'Decision entryIds must be unique.')
+  }
+  return result
+}
+
+async function chooseRestoreEntries(
+  plan: InternalRestorePlan,
+  options: {
+    decisions?: RestoreDecision[]
+    approveDeletes?: boolean
+    conflictStrategy?: VaultConflictStrategy
+    selectEntry?: (entry: RestorePlanEntry) => boolean
+    resolveConflict?: (
+      entry: RestorePlanEntry,
+    ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault'
+  },
+): Promise<{ selected: Set<string>; resolved: RestoreDecision[] }> {
+  const supplied = decisionMap(options.decisions)
+  const knownIds = new Set(plan.files.flatMap((file) => file.entries.map((entry) => entry.entryId)))
+  for (const entryId of supplied.keys()) {
+    if (!knownIds.has(entryId)) {
+      throw new EnvLaneError(
+        'VAULT_UNKNOWN_ENTRY_ID',
+        `Decision references an entry that is not in the current plan: ${entryId}`,
+      )
+    }
+  }
+  if (options.decisions) {
+    const requiredIds = new Set(
+      plan.files.flatMap((file) =>
+        file.entries.filter((entry) => entry.action !== 'identical').map((entry) => entry.entryId),
+      ),
+    )
+    const missingIds = [...requiredIds].filter((entryId) => !supplied.has(entryId))
+    if (missingIds.length > 0) {
+      throw new EnvLaneError(
+        'VAULT_MISSING_DECISIONS',
+        'Explicit decisions must cover every non-identical entry in the current plan.',
+        { missingEntryIds: missingIds },
+      )
+    }
+  }
+
+  const selected = new Set<string>()
+  const resolved: RestoreDecision[] = []
+  for (const entry of plan.files.flatMap((file) => file.entries)) {
+    if (entry.action === 'identical') continue
+    let decision = supplied.get(entry.entryId)
+    if (!decision && options.selectEntry && !options.selectEntry(entry)) decision = 'skip'
+    if (!decision && entry.action === 'delete' && !options.approveDeletes) decision = 'skip'
+    if (!decision && entry.action === 'conflict') {
+      const conflictDecision = await resolveConflict(
+        options.conflictStrategy,
+        entry,
+        options.resolveConflict,
+      )
+      decision = conflictDecision === 'take-vault' ? 'apply-vault' : 'keep-local'
+    }
+    decision ??= 'apply-vault'
+    if (decision === 'apply-vault') selected.add(entry.entryId)
+    resolved.push({ entryId: entry.entryId, decision })
+  }
+  return { selected, resolved }
+}
+
+function assertFreshRestorePlan(submitted: RestorePlan, current: InternalRestorePlan): void {
+  const submittedEntryIds = submitted.files.flatMap((file) =>
+    file.entries.map((entry) => entry.entryId),
+  )
+  const currentEntryIds = current.files.flatMap((file) =>
+    file.entries.map((entry) => entry.entryId),
+  )
+  const submittedEntrySet = new Set(submittedEntryIds)
+  const currentEntrySet = new Set(currentEntryIds)
+  const entrySetsMatch =
+    submittedEntrySet.size === submittedEntryIds.length &&
+    currentEntrySet.size === currentEntryIds.length &&
+    submittedEntrySet.size === currentEntrySet.size &&
+    [...submittedEntrySet].every((entryId) => currentEntrySet.has(entryId))
+  if (
+    submitted.version !== 1 ||
+    submitted.storePath !== current.storePath ||
+    submitted.planDigest !== current.planDigest ||
+    !entrySetsMatch
+  ) {
+    throw new EnvLaneError(
+      'VAULT_PLAN_STALE',
+      'The Vault plan is stale or belongs to different inputs. Generate a new plan before applying.',
+      {
+        submittedPlanDigest: submitted.planDigest,
+        currentPlanDigest: current.planDigest,
+        submittedEntryIds,
+        currentEntryIds,
+      },
+    )
+  }
+}
+
+export async function applyRestorePlan(
+  configPath: string | undefined,
+  keyFilePath: string,
+  submittedPlan: RestorePlan,
+  options: {
+    cwd?: string
+    autoApprove?: boolean
+    ignoreCorruptRecords?: boolean
+    syncDir?: string
+    conflictStrategy?: VaultConflictStrategy
+    vaultConfigFile?: string
+    autoRemapPaths?: boolean
+    allowUnmanaged?: boolean
+    resolvedConfig?: VaultConfig
+    approveDeletes?: boolean
+    decisions?: RestoreDecision[]
+    selectEntry?: (entry: RestorePlanEntry) => boolean
+    resolveConflict?: (
+      entry: RestorePlanEntry,
+    ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault'
+  } = {},
+) {
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
+  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  const syncContext = loadSyncContext(
+    options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
+    key,
+  )
   scrubExcludedSyncEntries(config, syncContext)
   const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
   assertNoExcludedHistory(config, store.records, store.failedRecords)
-  const plan = buildRestorePlanFromState(config, store, syncContext)
-  printRestorePreview(plan)
-  const logger = getLogger()
-  if (plan.failedRecords > 0) {
-    logger.warn(
-      `[env-lane:vault] Warning: skipped ${plan.failedRecords} unreadable store record(s).`,
+  const plan = buildRestorePlanFromState(config, store, key, syncContext)
+  assertFreshRestorePlan(submittedPlan, plan)
+  const { selected, resolved } = await chooseRestoreEntries(plan, options)
+  if (selected.size > 0 && !options.autoApprove) {
+    throw new EnvLaneError(
+      'VAULT_CONFIRMATION_REQUIRED',
+      'Applying the Vault plan requires explicit approval.',
+      { hint: 'Pass autoApprove: true in the API or --yes in the CLI.' },
     )
   }
-  if (plan.aliasedRecords > 0) {
-    logger.log(
-      `[env-lane:vault] Remapped ${plan.aliasedRecords} store record(s) from previous checkout paths to current env files.`,
-    )
-  }
-  if (!config.allowUnmanaged && plan.unmanagedStoreFiles.length > 0) {
-    logger.warn(
-      `[env-lane:vault] Warning: ignored ${plan.unmanagedStoreFiles.length} store file(s) not listed in config.envFiles.`,
-    )
-  }
-  const ignoredConflicts =
-    !options.dryRun && plan.summary.conflict > 0
-      ? await resolveRestoreConflicts(plan, options.conflictStrategy)
-      : new Set<string>()
   const results: Array<{
     filePath: string
     keys: number
     changed: boolean
     entries: RestorePlanEntry[]
   }> = []
-  const effectiveChanges = plan.files.some((file) =>
-    file.entries.some(
-      (entry) =>
-        entry.action !== 'identical' && !ignoredConflicts.has(`${file.filePath}\0${entry.key}`),
-    ),
-  )
-  if (!effectiveChanges || options.dryRun) {
-    if (!options.dryRun && syncContext) {
-      for (const file of plan.files) {
-        for (const entry of file.entries) {
-          if (entry.action === 'identical' && entry.vaultAction) {
-            const record = store.state.get(file.filePath)?.get(entry.key)
-            if (record) updateSyncEntry(config, syncContext, record)
-          }
-        }
-      }
-      saveSyncContext(syncContext)
-    }
-    for (const file of plan.files) {
-      results.push({
-        filePath: file.filePath,
-        keys: file.entries.filter((entry) => entry.action !== 'delete').length,
-        changed: file.changed,
-        entries: file.entries,
-      })
-    }
-    return { ...plan, applied: false, filesWritten: 0, results }
-  }
-
-  const confirmed = await confirmRestore(options)
-  if (!confirmed) {
-    logger.log('[env-lane:vault] Restore cancelled. No files were changed.')
-    for (const file of plan.files) {
-      results.push({
-        filePath: file.filePath,
-        keys: file.entries.filter((entry) => entry.action !== 'delete').length,
-        changed: file.changed,
-        entries: file.entries,
-      })
-    }
-    return { ...plan, applied: false, filesWritten: 0, results }
-  }
-
   let filesWritten = 0
   for (const file of plan.files) {
-    const fileHasEffectiveChanges = file.entries.some(
-      (entry) =>
-        entry.action !== 'identical' && !ignoredConflicts.has(`${file.filePath}\0${entry.key}`),
-    )
-    if (!file.changed || !fileHasEffectiveChanges) {
+    const fileHasEffectiveChanges = file.entries.some((entry) => selected.has(entry.entryId))
+    if (!fileHasEffectiveChanges) {
       results.push({
         filePath: file.filePath,
         keys: file.entries.filter((entry) => entry.action !== 'delete').length,
         changed: false,
-        entries: file.entries,
+        entries: publicRestorePlan({ ...plan, files: [file] }).files[0].entries,
       })
       continue
     }
-    const changed = applyRestoreFile(config, file.filePath, store.state, ignoredConflicts)
+    const changed = applyRestoreFile(config, file.filePath, store.state, selected, file.entries)
     if (changed) {
       filesWritten++
-      for (const entry of file.entries.filter((item) => item.action !== 'identical')) {
-        if (ignoredConflicts.has(`${file.filePath}\0${entry.key}`)) continue
-        const action = entry.action === 'conflict' ? entry.vaultAction : entry.action
-        emitStructuredChange('decrypt', {
-          action,
-          filePath: portable(file.filePath),
-          key: entry.key,
-        })
-      }
-      emitStructuredChange('decrypt', { action: 'write-file', filePath: portable(file.filePath) })
     }
     results.push({
       filePath: file.filePath,
       keys: file.entries.filter((entry) => entry.action !== 'delete').length,
       changed,
-      entries: file.entries,
+      entries: publicRestorePlan({ ...plan, files: [file] }).files[0].entries,
     })
   }
   if (syncContext) {
     for (const file of plan.files) {
       for (const entry of file.entries) {
-        if (ignoredConflicts.has(`${file.filePath}\0${entry.key}`)) continue
-        if (entry.action === 'identical' || entry.action !== 'conflict' || entry.vaultAction) {
+        if (entry.action === 'identical' || selected.has(entry.entryId)) {
           const record = store.state.get(file.filePath)?.get(entry.key)
           if (record) updateSyncEntry(config, syncContext, record)
         }
       }
     }
-    saveSyncContext(syncContext)
+    await saveSyncContext(syncContext)
   }
+  const conflictEntries = new Set(
+    plan.files.flatMap((file) =>
+      file.entries.filter((entry) => entry.action === 'conflict').map((entry) => entry.entryId),
+    ),
+  )
+  const conflictsKeptLocal = resolved.filter(
+    (item) => item.decision === 'keep-local' && conflictEntries.has(item.entryId),
+  ).length
+  const conflictsTookVault = resolved.filter(
+    (item) => item.decision === 'apply-vault' && conflictEntries.has(item.entryId),
+  ).length
+  const publicPlan = publicRestorePlan(plan)
   return {
-    ...plan,
+    ...publicPlan,
     applied: filesWritten > 0,
     filesWritten,
     results,
-    conflictsKeptLocal: ignoredConflicts.size,
-    conflictsTookVault: plan.summary.conflict - ignoredConflicts.size,
+    decisions: resolved,
+    appliedEntries: selected.size,
+    skippedEntries: resolved.length - selected.size,
+    conflictsKeptLocal,
+    conflictsTookVault,
     syncStatePath: syncContext?.statePath,
     syncStateMigratedFromVersion0: syncContext?.migratedFromVersion0 ?? false,
   }
@@ -1166,19 +1390,13 @@ async function confirmStoreRewrite(
   operation: 'history prune' | 'sanitize',
   options: { autoApprove?: boolean; dryRun?: boolean } = {},
 ): Promise<boolean> {
-  const logger = getLogger()
   if (options.dryRun) return false
-  if (options.autoApprove) {
-    logger.log(`[env-lane:vault] Auto-approved ${operation}.`)
-    return true
-  }
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error(
-      `Vault ${operation} confirmation requires an interactive terminal. Re-run with --yes to apply or --dry-run to preview.`,
-    )
-  }
-  const choice = await promptChoice('[env-lane:vault] Rewrite the vault store? y/n: ', ['y', 'n'])
-  return choice === 'y'
+  if (options.autoApprove) return true
+  throw new EnvLaneError(
+    'VAULT_CONFIRMATION_REQUIRED',
+    `Vault ${operation} requires explicit approval.`,
+    { hint: 'Pass autoApprove: true in the API or --yes in the CLI.' },
+  )
 }
 
 function pruneGroupKey(record: StoreRecordLine): string {
@@ -1200,6 +1418,7 @@ export async function pruneVaultHistory(
   configPath: string | undefined,
   keyFilePath: string,
   options: {
+    cwd?: string
     filePath?: string
     key?: string
     keepRecent?: number
@@ -1207,9 +1426,10 @@ export async function pruneVaultHistory(
     preserveLatest?: boolean
     dryRun?: boolean
     autoApprove?: boolean
-    disableUnsafeWarning?: boolean
     ignoreCorruptRecords?: boolean
     vaultConfigFile?: string
+    resolvedConfig?: VaultConfig
+    expectedStoreDigest?: string
   } = {},
 ) {
   if (options.keepRecent === undefined && options.olderThanDays === undefined) {
@@ -1227,27 +1447,31 @@ export async function pruneVaultHistory(
   ) {
     throw new Error('olderThanDays must be a non-negative number.')
   }
-  const config = await loadVaultConfig(configPath, options)
-  warnUnsafeVault({
-    disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
-  })
-  const key = deriveVaultKey(keyFilePath)
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
+  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
   const store = readStoreRecordLines(config, key, {
     ignoreCorruptRecords: options.ignoreCorruptRecords,
   })
+  const storeDigest = stableHash(store.rawLines.join('\n'))
+  if (options.expectedStoreDigest && options.expectedStoreDigest !== storeDigest) {
+    throw new EnvLaneError(
+      'VAULT_STORE_CHANGED',
+      'The Vault store changed after the prune preview. Preview the operation again.',
+    )
+  }
   const targetFilePath = options.filePath
     ? path.resolve(config.baseDir, options.filePath)
     : undefined
   const groups = new Map<string, PruneCandidate[]>()
-  store.records.forEach((record, index) => {
+  store.records.forEach((record) => {
     if (targetFilePath && record.groupFilePath !== targetFilePath) return
     if (options.key && record.record.k !== options.key) return
     const group = groups.get(pruneGroupKey(record)) ?? []
-    group.push({ index, record: record.record })
+    group.push({ index: record.lineIndex, record: record.record })
     groups.set(pruneGroupKey(record), group)
   })
 
-  const keep = new Set(store.records.map((_, index) => index))
+  const keep = new Set(store.rawLines.map((_, index) => index))
   const olderThanMs =
     options.olderThanDays === undefined
       ? undefined
@@ -1272,12 +1496,11 @@ export async function pruneVaultHistory(
     })
   }
 
-  const keptLines = store.records
-    .filter((_, index) => keep.has(index))
-    .map((record) => record.encryptedLine)
-  const removedRecords = store.records.length - keptLines.length
+  const keptLines = store.rawLines.filter((_, index) => keep.has(index))
+  const removedRecords = store.rawLines.length - keptLines.length
   const result = {
     storePath: config.storePath,
+    storeDigest,
     rawRecords: store.rawRecords,
     parsedRecords: store.parsedRecords,
     failedRecords: store.failedRecords,
@@ -1290,10 +1513,7 @@ export async function pruneVaultHistory(
   if (removedRecords === 0 || options.dryRun) return result
   const confirmed = await confirmStoreRewrite('history prune', options)
   if (!confirmed) return result
-  writeFileContentAtomically(
-    config.storePath,
-    keptLines.length > 0 ? `${keptLines.join('\n')}\n` : '',
-  )
+  await rewriteStoreAtomically(config, store.rawLines, keptLines)
   return { ...result, applied: true }
 }
 
@@ -1301,27 +1521,31 @@ export async function sanitizeVaultHistory(
   configPath: string | undefined,
   keyFilePath: string,
   options: {
+    cwd?: string
     excluded?: boolean
     dryRun?: boolean
     autoApprove?: boolean
-    disableUnsafeWarning?: boolean
     vaultConfigFile?: string
+    resolvedConfig?: VaultConfig
+    expectedStoreDigest?: string
   } = {},
 ) {
   if (!options.excluded) {
     throw new Error('Vault sanitize requires --excluded so the removal scope is explicit.')
   }
-  const config = await loadVaultConfig(configPath, options)
-  warnUnsafeVault({
-    disableUnsafeWarning: options.disableUnsafeWarning ?? config.disableUnsafeWarning,
-  })
-  const key = deriveVaultKey(keyFilePath)
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
+  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
   const store = readStoreRecordLines(config, key)
+  const storeDigest = stableHash(store.rawLines.join('\n'))
+  if (options.expectedStoreDigest && options.expectedStoreDigest !== storeDigest) {
+    throw new EnvLaneError(
+      'VAULT_STORE_CHANGED',
+      'The Vault store changed after the sanitize preview. Preview the operation again.',
+    )
+  }
   const removed = excludedHistoricalRecords(config, store.records)
-  const removedSet = new Set(removed)
-  const keptLines = store.records
-    .filter((record) => !removedSet.has(record))
-    .map((record) => record.encryptedLine)
+  const removedLineIndexes = new Set(removed.map((record) => record.lineIndex))
+  const keptLines = store.rawLines.filter((_, index) => !removedLineIndexes.has(index))
   const affectedEntries = [
     ...new Set(
       removed.map(
@@ -1331,6 +1555,7 @@ export async function sanitizeVaultHistory(
   ].sort()
   const result = {
     storePath: config.storePath,
+    storeDigest,
     removedRecords: removed.length,
     keptRecords: keptLines.length,
     affectedEntries,
@@ -1339,28 +1564,6 @@ export async function sanitizeVaultHistory(
   if (removed.length === 0 || options.dryRun) return result
   const confirmed = await confirmStoreRewrite('sanitize', options)
   if (!confirmed) return result
-  writeFileContentAtomically(
-    config.storePath,
-    keptLines.length > 0 ? `${keptLines.join('\n')}\n` : '',
-  )
+  await rewriteStoreAtomically(config, store.rawLines, keptLines)
   return { ...result, applied: true }
-}
-
-export async function runVault(
-  configPath: string,
-  keyFilePath: string,
-  mode: 'encrypt' | 'decrypt',
-  options: {
-    dryRun?: boolean
-    autoApprove?: boolean
-    disableUnsafeWarning?: boolean
-    ignoreCorruptRecords?: boolean
-    syncDir?: string
-    conflictStrategy?: VaultConflictStrategy
-    vaultConfigFile?: string
-  } = {},
-) {
-  return mode === 'encrypt'
-    ? encryptEnvFiles(configPath, keyFilePath, options)
-    : decryptEnvFiles(configPath, keyFilePath, options)
 }
