@@ -48,7 +48,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && node ../../scripts/copy-file.mjs dist/index.d.ts dist/index.d.cts && tsup src/cli.ts --format esm --clean false",
+    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && tsup src/cli.ts --format esm --clean false",
     "dev": "tsx src/cli.ts",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
