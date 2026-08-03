@@ -5,10 +5,10 @@ import { EnvLaneError, parseEnvDocument, withEnvLaneContext } from '@env-lane/co
 import { Command } from 'commander'
 import { afterEach, describe, expect, it } from 'vitest'
 import { registerVaultCommands } from '../../vault/src/cli/index.js'
-import { readCliBootstrapOptions } from '../src/bootstrap-options.js'
-import { registerCoreCommands } from '../src/commands/core.js'
-import { registerSortCommands } from '../src/commands/sort.js'
-import { createCliContext } from '../src/context.js'
+import { registerCoreCommands } from '../src/presentation/commands/core.js'
+import { registerSortCommands } from '../src/presentation/commands/sort.js'
+import { readCliBootstrapOptions } from '../src/presentation/runtime/bootstrap-options.js'
+import { createCliContext } from '../src/presentation/runtime/context.js'
 
 const testDirectories = new Set<string>()
 

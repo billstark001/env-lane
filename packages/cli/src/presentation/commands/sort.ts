@@ -1,6 +1,6 @@
 import { EnvLaneError, sortEnvFile, sortEnvFilesFromConfig } from '@env-lane/core'
 import type { Command } from 'commander'
-import type { CliContext } from '../context.js'
+import type { CliContext } from '../runtime/context.js'
 
 export function registerSortCommands(program: Command, ctx: CliContext): void {
   ctx

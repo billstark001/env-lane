@@ -3,16 +3,16 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { EnvLaneError, writeFileContentAtomically } from '@env-lane/core'
 import type { LoadedEnvDocument } from '@env-lane/core/env-document'
-import type { VaultConfig } from './config.js'
-import { deriveVaultSyncKey, stableHash } from './crypto.js'
-import { withFileLock } from './file-lock.js'
-import { isExcluded, portable } from './storage.js'
+import type { VaultConfig } from '../adapters/config.js'
+import { deriveVaultSyncKey, stableHash } from '../adapters/crypto.js'
+import { withFileLock } from '../adapters/file-lock.js'
 import type {
   RestorePlanEntry,
   VaultConflictStrategy,
   VaultOperation,
   VaultRecord,
-} from './types.js'
+} from '../domain/types.js'
+import { isExcluded, portable } from './storage.js'
 
 interface SyncStateEntry {
   filePath: string

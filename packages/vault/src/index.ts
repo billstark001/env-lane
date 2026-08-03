@@ -1,7 +1,6 @@
 // Stable configuration and automation API.
 // biome-ignore assist/source/organizeImports: Public exports are grouped by stability and migration status.
-export { type VaultConfig, defineVaultConfig, loadVaultConfig } from './config.js'
-export { type EncryptOptions, encryptEnvFiles } from './push.js'
+export { type EncryptOptions, encryptEnvFiles } from './application/push.js'
 export {
   type ApprovalDocument,
   type VaultFailCondition,
@@ -20,8 +19,9 @@ export {
   selectRestorePlan,
   selectRestorePlanByDecisions,
   writeApprovalDocument,
-} from './restore.js'
-export { pruneVaultHistory, sanitizeVaultHistory } from './storage.js'
+} from './application/restore.js'
+export { pruneVaultHistory, sanitizeVaultHistory } from './application/storage.js'
+export { type VaultConfig, defineVaultConfig, loadVaultConfig } from './adapters/config.js'
 export type {
   RestoreAction,
   RestoreDecision,
@@ -32,8 +32,8 @@ export type {
   VaultConflictStrategy,
   VaultOperation,
   VaultRecord,
-} from './types.js'
-export { VAULT_UNSAFE_WARNING, warnUnsafeVault } from './warning.js'
+} from './domain/types.js'
+export { VAULT_UNSAFE_WARNING, warnUnsafeVault } from './cli/warning.js'
 
 /**
  * Compatibility root export for the optional CLI adapter. New consumers should import it from
@@ -56,4 +56,4 @@ export {
   encryptRecord,
   keyedDigest,
   stableHash,
-} from './crypto.js'
+} from './adapters/crypto.js'

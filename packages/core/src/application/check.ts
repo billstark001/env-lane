@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import fg from 'fast-glob'
-import { loadEnvLaneConfig } from './config.js'
+import { loadEnvLaneConfig } from '../adapters/config.js'
 import { listEnvFilesForTarget } from './dotenv.js'
 import { parseEnvDocument } from './env-document.js'
 import { listWorkspacePackagesForConfig, resolveTargetPackage } from './workspace.js'

@@ -1,12 +1,6 @@
 import path from 'node:path'
-import { loadEnvLaneConfig } from './config.js'
-import { listEnvFilesForTarget, resolveBuildName, resolveInjectedEnv } from './dotenv.js'
-import {
-  type EnvDocumentWriteResult,
-  loadEnvDocument,
-  setEnvDocumentValues,
-} from './env-document.js'
-import { EnvLaneError } from './errors.js'
+import { loadEnvLaneConfig } from '../adapters/config.js'
+import { EnvLaneError } from '../domain/errors.js'
 import type {
   EnvCheckConfig,
   EnvCheckRuleConfig,
@@ -16,8 +10,14 @@ import type {
   EnvValueSourceConfig,
   EnvValueTransform,
   ResolvedEnvLaneConfig,
-} from './types.js'
-import { DEFAULT_ENV_FILE_VARIANT, normalizeEnvFileVariant } from './variants.js'
+} from '../domain/types.js'
+import { DEFAULT_ENV_FILE_VARIANT, normalizeEnvFileVariant } from '../domain/variants.js'
+import { listEnvFilesForTarget, resolveBuildName, resolveInjectedEnv } from './dotenv.js'
+import {
+  type EnvDocumentWriteResult,
+  loadEnvDocument,
+  setEnvDocumentValues,
+} from './env-document.js'
 import { resolveTargetPackage } from './workspace.js'
 
 interface LoadedValueSource {

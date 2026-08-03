@@ -1,6 +1,13 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { loadEnvLaneConfig } from './config.js'
+import { loadEnvLaneConfig } from '../adapters/config.js'
+import { EnvLaneError } from '../domain/errors.js'
+import type {
+  EnvSortTargetConfig,
+  ResolvedEnvLaneConfig,
+  WorkspacePackage,
+} from '../domain/types.js'
+import { DEFAULT_ENV_FILE_VARIANT, normalizeEnvFileVariant } from '../domain/variants.js'
 import {
   isEnvEntryLikeLine,
   loadEnvDocument,
@@ -8,9 +15,6 @@ import {
   renderEnvTextDocument,
   writeEnvDocumentContent,
 } from './env-document.js'
-import { EnvLaneError } from './errors.js'
-import type { EnvSortTargetConfig, ResolvedEnvLaneConfig, WorkspacePackage } from './types.js'
-import { DEFAULT_ENV_FILE_VARIANT, normalizeEnvFileVariant } from './variants.js'
 import { listWorkspacePackagesForConfig } from './workspace.js'
 
 interface EnvSortConfig {

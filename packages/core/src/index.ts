@@ -1,9 +1,20 @@
 // Stable configuration and use-case API.
 // biome-ignore assist/source/organizeImports: Public exports are grouped by stability and migration status.
-export { type CheckResult, checkDotenvSelector } from './check.js'
-export { defineConfig, loadEnvLaneConfig } from './config.js'
-export { listEnvFiles, resolveInjectedEnv } from './dotenv.js'
-export { EnvLaneError, errorCode } from './errors.js'
+export { type CheckResult, checkDotenvSelector } from './application/check.js'
+export { listEnvFiles, resolveInjectedEnv } from './application/dotenv.js'
+export {
+  type EnvCheckFinding,
+  type EnvCheckResult,
+  type EnvSyncResult,
+  defineEnvCheck,
+  defineEnvSync,
+  runEnvCheck,
+  runEnvSync,
+} from './application/policy.js'
+export { runWithInjectedEnv } from './application/run.js'
+export { sortEnvFile, sortEnvFilesFromConfig } from './application/sort.js'
+export { listWorkspacePackages, resolveTargetPackage } from './application/workspace.js'
+export { defineConfig, loadEnvLaneConfig } from './adapters/config.js'
 export {
   type Diagnostic,
   type DiagnosticFormatOptions,
@@ -14,16 +25,8 @@ export {
   emitDiagnostic,
   formatDiagnostic,
   withEnvLaneContext,
-} from './logger.js'
-export {
-  type EnvCheckFinding,
-  type EnvCheckResult,
-  type EnvSyncResult,
-  defineEnvCheck,
-  defineEnvSync,
-  runEnvCheck,
-  runEnvSync,
-} from './policy.js'
+} from './adapters/logger.js'
+export { EnvLaneError, errorCode } from './domain/errors.js'
 export {
   type RedactOptions,
   isSecretLikeKey,
@@ -32,12 +35,7 @@ export {
   redactRecord,
   redactValue,
   shouldRedact,
-} from './redaction.js'
-export { runWithInjectedEnv } from './run.js'
-export {
-  sortEnvFile,
-  sortEnvFilesFromConfig,
-} from './sort.js'
+} from './domain/redaction.js'
 export type {
   EnvCheckConfig,
   EnvCheckRuleConfig,
@@ -56,15 +54,14 @@ export type {
   ResolvedEnvLaneConfig,
   ResolveEnvOptions,
   WorkspacePackage,
-} from './types.js'
+} from './domain/types.js'
 export {
   ALL_ENV_FILE_VARIANTS,
   DEFAULT_ENV_FILE_VARIANT,
   type EnvFileVariant,
   formatEnvFileVariant,
   normalizeEnvFileVariant,
-} from './variants.js'
-export { listWorkspacePackages, resolveTargetPackage } from './workspace.js'
+} from './domain/variants.js'
 
 /**
  * Compatibility exports for configuration internals. These remain available during the
@@ -77,14 +74,14 @@ export {
   findWorkspaceRoot,
   loadConfigWithC12,
   readPnpmWorkspaceGlobs,
-} from './config.js'
+} from './adapters/config.js'
 
 /**
  * Compatibility exports for resolved-input helpers.
  *
  * @deprecated Not part of the stable root API.
  */
-export { listEnvFilesForTarget, resolveBuildName } from './dotenv.js'
+export { listEnvFilesForTarget, resolveBuildName } from './application/dotenv.js'
 
 /**
  * Compatibility root exports for the dotenv document feature. New consumers should import
@@ -119,7 +116,7 @@ export {
  *
  * @deprecated Not part of the stable root API.
  */
-export { writeFileContentAtomically } from './file-utils.js'
+export { writeFileContentAtomically } from './adapters/file-utils.js'
 
 /**
  * Compatibility exports for the current sort planner. File-oriented sorting remains available
@@ -127,7 +124,11 @@ export { writeFileContentAtomically } from './file-utils.js'
  *
  * @deprecated Not part of the stable root API.
  */
-export { type EnvSortPlan, type SortOperationAction, buildEnvSortPlan } from './sort.js'
+export {
+  type EnvSortPlan,
+  type SortOperationAction,
+  buildEnvSortPlan,
+} from './application/sort.js'
 
 /**
  * Compatibility exports for workspace orchestration internals.
@@ -137,4 +138,4 @@ export { type EnvSortPlan, type SortOperationAction, buildEnvSortPlan } from './
 export {
   listWorkspacePackagesForConfig,
   resolveTargetPackageFromList,
-} from './workspace.js'
+} from './application/workspace.js'

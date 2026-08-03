@@ -1,6 +1,6 @@
 import { EnvLaneError } from '@env-lane/core'
 import type { Command } from 'commander'
-import { pruneVaultHistory, sanitizeVaultHistory } from '../storage.js'
+import { pruneVaultHistory, sanitizeVaultHistory } from '../application/storage.js'
 import { emitUnsafeWarning } from './common.js'
 import { assertVaultFormat } from './options.js'
 import { promptStoreRewrite } from './prompts.js'

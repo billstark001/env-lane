@@ -1,9 +1,9 @@
 import { emitDiagnostic } from '@env-lane/core'
-import { loadVaultConfig, type VaultConfig } from '../config.js'
-import { parseVaultFailCondition, restorePlanMatchesFailCondition } from '../restore.js'
-import type { RestorePlan } from '../types.js'
-import { warnUnsafeVault } from '../warning.js'
+import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
+import { parseVaultFailCondition, restorePlanMatchesFailCondition } from '../application/restore.js'
+import type { RestorePlan } from '../domain/types.js'
 import type { VaultCommandOptions } from './types.js'
+import { warnUnsafeVault } from './warning.js'
 
 export async function emitUnsafeWarning(allOpts: VaultCommandOptions): Promise<VaultConfig> {
   const config = await loadVaultConfig(allOpts.config, {

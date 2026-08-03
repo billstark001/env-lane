@@ -1,4 +1,4 @@
-import type { RestorePlan } from '../types.js'
+import type { RestorePlan } from '../domain/types.js'
 import type { VaultCliContext } from './types.js'
 
 export function renderRestorePlan(ctx: VaultCliContext, plan: RestorePlan): void {

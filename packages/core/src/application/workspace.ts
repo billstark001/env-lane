@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import fg from 'fast-glob'
-import { loadEnvLaneConfig } from './config.js'
-import { EnvLaneError } from './errors.js'
-import type { ResolvedEnvLaneConfig, ResolveEnvOptions, WorkspacePackage } from './types.js'
+import { loadEnvLaneConfig } from '../adapters/config.js'
+import { EnvLaneError } from '../domain/errors.js'
+import type { ResolvedEnvLaneConfig, ResolveEnvOptions, WorkspacePackage } from '../domain/types.js'
 
 type WorkspaceResolveOptions = Pick<ResolveEnvOptions, 'cwd' | 'configFile'> & {
   config?: ResolvedEnvLaneConfig

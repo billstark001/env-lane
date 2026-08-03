@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { loadEnvDocument } from '@env-lane/core/env-document'
-import { loadVaultConfig, type VaultConfig } from './config.js'
-import { deriveVaultKey, keyedDigest } from './crypto.js'
+import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
+import { deriveVaultKey, keyedDigest } from '../adapters/crypto.js'
+import type { RestorePlanEntry, VaultConflictStrategy, VaultRecord } from '../domain/types.js'
 import {
   appendRecordsAtomically,
   assertNoExcludedHistory,
@@ -22,7 +23,6 @@ import {
   updateSyncEntry,
   valueFingerprint,
 } from './sync.js'
-import type { RestorePlanEntry, VaultConflictStrategy, VaultRecord } from './types.js'
 
 export interface EncryptOptions {
   cwd?: string

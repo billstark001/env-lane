@@ -1,7 +1,7 @@
 import { EnvLaneError } from '@env-lane/core'
 import { checkbox, confirm, Separator } from '@inquirer/prompts'
-import { matchesVaultSelection, type VaultSelectionOptions } from '../restore.js'
-import type { RestoreDecision, RestorePlan } from '../types.js'
+import { matchesVaultSelection, type VaultSelectionOptions } from '../application/restore.js'
+import type { RestoreDecision, RestorePlan } from '../domain/types.js'
 
 function assertInteractive(): void {
   if (!process.stdin.isTTY || !process.stderr.isTTY) {

@@ -11,8 +11,8 @@ import {
   selectRestorePlan,
   selectRestorePlanByDecisions,
   writeApprovalDocument,
-} from '../restore.js'
-import type { RestoreDecision } from '../types.js'
+} from '../application/restore.js'
+import type { RestoreDecision } from '../domain/types.js'
 import { applyRestoreFailOn, emitPlanDiagnostics, emitUnsafeWarning } from './common.js'
 import {
   addFailOnOption,

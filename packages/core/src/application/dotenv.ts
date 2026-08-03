@@ -1,9 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { loadEnvLaneConfig } from './config.js'
-import { parseEnvDocument } from './env-document.js'
-import { EnvLaneError } from './errors.js'
-import { emitDiagnostic } from './logger.js'
+import { loadEnvLaneConfig } from '../adapters/config.js'
+import { emitDiagnostic } from '../adapters/logger.js'
+import { EnvLaneError } from '../domain/errors.js'
 import type {
   EnvFileRef,
   EnvSource,
@@ -11,7 +10,8 @@ import type {
   ResolvedEnvLaneConfig,
   ResolveEnvOptions,
   WorkspacePackage,
-} from './types.js'
+} from '../domain/types.js'
+import { parseEnvDocument } from './env-document.js'
 import { resolveTargetPackage } from './workspace.js'
 
 export function resolveBuildName(

@@ -1,7 +1,7 @@
 import { EnvLaneError, type EnvLaneOutputFormat } from '@env-lane/core'
 import type { Command } from 'commander'
-import { parseVaultFailCondition } from '../restore.js'
-import type { VaultConflictStrategy } from '../types.js'
+import { parseVaultFailCondition } from '../application/restore.js'
+import type { VaultConflictStrategy } from '../domain/types.js'
 
 export function assertVaultFormat(format: EnvLaneOutputFormat): void {
   if (format === 'dotenv') {

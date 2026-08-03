@@ -2,10 +2,10 @@
 import { EnvLaneError, withEnvLaneContext } from '@env-lane/core'
 import { Command, CommanderError } from 'commander'
 import packageJson from '../package.json' with { type: 'json' }
-import { readCliBootstrapOptions } from './bootstrap-options.js'
-import { registerCoreCommands } from './commands/core.js'
-import { registerSortCommands } from './commands/sort.js'
-import { type CliContext, createCliContext } from './context.js'
+import { registerCoreCommands } from './presentation/commands/core.js'
+import { registerSortCommands } from './presentation/commands/sort.js'
+import { readCliBootstrapOptions } from './presentation/runtime/bootstrap-options.js'
+import { type CliContext, createCliContext } from './presentation/runtime/context.js'
 
 type VaultCliModule = typeof import('@env-lane/vault/cli')
 

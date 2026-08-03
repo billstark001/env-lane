@@ -1,14 +1,14 @@
-/// <reference path="./picomatch.d.ts" />
+/// <reference path="../picomatch.d.ts" />
 
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { EnvLaneError, writeFileContentAtomically } from '@env-lane/core'
 import { parseEnvLine } from '@env-lane/core/env-document'
 import picomatch from 'picomatch'
-import { loadVaultConfig, type VaultConfig } from './config.js'
-import { decryptRecord, deriveVaultKey, encryptRecord, stableHash } from './crypto.js'
-import { withFileLock } from './file-lock.js'
-import type { VaultRecord } from './types.js'
+import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
+import { decryptRecord, deriveVaultKey, encryptRecord, stableHash } from '../adapters/crypto.js'
+import { withFileLock } from '../adapters/file-lock.js'
+import type { VaultRecord } from '../domain/types.js'
 
 export interface StoreReadResult {
   records: StoreRecordLine[]

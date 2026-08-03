@@ -4,8 +4,18 @@ import { EnvLaneError, writeFileContentAtomically } from '@env-lane/core'
 import { applyEnvDocumentPatches, loadEnvDocument } from '@env-lane/core/env-document'
 import picomatch from 'picomatch'
 import { z } from 'zod'
-import { loadVaultConfig, type VaultConfig } from './config.js'
-import { deriveVaultKey, keyedDigest, stableHash } from './crypto.js'
+import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
+import { deriveVaultKey, keyedDigest, stableHash } from '../adapters/crypto.js'
+import type {
+  RestoreAction,
+  RestoreDecision,
+  RestoreDecisionChoice,
+  RestorePlan,
+  RestorePlanEntry,
+  RestorePlanFile,
+  VaultConflictStrategy,
+  VaultRecord,
+} from '../domain/types.js'
 import {
   assertNoExcludedHistory,
   desiredRecordsForFile,
@@ -24,16 +34,6 @@ import {
   scrubExcludedSyncEntries,
   updateSyncEntry,
 } from './sync.js'
-import type {
-  RestoreAction,
-  RestoreDecision,
-  RestoreDecisionChoice,
-  RestorePlan,
-  RestorePlanEntry,
-  RestorePlanFile,
-  VaultConflictStrategy,
-  VaultRecord,
-} from './types.js'
 
 interface InternalRestorePlanEntry extends RestorePlanEntry {
   currentValues: string[]

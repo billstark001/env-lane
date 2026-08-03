@@ -1,6 +1,6 @@
 import type { Command } from 'commander'
-import { encryptEnvFiles } from '../push.js'
-import { matchesVaultPushSelection } from '../restore.js'
+import { encryptEnvFiles } from '../application/push.js'
+import { matchesVaultPushSelection } from '../application/restore.js'
 import { emitUnsafeWarning } from './common.js'
 import {
   addFailOnOption,

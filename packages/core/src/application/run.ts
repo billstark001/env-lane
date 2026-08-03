@@ -1,7 +1,7 @@
 import { execa } from 'execa'
+import { EnvLaneError } from '../domain/errors.js'
+import type { ResolvedEnv } from '../domain/types.js'
 import { resolveInjectedEnv } from './dotenv.js'
-import { EnvLaneError } from './errors.js'
-import type { ResolvedEnv } from './types.js'
 
 export async function runWithInjectedEnv(options: {
   cwd?: string

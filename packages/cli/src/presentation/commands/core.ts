@@ -13,7 +13,7 @@ import {
   runWithInjectedEnv,
 } from '@env-lane/core'
 import { Command, type Option, type ParseOptionsResult } from 'commander'
-import type { CliContext } from '../context.js'
+import type { CliContext } from '../runtime/context.js'
 
 function optionConsumesNextArgument(option: Option): boolean {
   return option.required || option.optional

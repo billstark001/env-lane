@@ -4,8 +4,8 @@ import { loadConfig as c12LoadConfig } from 'c12'
 import { findUp } from 'find-up'
 import YAML from 'yaml'
 import { z } from 'zod'
-import { EnvLaneError } from './errors.js'
-import type { EnvLaneConfig, ResolvedEnvLaneConfig } from './types.js'
+import { EnvLaneError } from '../domain/errors.js'
+import type { EnvLaneConfig, ResolvedEnvLaneConfig } from '../domain/types.js'
 
 const sortTargetSchema = z.object({
   baseDir: z.string().min(1).optional(),
