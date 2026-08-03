@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parse as parseDotenv } from 'dotenv'
@@ -18,6 +26,7 @@ import {
   setLogger,
   sortEnvFile,
   sortEnvFilesFromConfig,
+  writeFileContentAtomically,
 } from '../src/index.js'
 
 beforeAll(() => {
@@ -55,6 +64,20 @@ function configSource(ext: string, config: unknown): string {
 }
 
 describe('@env-lane/core', () => {
+  it('atomically replaces file content without leaving temporary files', () => {
+    const root = path.join(tmpdir(), `env-lane-file-utils-${Date.now()}`)
+    const filePath = path.join(root, 'nested', '.env')
+    mkdirSync(path.dirname(filePath), { recursive: true })
+    writeFileSync(filePath, 'before\n')
+    if (process.platform !== 'win32') chmodSync(filePath, 0o640)
+
+    writeFileContentAtomically(filePath, 'after\n')
+
+    expect(readFileSync(filePath, 'utf8')).toBe('after\n')
+    if (process.platform !== 'win32') expect(statSync(filePath).mode & 0o777).toBe(0o640)
+    expect(readdirSync(path.dirname(filePath))).toEqual(['.env'])
+  })
+
   describe('dotenv line AST', () => {
     it.each([
       'KEY=value',

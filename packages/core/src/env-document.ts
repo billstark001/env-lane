@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import path from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 import { parse as parseDotenv } from 'dotenv'
+import { writeFileContentAtomically } from './file-utils.js'
 
 export interface EnvTextDocument {
   hasBom: boolean
@@ -292,8 +292,7 @@ export function formatEnvValue(value: string): string {
 export function writeEnvDocumentContent(filePath: string, content: string): boolean {
   const current = existsSync(filePath) ? readFileSync(filePath, 'utf8') : ''
   if (current === content) return false
-  mkdirSync(path.dirname(filePath), { recursive: true })
-  writeFileSync(filePath, content, 'utf8')
+  writeFileContentAtomically(filePath, content)
   return true
 }
 
