@@ -15,6 +15,7 @@ import {
   getLogger,
   type LoadedEnvDocument,
   loadEnvDocument,
+  parseEnvLine,
 } from '@env-lane/core'
 import picomatch from 'picomatch'
 import { loadVaultConfig, type VaultConfig } from './config.js'
@@ -26,6 +27,7 @@ export type RestoreAction = 'add' | 'modify' | 'delete' | 'identical' | 'conflic
 export type VaultConflictStrategy = 'ask' | 'overwrite' | 'ignore'
 
 export interface VaultRecord {
+  version: 0 | 1
   f: string
   k: string
   t: number
@@ -279,7 +281,7 @@ function pushConflictCheck(
 
 function localValueHashForEnvDoc(envDoc: LoadedEnvDocument, key: string): string {
   const current = envDoc.currentMap.get(key)
-  return current ? valueHash('set', current.value) : valueHash('delete')
+  return current ? valueHash('set', current.effectiveValue) : valueHash('delete')
 }
 
 function getEnvFileMtime(filePath: string): number | undefined {
@@ -370,6 +372,9 @@ function validateStoreRecord(decoded: unknown, order: number): VaultRecord {
     throw new Error('Store record must be a JSON object.')
   }
   const raw = decoded as Record<string, unknown>
+  const version = raw.version === undefined ? 0 : raw.version
+  if (version !== 0 && version !== 1)
+    throw new Error('Store record has unsupported schema version.')
   if (typeof raw.f !== 'string' || !raw.f.trim())
     throw new Error('Store record is missing file path.')
   if (typeof raw.k !== 'string' || !raw.k.trim())
@@ -382,12 +387,19 @@ function validateStoreRecord(decoded: unknown, order: number): VaultRecord {
     throw new Error(`Unsupported record operation: ${String(op)}`)
   if (op === 'set' && typeof raw.v !== 'string')
     throw new Error('Set record is missing string value.')
+  let value = op === 'set' ? (raw.v as string) : undefined
+  if (version === 0 && value !== undefined) {
+    const parsed = parseEnvLine(`${raw.k}=${value}`)
+    if (parsed.kind !== 'entry') throw new Error('Version 0 record contains an invalid raw value.')
+    value = parsed.effectiveValue
+  }
   return {
+    version,
     f: path.resolve(raw.f),
     k: raw.k,
     t: timestamp,
     op,
-    v: op === 'set' ? (raw.v as string) : undefined,
+    v: value,
     order,
   }
 }
@@ -462,10 +474,10 @@ function readStore(
 
 function append(config: VaultConfig, key: Buffer, record: VaultRecord): void {
   mkdirSync(path.dirname(config.storePath), { recursive: true })
-  const { f, k, t, op, v } = record
+  const { version, f, k, t, op, v } = record
   appendFileSync(
     config.storePath,
-    `${encryptRecord(key, JSON.stringify({ f, k, t, op, v }))}\n`,
+    `${encryptRecord(key, JSON.stringify({ version, f, k, t, op, v }))}\n`,
     'utf8',
   )
 }
@@ -543,7 +555,7 @@ function buildRestorePlanFromState(
     const entries: RestorePlanEntry[] = []
     for (const record of desired.values()) {
       const occurrences = envDoc.occurrencesMap.get(record.k) ?? []
-      const currentValues = occurrences.map((item) => item.value)
+      const currentValues = occurrences.map((item) => item.effectiveValue)
       let vaultAction: Exclude<RestoreAction, 'conflict'>
       if (record.op === 'delete') vaultAction = occurrences.length === 0 ? 'identical' : 'delete'
       else if (occurrences.length === 0) vaultAction = 'add'
@@ -778,14 +790,14 @@ export async function encryptEnvFiles(
     const envDoc = loadEnvDocument(filePath)
     const prev = state.get(filePath) ?? new Map<string, VaultRecord>()
     const current = new Map<string, string>()
-    for (const [keyName, { value }] of envDoc.currentMap) {
+    for (const [keyName, { effectiveValue }] of envDoc.currentMap) {
       if (isExcluded(config, filePath, keyName)) {
         excludedEntriesIgnored++
         continue
       }
-      current.set(keyName, value)
+      current.set(keyName, effectiveValue)
       const old = prev.get(keyName)
-      if (old?.op === 'set' && old.v === value) {
+      if (old?.op === 'set' && old.v === effectiveValue) {
         skippedUnchanged++
         updateSyncEntry(config, syncContext, old)
         continue
@@ -795,7 +807,7 @@ export async function encryptEnvFiles(
         syncContext,
         filePath,
         keyName,
-        valueHash('set', value),
+        valueHash('set', effectiveValue),
         old,
       )
       if (conflict.conflict) {
@@ -810,7 +822,14 @@ export async function encryptEnvFiles(
         }
         conflictsOverwritten++
       }
-      const record = { f: filePath, k: keyName, v: value, op: 'set' as const, t: Date.now() }
+      const record = {
+        version: 1 as const,
+        f: filePath,
+        k: keyName,
+        v: effectiveValue,
+        op: 'set' as const,
+        t: Date.now(),
+      }
       append(config, key, record)
       updateSyncEntry(config, syncContext, record)
       emitStructuredChange('encrypt', {
@@ -844,7 +863,13 @@ export async function encryptEnvFiles(
             }
             conflictsOverwritten++
           }
-          const record = { f: filePath, k: keyName, op: 'delete' as const, t: Date.now() }
+          const record = {
+            version: 1 as const,
+            f: filePath,
+            k: keyName,
+            op: 'delete' as const,
+            t: Date.now(),
+          }
           append(config, key, record)
           updateSyncEntry(config, syncContext, record)
           emitStructuredChange('encrypt', {

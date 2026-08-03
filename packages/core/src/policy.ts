@@ -88,7 +88,9 @@ async function loadSource(
     const doc = loadEnvDocument(filePath)
     return {
       name,
-      values: new Map([...doc.currentMap.entries()].map(([key, entry]) => [key, entry.value])),
+      values: new Map(
+        [...doc.currentMap.entries()].map(([key, entry]) => [key, entry.effectiveValue]),
+      ),
       exists: doc.exists,
       files: [filePath],
     }

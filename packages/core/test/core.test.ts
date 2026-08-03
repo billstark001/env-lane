@@ -1,12 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { parse as parseDotenv } from 'dotenv'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   checkDotenvSelector,
   listEnvFiles,
   listWorkspacePackages,
   normalizeEnvFileVariant,
+  parseEnvDocument,
+  parseEnvLine,
   resolveInjectedEnv,
   resolveTargetPackage,
   runEnvCheck,
@@ -52,6 +55,148 @@ function configSource(ext: string, config: unknown): string {
 }
 
 describe('@env-lane/core', () => {
+  describe('dotenv line AST', () => {
+    it.each([
+      'KEY=value',
+      'KEY = value # trailing comment',
+      'KEY: value',
+      'export dotted.key: dotted-value',
+      'DASH-KEY=`value # in backticks` # trailing comment',
+      "SINGLE=' value # preserved '",
+      'DOUBLE="line\\nvalue # preserved"',
+      'ESCAPED="quote \\" and # value" # trailing comment',
+      'EMPTY= # trailing comment',
+    ])('matches dotenv effective values for %s', (source) => {
+      const expected = parseDotenv(source)
+      const [key, effectiveValue] = Object.entries(expected)[0]
+      const line = parseEnvLine(source)
+
+      expect(line.kind).toBe('entry')
+      if (line.kind !== 'entry') throw new Error('Expected an entry AST node.')
+      expect(line.key).toBe(key)
+      expect(line.effectiveValue).toBe(effectiveValue)
+      expect(line.separator).toBe(source.includes(':') ? ':' : '=')
+    })
+
+    it('parses commented assignments without activating them', () => {
+      const line = parseEnvLine('# export dotted.key: value # note')
+      expect(line).toMatchObject({
+        kind: 'commented-entry',
+        key: 'dotted.key',
+        separator: ':',
+        effectiveValue: 'value',
+        suffix: ' # note',
+      })
+      expect(parseEnvDocument('# export dotted.key: value # note\n').currentMap.size).toBe(0)
+    })
+
+    it('rejects syntax that dotenv does not parse', () => {
+      expect(parseDotenv('KEY:value')).toEqual({})
+      expect(parseEnvLine('KEY:value')).toMatchObject({ kind: 'invalid' })
+      expect(parseEnvLine('# ordinary comment')).toMatchObject({ kind: 'comment' })
+    })
+
+    it('treats quotes as syntax only when they begin the value token', () => {
+      const line = parseEnvLine('MIXED=foo"bar# trailing comment')
+      expect(line).toMatchObject({
+        kind: 'entry',
+        effectiveValue: 'foo"bar',
+        valueToken: 'foo"bar',
+        suffix: '# trailing comment',
+      })
+      expect(parseDotenv('MIXED=foo"bar# trailing comment')).toEqual({ MIXED: 'foo"bar' })
+    })
+
+    it('uses document-level dotenv semantics for duplicates and multiline values', () => {
+      const source = ['A=first', 'A="second\\nline"', 'MULTI="one', 'two"', ''].join('\n')
+      const document = parseEnvDocument(source)
+
+      expect(
+        Object.fromEntries(
+          [...document.currentMap].map(([key, value]) => [key, value.effectiveValue]),
+        ),
+      ).toEqual(parseDotenv(source))
+      expect(document.currentMap.get('A')).toMatchObject({ effectiveValue: 'second\nline' })
+      expect(document.currentMap.get('MULTI')).toMatchObject({ effectiveValue: 'one\ntwo' })
+      expect(document.shadowedEntryCount).toBe(1)
+      expect(document.invalidLineCount).toBe(0)
+      expect(document.parsedLines[3]).toMatchObject({
+        kind: 'continuation',
+        entryLineNumber: 3,
+      })
+    })
+
+    it('preserves inline comments and activates a matching commented assignment', () => {
+      const root = path.join(tmpdir(), `env-lane-ast-write-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      const envFile = path.join(root, '.env')
+      writeFileSync(envFile, '# KEY: old # keep this note\n')
+
+      setEnvDocumentValues(envFile, [['KEY', 'next # effective']])
+
+      const content = readFileSync(envFile, 'utf8')
+      expect(content).toBe('KEY: "next # effective" # keep this note\n')
+      expect(parseDotenv(content)).toEqual({ KEY: 'next # effective' })
+    })
+
+    it('replaces a multiline assignment without leaving continuation lines behind', () => {
+      const root = path.join(tmpdir(), `env-lane-ast-multiline-write-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      const envFile = path.join(root, '.env')
+      writeFileSync(envFile, 'MULTI="one\ntwo"\nNEXT=value\n')
+
+      setEnvDocumentValues(envFile, [['MULTI', 'replacement']])
+
+      const content = readFileSync(envFile, 'utf8')
+      expect(content).toBe('MULTI=replacement\nNEXT=value\n')
+      expect(parseDotenv(content)).toEqual({ MULTI: 'replacement', NEXT: 'value' })
+    })
+  })
+
+  it('uses the shared effective-value model across runtime, checks, sync, and sort', async () => {
+    const root = path.join(tmpdir(), `env-lane-shared-ast-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'shared-ast' }))
+    writeFileSync(
+      path.join(root, 'env-lane.config.ts'),
+      `export default {
+        selector: { envKey: 'ENV_BUILD', forbidInDotenv: false },
+        sync: {
+          copy: {
+            from: { file: '.env.source' },
+            to: { file: '.env.target', variant: 'default' },
+            mappings: [{ from: 'SOURCE.VALUE', to: 'TARGET-VALUE' }]
+          }
+        }
+      };\n`,
+    )
+    writeFileSync(path.join(root, '.env'), 'ENV_BUILD: from-file\nAPP.VALUE: base # note\n')
+    writeFileSync(path.join(root, '.env.source'), 'SOURCE.VALUE: actual # source note\n')
+    writeFileSync(path.join(root, '.env.target'), 'TARGET-VALUE: old # target note\n')
+
+    const resolved = await resolveInjectedEnv({
+      cwd: root,
+      target: 'root',
+      includeProcessEnv: false,
+    })
+    expect(resolved.values['APP.VALUE']).toBe('base')
+
+    const selectorCheck = await checkDotenvSelector({ cwd: root, target: 'root' })
+    expect(selectorCheck.violations).toContainEqual(
+      expect.objectContaining({ relativeFile: '.env', line: 1 }),
+    )
+
+    await runEnvSync('copy', { cwd: root })
+    const targetContent = readFileSync(path.join(root, '.env.target'), 'utf8')
+    expect(targetContent).toBe('TARGET-VALUE: actual # target note\n')
+    expect(parseDotenv(targetContent)).toEqual({ 'TARGET-VALUE': 'actual' })
+
+    writeFileSync(path.join(root, '.env.sort'), 'B: two\nA: one\n')
+    writeFileSync(path.join(root, '.env.sort.example'), 'A: example\nB: example\n')
+    await sortEnvFile(path.join(root, '.env.sort'), path.join(root, '.env.sort.example'))
+    expect(readFileSync(path.join(root, '.env.sort'), 'utf8')).toBe('A: one\nB: two\n')
+  })
+
   it('discovers workspace packages and aliases', async () => {
     const root = fixture()
     const packages = await listWorkspacePackages({ cwd: root })
@@ -210,39 +355,36 @@ describe('@env-lane/core', () => {
     expect(sorted.indexOf('B=2')).toBeLessThan(sorted.indexOf('EXTRA=9'))
   })
 
-  it.each([
-    'ts',
-    'mjs',
-    'cjs',
-    'js',
-    'json',
-  ])('sorts env files from env-lane %s config sort section', async (ext) => {
-    const root = path.join(tmpdir(), `env-lane-sort-config-${ext}-${Date.now()}`)
-    mkdirSync(root, { recursive: true })
-    const configFile = path.join(root, `env-lane.config.${ext}`)
-    writeFileSync(
-      configFile,
-      configSource(ext, {
-        sort: {
-          api: {
-            file: 'apps/api/.env',
-            template: 'apps/api/.env.example',
-            files: { production: 'apps/api/.env.production' },
+  it.each(['ts', 'mjs', 'cjs', 'js', 'json'])(
+    'sorts env files from env-lane %s config sort section',
+    async (ext) => {
+      const root = path.join(tmpdir(), `env-lane-sort-config-${ext}-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      const configFile = path.join(root, `env-lane.config.${ext}`)
+      writeFileSync(
+        configFile,
+        configSource(ext, {
+          sort: {
+            api: {
+              file: 'apps/api/.env',
+              template: 'apps/api/.env.example',
+              files: { production: 'apps/api/.env.production' },
+            },
           },
-        },
-      }),
-    )
-    mkdirSync(path.join(root, 'apps/api'), { recursive: true })
-    writeFileSync(path.join(root, 'apps/api/.env'), 'B=2\nA=1\n')
-    writeFileSync(path.join(root, 'apps/api/.env.production'), 'B=20\nA=10\n')
-    writeFileSync(path.join(root, 'apps/api/.env.example'), 'A=\nB=\n')
+        }),
+      )
+      mkdirSync(path.join(root, 'apps/api'), { recursive: true })
+      writeFileSync(path.join(root, 'apps/api/.env'), 'B=2\nA=1\n')
+      writeFileSync(path.join(root, 'apps/api/.env.production'), 'B=20\nA=10\n')
+      writeFileSync(path.join(root, 'apps/api/.env.example'), 'A=\nB=\n')
 
-    const result = await sortEnvFilesFromConfig(configFile, 'api', 'all')
+      const result = await sortEnvFilesFromConfig(configFile, 'api', 'all')
 
-    expect(result.count).toBe(2)
-    expect(readFileSync(path.join(root, 'apps/api/.env'), 'utf8')).toBe('A=1\nB=2\n')
-    expect(readFileSync(path.join(root, 'apps/api/.env.production'), 'utf8')).toBe('A=10\nB=20\n')
-  })
+      expect(result.count).toBe(2)
+      expect(readFileSync(path.join(root, 'apps/api/.env'), 'utf8')).toBe('A=1\nB=2\n')
+      expect(readFileSync(path.join(root, 'apps/api/.env.production'), 'utf8')).toBe('A=10\nB=20\n')
+    },
+  )
 
   it('infers sort targets from workspace packages and builds', async () => {
     const root = path.join(tmpdir(), `env-lane-sort-inference-${Date.now()}`)

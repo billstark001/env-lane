@@ -22,7 +22,10 @@ vi.mock('@env-lane/core', async () => {
 import {
   buildRestorePlan,
   decryptEnvFiles,
+  decryptRecord,
+  deriveVaultKey,
   encryptEnvFiles,
+  encryptRecord,
   loadVaultConfig,
   pruneVaultHistory,
   warnUnsafeVault,
@@ -70,6 +73,95 @@ describe('@env-lane/vault', () => {
     })
     expect(dec.filesWritten).toBe(1)
     expect(readFileSync(path.join(root, '.env'), 'utf8')).toContain('A=1')
+  })
+
+  it('shares dotenv effective-value semantics and preserves local inline comments', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-effective-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A: one # original note\nEMPTY= # empty note\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+
+    const first = await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    expect(first.setRecordsWritten).toBe(2)
+    const firstRecord = JSON.parse(
+      decryptRecord(
+        deriveVaultKey(path.join(root, 'key.aes')),
+        readFileSync(path.join(root, '.vault/store.dat'), 'utf8').trim().split(/\r?\n/)[0],
+      ),
+    )
+    expect(firstRecord).toMatchObject({ version: 1, k: 'A', v: 'one' })
+
+    writeFileSync(path.join(root, '.env'), 'A: one # changed note only\nEMPTY= # another note\n')
+    const commentOnlyChange = await encryptEnvFiles(
+      path.join(root, 'vault.json'),
+      path.join(root, 'key.aes'),
+      { disableUnsafeWarning: true },
+    )
+    expect(commentOnlyChange.setRecordsWritten).toBe(0)
+    expect(commentOnlyChange.skippedUnchanged).toBe(2)
+
+    writeFileSync(path.join(root, '.env'), 'A: local # keep local note\nEMPTY= # another note\n')
+    const plan = await buildRestorePlan(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+    })
+    expect(plan.files[0]?.entries.find((entry) => entry.key === 'A')).toMatchObject({
+      action: 'modify',
+      currentValues: ['local'],
+      nextValue: 'one',
+    })
+
+    await decryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {
+      disableUnsafeWarning: true,
+      autoApprove: true,
+    })
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe(
+      'A: one # keep local note\nEMPTY= # another note\n',
+    )
+  })
+
+  it('reads unversioned vault records as version 0 raw values', async () => {
+    const root = path.join(tmpdir(), `env-lane-vault-v0-${Date.now()}`)
+    const envFile = path.join(root, '.env')
+    const keyFile = path.join(root, 'key.aes')
+    mkdirSync(path.join(root, '.vault'), { recursive: true })
+    writeFileSync(keyFile, 'dev-only-key-material')
+    writeFileSync(envFile, 'A=local # keep local note\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    const legacyRecord = {
+      f: envFile,
+      k: 'A',
+      t: Date.now(),
+      op: 'set',
+      v: '"legacy # value" # stored note',
+    }
+    writeFileSync(
+      path.join(root, '.vault/store.dat'),
+      `${encryptRecord(deriveVaultKey(keyFile), JSON.stringify(legacyRecord))}\n`,
+    )
+
+    const plan = await buildRestorePlan(path.join(root, 'vault.json'), keyFile, {
+      disableUnsafeWarning: true,
+    })
+    expect(plan.files[0]?.entries[0]).toMatchObject({
+      key: 'A',
+      action: 'modify',
+      nextValue: 'legacy # value',
+    })
+
+    await decryptEnvFiles(path.join(root, 'vault.json'), keyFile, {
+      disableUnsafeWarning: true,
+      autoApprove: true,
+    })
+    expect(readFileSync(envFile, 'utf8')).toBe('A="legacy # value" # keep local note\n')
   })
 
   it('restores dotenv files without rewriting unmanaged content', async () => {
@@ -467,31 +559,30 @@ describe('@env-lane/vault', () => {
     }
   })
 
-  it.each([
-    ['ts'],
-    ['js'],
-    ['json'],
-  ])('implicitly resolves vault config in different formats: %s', async (ext) => {
-    const root = path.join(tmpdir(), `env-lane-vault-formats-${ext}-${Date.now()}`)
-    mkdirSync(root, { recursive: true })
-    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
-    writeFileSync(path.join(root, '.env'), 'A=1\n')
+  it.each([['ts'], ['js'], ['json']])(
+    'implicitly resolves vault config in different formats: %s',
+    async (ext) => {
+      const root = path.join(tmpdir(), `env-lane-vault-formats-${ext}-${Date.now()}`)
+      mkdirSync(root, { recursive: true })
+      writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+      writeFileSync(path.join(root, '.env'), 'A=1\n')
 
-    const vaultConfig = { envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }
-    writeFileSync(path.join(root, `env-lane.vault.${ext}`), configSource(ext, vaultConfig))
+      const vaultConfig = { envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }
+      writeFileSync(path.join(root, `env-lane.vault.${ext}`), configSource(ext, vaultConfig))
 
-    const originalCwd = process.cwd
-    process.cwd = () => root
-    try {
-      const enc = await encryptEnvFiles(undefined, path.join(root, 'key.aes'), {
-        disableUnsafeWarning: true,
-      })
-      expect(enc.setRecordsWritten).toBe(1)
-      expect(enc.storePath.endsWith('.vault/store.dat')).toBe(true)
-    } finally {
-      process.cwd = originalCwd
-    }
-  })
+      const originalCwd = process.cwd
+      process.cwd = () => root
+      try {
+        const enc = await encryptEnvFiles(undefined, path.join(root, 'key.aes'), {
+          disableUnsafeWarning: true,
+        })
+        expect(enc.setRecordsWritten).toBe(1)
+        expect(enc.storePath.endsWith('.vault/store.dat')).toBe(true)
+      } finally {
+        process.cwd = originalCwd
+      }
+    },
+  )
 
   describe('unhappy paths', () => {
     it('throws when key file does not exist or is empty', async () => {

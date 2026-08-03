@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { parse as parseDotenv } from 'dotenv'
 
 export interface EnvTextDocument {
   hasBom: boolean
@@ -10,12 +11,27 @@ export interface EnvTextDocument {
 
 export type EnvLineData =
   | { kind: 'empty' | 'comment'; rawLine: string }
+  | { kind: 'continuation'; rawLine: string; entryLineNumber: number }
   | {
-      kind: 'entry' | 'commented-entry'
+      kind: 'entry'
       rawLine: string
       key: string
       prefix: string
-      rawValue: string
+      separator: '=' | ':'
+      valueToken: string
+      suffix: string
+      effectiveValue: string
+    }
+  | {
+      kind: 'commented-entry'
+      rawLine: string
+      key: string
+      prefix: string
+      activePrefix: string
+      separator: '=' | ':'
+      valueToken: string
+      suffix: string
+      effectiveValue: string
     }
   | { kind: 'invalid'; rawLine: string; reason: string }
 
@@ -25,8 +41,8 @@ export interface LoadedEnvDocument {
   exists: boolean
   document: EnvTextDocument
   parsedLines: EnvLine[]
-  currentMap: Map<string, { value: string }>
-  occurrencesMap: Map<string, Array<{ value: string; prefix: string; lineNumber: number }>>
+  currentMap: Map<string, { effectiveValue: string; lineNumber?: number }>
+  occurrencesMap: Map<string, Array<{ effectiveValue: string; prefix: string; lineNumber: number }>>
   invalidLineCount: number
   shadowedEntryCount: number
 }
@@ -48,12 +64,9 @@ export interface EnvDocumentPatchResult extends EnvDocumentWriteResult {
   deletedKeys: string[]
 }
 
-const ENV_ENTRY_RE = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
-const COMMENTED_ENV_ENTRY_RE = /^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
-
-export function createEmptyEnvDocument(): EnvTextDocument {
-  return { hasBom: false, eol: '\n', hasFinalNewline: true, lines: [] }
-}
+const ENV_ENTRY_PREFIX_RE =
+  /^(\s*(?:export\s+)?([\w.-]+)\s*(=)\s*|\s*(?:export\s+)?([\w.-]+)\s*(:)\s+)/
+const COMMENT_PREFIX_RE = /^(\s*#\s*)(.*)$/
 
 export function createEnvTextDocument(content: string): EnvTextDocument {
   const hasBom = content.startsWith('\uFEFF')
@@ -77,80 +90,168 @@ export function renderEnvTextDocument(
   return keepBom ? `\uFEFF${withNewline}` : withNewline
 }
 
+function splitValueAndSuffix(raw: string): { valueToken: string; suffix: string } {
+  const opening = raw[0]
+  const quote = opening === "'" || opening === '"' || opening === '`' ? opening : undefined
+  let quoteClosed = quote === undefined
+  for (let index = 0; index < raw.length; index++) {
+    if (!quoteClosed && quote) {
+      if (index === 0 || raw[index] !== quote) continue
+      if (raw[index - 1] !== '\\') quoteClosed = true
+      continue
+    }
+    if (raw[index] === '#') {
+      const beforeComment = raw.slice(0, index)
+      const valueToken = beforeComment.trimEnd()
+      return { valueToken, suffix: `${beforeComment.slice(valueToken.length)}${raw.slice(index)}` }
+    }
+  }
+  const valueToken = raw.trimEnd()
+  return { valueToken, suffix: raw.slice(valueToken.length) }
+}
+
+function parseActiveEnvEntry(line: string): Extract<EnvLineData, { kind: 'entry' }> | undefined {
+  const match = line.match(ENV_ENTRY_PREFIX_RE)
+  if (!match) return undefined
+  const key = match[2] ?? match[4]
+  const separator = (match[3] ?? match[5]) as '=' | ':'
+  const parsed = parseDotenv(line)
+  if (!Object.prototype.hasOwnProperty.call(parsed, key)) return undefined
+  const prefix = match[1]
+  const { valueToken, suffix } = splitValueAndSuffix(line.slice(prefix.length))
+  return {
+    kind: 'entry',
+    rawLine: line,
+    key,
+    prefix,
+    separator,
+    valueToken,
+    suffix,
+    effectiveValue: parsed[key],
+  }
+}
+
 export function parseEnvLine(line: string): EnvLineData {
   const trimmed = line.trim()
   if (!trimmed) return { kind: 'empty', rawLine: line }
   if (trimmed.startsWith('#')) {
-    const commentedEntryMatch = line.match(COMMENTED_ENV_ENTRY_RE)
-    if (commentedEntryMatch) {
-      const eqIdx = line.indexOf('=')
-      return {
-        kind: 'commented-entry',
-        rawLine: line,
-        key: commentedEntryMatch[1],
-        prefix: line.slice(0, eqIdx + 1),
-        rawValue: line.slice(eqIdx + 1),
-      }
+    const commentMatch = line.match(COMMENT_PREFIX_RE)
+    if (!commentMatch) return { kind: 'comment', rawLine: line }
+    const activeEntry = parseActiveEnvEntry(commentMatch[2])
+    if (!activeEntry) return { kind: 'comment', rawLine: line }
+    return {
+      ...activeEntry,
+      kind: 'commented-entry',
+      rawLine: line,
+      prefix: `${commentMatch[1]}${activeEntry.prefix}`,
+      activePrefix: `${commentMatch[1].match(/^\s*/)?.[0] ?? ''}${activeEntry.prefix}`,
     }
-    return { kind: 'comment', rawLine: line }
   }
-  const eqIdx = line.indexOf('=')
-  if (eqIdx < 0) return { kind: 'invalid', rawLine: line, reason: 'missing equals sign' }
-  const match = line.match(ENV_ENTRY_RE)
-  if (!match) return { kind: 'invalid', rawLine: line, reason: 'invalid env key' }
-  return {
-    kind: 'entry',
-    rawLine: line,
-    key: match[1],
-    prefix: line.slice(0, eqIdx + 1),
-    rawValue: line.slice(eqIdx + 1),
-  }
+  const entry = parseActiveEnvEntry(line)
+  if (entry) return entry
+  return { kind: 'invalid', rawLine: line, reason: 'not valid dotenv assignment syntax' }
 }
 
 export function isEnvEntryLine(
   line: EnvLine,
-): line is EnvLine & { kind: 'entry'; key: string; rawValue: string; prefix: string } {
+): line is EnvLine & Extract<EnvLineData, { kind: 'entry' }> {
   return line.kind === 'entry'
 }
 
 export function isEnvEntryLikeLine(line: EnvLine): line is EnvLine & {
   kind: 'entry' | 'commented-entry'
   key: string
-  rawValue: string
+  valueToken: string
+  effectiveValue: string
   prefix: string
+  suffix: string
+  separator: '=' | ':'
 } {
   return line.kind === 'entry' || line.kind === 'commented-entry'
 }
 
-export function loadEnvDocument(filePath: string): LoadedEnvDocument {
-  const fileExists = existsSync(filePath)
-  const document = fileExists
-    ? createEnvTextDocument(readFileSync(filePath, 'utf8'))
-    : createEmptyEnvDocument()
+function buildParsedEnvDocument(content: string, exists: boolean): LoadedEnvDocument {
+  const document = createEnvTextDocument(content)
   const parsedLines: EnvLine[] = document.lines.map((line, index) => ({
     lineNumber: index + 1,
     ...parseEnvLine(line),
   }))
-  const currentMap = new Map<string, { value: string }>()
+  for (let index = 0; index < parsedLines.length; index++) {
+    const line = parsedLines[index]
+    if (line.kind !== 'entry') continue
+    const token = line.valueToken.trimStart()
+    const quote = token[0]
+    if (quote !== "'" && quote !== '"' && quote !== '`') continue
+    let closed = false
+    for (let cursor = 1; cursor < token.length; cursor++) {
+      if (token[cursor] !== quote) continue
+      if (token[cursor - 1] !== '\\') {
+        closed = true
+        break
+      }
+    }
+    if (closed) continue
+    let closingLineIndex: number | undefined
+    for (let cursor = index + 1; cursor < parsedLines.length; cursor++) {
+      const candidate = parsedLines[cursor]
+      for (let charIndex = 0; charIndex < candidate.rawLine.length; charIndex++) {
+        if (candidate.rawLine[charIndex] !== quote) continue
+        if (candidate.rawLine[charIndex - 1] !== '\\') {
+          closingLineIndex = cursor
+          break
+        }
+      }
+      if (closingLineIndex !== undefined) break
+    }
+    if (closingLineIndex === undefined) continue
+    for (let cursor = index + 1; cursor <= closingLineIndex; cursor++) {
+      const continuation = parsedLines[cursor]
+      parsedLines[cursor] = {
+        kind: 'continuation',
+        rawLine: continuation.rawLine,
+        lineNumber: continuation.lineNumber,
+        entryLineNumber: line.lineNumber,
+      }
+    }
+    index = closingLineIndex
+  }
+  const currentMap = new Map<string, { effectiveValue: string; lineNumber?: number }>()
   const occurrencesMap = new Map<
     string,
-    Array<{ value: string; prefix: string; lineNumber: number }>
+    Array<{ effectiveValue: string; prefix: string; lineNumber: number }>
   >()
   let invalidLineCount = 0
   let shadowedEntryCount = 0
   for (const line of parsedLines) {
     if (line.kind === 'entry') {
       const occurrences = occurrencesMap.get(line.key) ?? []
-      occurrences.push({ value: line.rawValue, prefix: line.prefix, lineNumber: line.lineNumber })
+      occurrences.push({
+        effectiveValue: line.effectiveValue,
+        prefix: line.prefix,
+        lineNumber: line.lineNumber,
+      })
       occurrencesMap.set(line.key, occurrences)
       if (currentMap.has(line.key)) shadowedEntryCount++
-      currentMap.set(line.key, { value: line.rawValue })
+      currentMap.set(line.key, {
+        effectiveValue: line.effectiveValue,
+        lineNumber: line.lineNumber,
+      })
     } else if (line.kind === 'invalid') {
       invalidLineCount++
     }
   }
+  for (const [key, effectiveValue] of Object.entries(parseDotenv(content))) {
+    const current = currentMap.get(key)
+    currentMap.set(key, { effectiveValue, lineNumber: current?.lineNumber })
+    const occurrences = occurrencesMap.get(key)
+    if (occurrences?.length) occurrences[occurrences.length - 1].effectiveValue = effectiveValue
+    const currentLine = current?.lineNumber
+      ? parsedLines.find((line) => line.lineNumber === current.lineNumber)
+      : undefined
+    if (currentLine?.kind === 'entry') currentLine.effectiveValue = effectiveValue
+  }
   return {
-    exists: fileExists,
+    exists,
     document,
     parsedLines,
     currentMap,
@@ -160,19 +261,32 @@ export function loadEnvDocument(filePath: string): LoadedEnvDocument {
   }
 }
 
-export function lineForEnvKey(content: string, key: string): number | undefined {
-  const lines = content.split(/\r?\n/)
-  const re = new RegExp(`^\\s*(?:export\\s+)?${escapeRegExp(key)}\\s*=`)
-  const idx = lines.findIndex((line) => re.test(line))
-  return idx >= 0 ? idx + 1 : undefined
+export function parseEnvDocument(content: string): LoadedEnvDocument {
+  return buildParsedEnvDocument(content, true)
 }
 
-export function escapeRegExp(value: string): string {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+export function loadEnvDocument(filePath: string): LoadedEnvDocument {
+  const fileExists = existsSync(filePath)
+  return fileExists
+    ? buildParsedEnvDocument(readFileSync(filePath, 'utf8'), true)
+    : buildParsedEnvDocument('', false)
 }
 
 function lineKey(line: EnvLine): string | undefined {
   return isEnvEntryLikeLine(line) ? line.key : undefined
+}
+
+export function formatEnvValue(value: string): string {
+  const candidates = [
+    value,
+    `"${value.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`,
+    `'${value}'`,
+    `\`${value}\``,
+  ]
+  for (const candidate of candidates) {
+    if (parseDotenv(`ENV_LANE_VALUE=${candidate}`).ENV_LANE_VALUE === value) return candidate
+  }
+  throw new Error('Value cannot be represented by dotenv without changing its effective value.')
 }
 
 export function writeEnvDocumentContent(filePath: string, content: string): boolean {
@@ -219,6 +333,7 @@ export function applyEnvDocumentPatches(
   const removedDuplicateKeys: string[] = []
   const restoredCommentedKeys: string[] = []
   const consumed = new Set<string>()
+  const replacedMultilineEntryLines = new Set<number>()
   const lastMatchIndex = new Map<string, number>()
 
   envDoc.parsedLines.forEach((line, index) => {
@@ -231,6 +346,9 @@ export function applyEnvDocumentPatches(
 
   const nextLines: string[] = []
   for (const [index, line] of envDoc.parsedLines.entries()) {
+    if (line.kind === 'continuation' && replacedMultilineEntryLines.has(line.entryLineNumber)) {
+      continue
+    }
     const key = lineKey(line)
     const patch = key ? desired.get(key) : undefined
     const shouldConsider =
@@ -247,6 +365,7 @@ export function applyEnvDocumentPatches(
     if (update === 'last' && !isLastMatch) {
       if (removeDuplicateEntries && line.kind === 'entry') {
         removedDuplicateKeys.push(key)
+        replacedMultilineEntryLines.add(line.lineNumber)
         continue
       }
       nextLines.push(line.rawLine)
@@ -256,10 +375,17 @@ export function applyEnvDocumentPatches(
     consumed.add(key)
     if (patch.op === 'delete') {
       deletedKeys.push(key)
+      replacedMultilineEntryLines.add(line.lineNumber)
       continue
     }
 
-    nextLines.push(`${line.prefix}${patch.value}`)
+    if (line.kind === 'entry' && line.effectiveValue === patch.value) {
+      nextLines.push(line.rawLine)
+      continue
+    }
+    const prefix = line.kind === 'commented-entry' ? line.activePrefix : line.prefix
+    nextLines.push(`${prefix}${formatEnvValue(patch.value)}${line.suffix}`)
+    replacedMultilineEntryLines.add(line.lineNumber)
     writtenKeys.push(key)
     if (line.kind === 'commented-entry') restoredCommentedKeys.push(key)
   }
@@ -277,7 +403,7 @@ export function applyEnvDocumentPatches(
   )
     nextLines.push('')
   for (const patch of additions) {
-    nextLines.push(`${patch.key}=${patch.value}`)
+    nextLines.push(`${patch.key}=${formatEnvValue(patch.value)}`)
     writtenKeys.push(patch.key)
     addedKeys.push(patch.key)
   }

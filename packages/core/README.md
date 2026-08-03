@@ -16,6 +16,6 @@ await runEnvSync('webFromApi', { build: 'production', dryRun: true });
 await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 ```
 
-Runtime dotenv resolution intentionally uses `dotenv.parse()`. Editing-oriented APIs use env-lane's structured env document parser/writer so comments and duplicate entries can be preserved or normalized consistently.
+Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
 See the full documentation at https://github.com/billstark001/env-lane#readme.

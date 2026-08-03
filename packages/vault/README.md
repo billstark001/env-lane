@@ -8,6 +8,8 @@ pnpm add -D @env-lane/vault
 
 This package is intentionally unsafe for production secret management. Prefer CI/CD Secrets, cloud KMS, HashiCorp Vault, SOPS, age, or a platform Secret Manager for production secrets.
 
+Vault schema version 1 records store dotenv effective values. Records without a version, or with version 0, are treated as the earlier raw-value format and converted through the shared dotenv AST when loaded. New records always use version 1.
+
 ```ts
 import {
   buildRestorePlan,

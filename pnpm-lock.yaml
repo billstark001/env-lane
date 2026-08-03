@@ -78,9 +78,6 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
       picomatch:
         specifier: ^4.0.5
         version: 4.0.5

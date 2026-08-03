@@ -26,7 +26,8 @@ interface EnvBlock {
   key: string
   kind: 'entry' | 'commented-entry'
   rawLine: string
-  rawValue: string
+  rawLines: string[]
+  effectiveValue: string
   leadingLines: string[]
   lineNumber: number
   order: number
@@ -128,6 +129,10 @@ function buildEnvSortLayout(envDoc: ReturnType<typeof loadEnvDocument>) {
   let sawEntry = false
 
   for (const line of envDoc.parsedLines) {
+    if (line.kind === 'continuation') {
+      blocks.at(-1)?.rawLines.push(line.rawLine)
+      continue
+    }
     if (isEnvEntryLikeLine(line)) {
       if (!sawEntry) {
         preambleLines = pendingLines
@@ -138,7 +143,8 @@ function buildEnvSortLayout(envDoc: ReturnType<typeof loadEnvDocument>) {
         key: line.key,
         kind: line.kind,
         rawLine: line.rawLine,
-        rawValue: line.rawValue,
+        rawLines: [line.rawLine],
+        effectiveValue: line.effectiveValue,
         leadingLines: pendingLines,
         lineNumber: line.lineNumber,
         order: blocks.length,
@@ -157,8 +163,7 @@ function buildEnvSortLayout(envDoc: ReturnType<typeof loadEnvDocument>) {
 }
 
 function hasCommentedEnvValue(block: EnvBlock): boolean {
-  const trimmed = block.rawValue.trim()
-  return trimmed !== '' && !trimmed.startsWith('#')
+  return block.effectiveValue !== ''
 }
 
 function shouldIgnoreEmptyCommentedEnvBlock(block: EnvBlock, groupBlocks: EnvBlock[]): boolean {
@@ -206,7 +211,7 @@ function buildEnvSortGroups(blocks: EnvBlock[]): EnvGroup[] {
       order: Math.min(...keptBlocks.map((block) => block.order)),
       blocks: keptBlocks,
       leadingLines: normalizeBlankLineRuns(groupBlocks.flatMap((block) => block.leadingLines)),
-      rawLines: keptBlocks.map((block) => block.rawLine),
+      rawLines: keptBlocks.flatMap((block) => block.rawLines),
     })
   }
   groups.sort((left, right) => left.order - right.order)
@@ -335,7 +340,10 @@ export function buildEnvSortPlan(
       renderedOrder++
       continue
     }
-    renderedLines.push(...templateBlock.leadingLines, commentOutEnvEntryLine(templateBlock.rawLine))
+    renderedLines.push(
+      ...templateBlock.leadingLines,
+      ...templateBlock.rawLines.map(commentOutEnvEntryLine),
+    )
     operations.push({ action: 'insert-commented', key: templateBlock.key })
     renderedOrder++
   }

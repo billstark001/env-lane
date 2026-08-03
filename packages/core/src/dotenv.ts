@@ -1,8 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { parse } from 'dotenv'
 import { loadEnvLaneConfig } from './config.js'
-import { lineForEnvKey } from './env-document.js'
+import { parseEnvDocument } from './env-document.js'
 import { getLogger } from './logger.js'
 import type {
   EnvFileRef,
@@ -97,22 +96,19 @@ export async function resolveInjectedEnv(options: ResolveEnvOptions = {}): Promi
   for (const file of files) {
     if (!file.exists) continue
     const content = readFileSync(file.path, 'utf8')
-    const parsed = parse(content)
-    if (
-      config.selector.forbidInDotenv &&
-      Object.prototype.hasOwnProperty.call(parsed, config.selector.envKey)
-    ) {
+    const envDocument = parseEnvDocument(content)
+    if (config.selector.forbidInDotenv && envDocument.currentMap.has(config.selector.envKey)) {
       throw new Error(
         `${config.selector.envKey} is a selector and must not be stored in dotenv files (${file.relativePath}).`,
       )
     }
-    for (const [key, value] of Object.entries(parsed)) {
-      values[key] = value
+    for (const [key, entry] of envDocument.currentMap) {
+      values[key] = entry.effectiveValue
       sources[key] = {
         source: 'dotenv',
         file: file.path,
         relativeFile: file.relativePath,
-        line: lineForEnvKey(content, key),
+        line: entry.lineNumber,
       }
     }
   }

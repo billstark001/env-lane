@@ -370,13 +370,15 @@ Env-lane and vault config files both support TypeScript, JavaScript ESM, JavaScr
 
 `env-lane check --policy <name>` runs a configured env policy from `checks`. Policy checks support required variables, required-any groups, and equality checks with simple transforms such as lowercase normalization or URL-base normalization.
 
-`env-lane sync <name>` copies mapped values from one source to another dotenv file using the same env document writer used by sort and vault restore. It preserves comments, BOMs, and newline style where possible.
+`env-lane sync <name>` copies mapped values from one source to another dotenv file using the shared env document model also consumed by runtime injection, checks, sort, and vault restore. Its writer preserves comments, BOMs, newline style, colon separators, and inline comments where possible.
 
-Runtime injection and selector checks intentionally use `dotenv.parse()` so they match dotenv loading behavior. Editing commands such as sort, vault restore, and sync use env-lane's structured env document parser/writer so commented entries, duplicate entries, and surrounding comments can be handled consistently.
+All dotenv consumers use env-lane's shared line AST. Assignment nodes retain their original syntax and expose an `effectiveValue` computed with `dotenv`, so runtime injection, checks, sync, sort, and vault agree on empty values, quotes, inline comments, duplicate keys, colon separators, and multiline values.
 
 ## Development Vault
 
 `@env-lane/vault` stores reversible encrypted dotenv records for development workflows. It depends on local key-file handling, repository access controls, and CI logging discipline. Do not use it as a production secret-management system.
+
+Vault schema version 1 records store dotenv `effectiveValue` data. Records without a version, or with version 0, are read as the earlier raw right-hand-side format and converted through the shared dotenv AST when loaded; newly written records always use version 1.
 
 Prefer CI/CD Secrets, cloud KMS, HashiCorp Vault, SOPS, age, or a platform Secret Manager for production secrets.
 

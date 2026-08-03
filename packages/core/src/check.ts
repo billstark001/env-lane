@@ -1,10 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { parse } from 'dotenv'
 import fg from 'fast-glob'
 import { loadEnvLaneConfig } from './config.js'
 import { listEnvFilesForTarget } from './dotenv.js'
-import { lineForEnvKey } from './env-document.js'
+import { parseEnvDocument } from './env-document.js'
 import { listWorkspacePackagesForConfig, resolveTargetPackage } from './workspace.js'
 
 export interface CheckResult {
@@ -46,12 +45,12 @@ export async function checkDotenvSelector(
   for (const file of files) {
     if (!existsSync(file)) continue
     const content = readFileSync(file, 'utf8')
-    const parsed = parse(content)
-    if (Object.prototype.hasOwnProperty.call(parsed, config.selector.envKey)) {
+    const entry = parseEnvDocument(content).currentMap.get(config.selector.envKey)
+    if (entry) {
       violations.push({
         file,
         relativeFile: path.relative(config.rootDir, file).replaceAll(path.sep, '/'),
-        line: lineForEnvKey(content, config.selector.envKey),
+        line: entry.lineNumber,
       })
     }
   }
