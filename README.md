@@ -302,6 +302,9 @@ export default defineConfig({
     // Manual configuration: baseDir is optional if key matches a workspace alias.
     // file and template default to .env and .env.example.
     api: {
+      // Optional multiline comment placed before variables absent from the template.
+      // Empty by default, which preserves the existing unlabelled append behavior.
+      unlistedVariablesComment: '',
       files: {
         // Additional custom files to sort using the same template
         ci: '.env.ci'
@@ -361,6 +364,17 @@ The `env-lane sort` command employs a "convention over configuration" approach:
     - `file` and `template` default to `.env` and `.env.example` if omitted.
     - You can provide a custom `baseDir` to point to any directory.
 3. **Build Inference**: If `selector.builds` is defined, `env-lane sort` uses the `dotenv.order` patterns to automatically find and sort build-specific files (e.g., `.env.production`) without manual mapping.
+
+Variables that exist in the target env file but not in its template remain appended after template variables. Set `unlistedVariablesComment` on a sort target to label that section. The value may contain newlines; non-empty lines are emitted as dotenv comments, while blank lines are preserved:
+
+```ts
+sort: {
+  api: {
+    unlistedVariablesComment: `Variables below are no longer in .env.example.
+Review and remove them when they are no longer needed.`
+  }
+}
+```
 
 Env-lane and vault config files both support TypeScript, JavaScript ESM, JavaScript CJS, and JSON formats.
 

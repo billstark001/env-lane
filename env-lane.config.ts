@@ -20,6 +20,7 @@ export default {
     api: {
       file: 'apps/api/.env',
       template: 'apps/api/.env.example',
+      unlistedVariablesComment: '',
       files: {
         production: 'apps/api/.env.production'
       }

@@ -12,6 +12,7 @@ const sortTargetSchema = z.object({
   template: z.string().min(1).optional(),
   files: z.record(z.string(), z.string().min(1)).optional(),
   create: z.boolean().optional(),
+  unlistedVariablesComment: z.string().optional(),
 })
 
 const valueSourceSchema = z

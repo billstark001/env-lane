@@ -355,6 +355,42 @@ describe('@env-lane/core', () => {
     expect(sorted.indexOf('B=2')).toBeLessThan(sorted.indexOf('EXTRA=9'))
   })
 
+  it('labels variables missing from the template with a configured multiline comment', async () => {
+    const root = path.join(tmpdir(), `env-lane-sort-unlisted-${Date.now()}`)
+    mkdirSync(root, { recursive: true })
+    const configFile = path.join(root, 'env-lane.config.json')
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        sort: {
+          root: {
+            baseDir: root,
+            file: '.env',
+            template: '.env.example',
+            unlistedVariablesComment:
+              'Variables below are no longer in the template.\nReview before removing them.',
+          },
+        },
+      }),
+    )
+    writeFileSync(path.join(root, '.env'), 'OLD_B=2\nA=1\nOLD_C=3\n')
+    writeFileSync(path.join(root, '.env.example'), 'A=\n')
+
+    await sortEnvFilesFromConfig(configFile, 'root', 'all')
+
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe(
+      [
+        'A=1',
+        '',
+        '# Variables below are no longer in the template.',
+        '# Review before removing them.',
+        'OLD_B=2',
+        'OLD_C=3',
+        '',
+      ].join('\n'),
+    )
+  })
+
   it.each(['ts', 'mjs', 'cjs', 'js', 'json'])(
     'sorts env files from env-lane %s config sort section',
     async (ext) => {

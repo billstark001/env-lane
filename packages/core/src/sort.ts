@@ -91,6 +91,7 @@ async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
         baseDir: target.baseDir ?? pkg.dir,
         file: target.file ?? '.env',
         template: target.template ?? '.env.example',
+        unlistedVariablesComment: target.unlistedVariablesComment ?? '',
       }
     }
   }
@@ -102,6 +103,7 @@ async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
       baseDir: target.baseDir ?? config.rootDir,
       file: target.file ?? '.env',
       template: target.template ?? '.env.example',
+      unlistedVariablesComment: target.unlistedVariablesComment ?? '',
     }
   }
 
@@ -282,10 +284,24 @@ function commentOutEnvEntryLine(line: string): string {
   return `${indent}# ${line.slice(indent.length)}`
 }
 
+function renderUnlistedVariablesComment(value: string): string[] {
+  const lines = value.replace(/\r\n?/g, '\n').split('\n')
+  while (lines[0]?.trim() === '') lines.shift()
+  while (lines.at(-1)?.trim() === '') lines.pop()
+  return lines.map((line) => {
+    if (line.trim() === '') return ''
+    return line.trimStart().startsWith('#') ? line : `# ${line}`
+  })
+}
+
 export function buildEnvSortPlan(
   envFilePath: string,
   templateFilePath: string,
-  options?: { preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' },
+  options?: {
+    preserveBOM?: boolean
+    eol?: 'auto' | 'lf' | 'crlf'
+    unlistedVariablesComment?: string
+  },
 ): EnvSortPlan {
   const resolvedEnvFilePath = path.resolve(envFilePath)
   const resolvedTemplateFilePath = path.resolve(templateFilePath)
@@ -349,7 +365,20 @@ export function buildEnvSortPlan(
   }
 
   const leftoverGroups = [...envGroups.values()].filter((group) => !consumedKeys.has(group.key))
+  const unlistedVariablesComment = renderUnlistedVariablesComment(
+    options?.unlistedVariablesComment ?? '',
+  )
+  let renderedUnlistedVariablesComment = false
   for (const group of leftoverGroups) {
+    if (
+      !templateKeys.has(group.key) &&
+      !renderedUnlistedVariablesComment &&
+      unlistedVariablesComment.length > 0
+    ) {
+      if (!isBlankLine(renderedLines.at(-1) ?? '')) renderedLines.push('')
+      renderedLines.push(...unlistedVariablesComment)
+      renderedUnlistedVariablesComment = true
+    }
     renderedLines.push(...group.leadingLines, ...group.rawLines)
     operations.push({
       action: templateKeys.has(group.key) ? 'append-duplicate' : 'append-extra',
@@ -396,7 +425,12 @@ export function buildEnvSortPlan(
 export async function sortEnvFile(
   envFilePath: string,
   templateFilePath: string,
-  options?: { create?: boolean; preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' },
+  options?: {
+    create?: boolean
+    preserveBOM?: boolean
+    eol?: 'auto' | 'lf' | 'crlf'
+    unlistedVariablesComment?: string
+  },
 ) {
   const create = options?.create ?? true
   const resolvedEnvFilePath = path.resolve(envFilePath)
@@ -527,6 +561,7 @@ export async function sortEnvFilesFromConfig(
         create: options?.create ?? target.create,
         preserveBOM: options?.preserveBOM ?? config.dotenv.preserveBOM,
         eol: options?.eol ?? config.dotenv.eol,
+        unlistedVariablesComment: target.unlistedVariablesComment ?? '',
       }
       results.push(await sortEnvFile(absFile, templateFilePath, mergedOptions))
     }

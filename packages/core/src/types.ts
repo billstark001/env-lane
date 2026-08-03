@@ -6,6 +6,8 @@ export interface EnvSortTargetConfig {
   template?: string
   files?: Record<string, string>
   create?: boolean
+  /** Comment shown before variables that are not present in the template. Defaults to empty. */
+  unlistedVariablesComment?: string
 }
 
 export interface EnvValueSourceConfig {
