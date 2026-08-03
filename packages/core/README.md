@@ -18,6 +18,20 @@ await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 
 Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
+The stable package root contains configuration and high-level use cases. Import the lower-level
+dotenv document feature through its dedicated entry point:
+
+```ts
+import {
+  applyEnvDocumentPatches,
+  parseEnvDocument,
+  parseEnvLine,
+} from '@env-lane/core/env-document';
+```
+
+The same document symbols remain available from the package root during the compatibility period,
+but new code should use the feature entry point so internal Core restructuring does not affect it.
+
 Core and Vault APIs are silent unless called inside an explicit async context. Diagnostics are emitted through the context logger and are not mixed into operation results:
 
 ```ts

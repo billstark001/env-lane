@@ -7,15 +7,99 @@ import { pathToFileURL } from 'node:url'
 
 const rootDir = path.resolve(import.meta.dirname, '..')
 const packages = ['core', 'vault', 'cli']
+const packageEntries = {
+  core: ['index', 'env-document'],
+  vault: ['index', 'cli/index'],
+  cli: ['index'],
+}
+const builtModules = new Map()
+
+function assertExports(label, module, names) {
+  const missing = names.filter((name) => !(name in module))
+  if (missing.length > 0) {
+    throw new Error(`${label} is missing public export(s): ${missing.join(', ')}`)
+  }
+}
 
 for (const packageName of packages) {
   const distDir = path.join(rootDir, 'packages', packageName, 'dist')
-  for (const artifact of ['index.js', 'index.cjs', 'index.d.ts']) {
-    accessSync(path.join(distDir, artifact))
+  for (const entry of packageEntries[packageName]) {
+    for (const extension of ['js', 'cjs', 'd.ts']) {
+      accessSync(path.join(distDir, `${entry}.${extension}`))
+    }
+    const esm = await import(pathToFileURL(path.join(distDir, `${entry}.js`)).href)
+    const cjs = createRequire(import.meta.url)(path.join(distDir, `${entry}.cjs`))
+    builtModules.set(`${packageName}:${entry}:esm`, esm)
+    builtModules.set(`${packageName}:${entry}:cjs`, cjs)
   }
-  await import(pathToFileURL(path.join(distDir, 'index.js')).href)
-  createRequire(import.meta.url)(path.join(distDir, 'index.cjs'))
 }
+
+for (const format of ['esm', 'cjs']) {
+  assertExports(`@env-lane/core (${format})`, builtModules.get(`core:index:${format}`), [
+    'checkDotenvSelector',
+    'defineConfig',
+    'listEnvFiles',
+    'listWorkspacePackages',
+    'resolveInjectedEnv',
+    'runEnvCheck',
+    'runEnvSync',
+    'runWithInjectedEnv',
+    'sortEnvFile',
+    'sortEnvFilesFromConfig',
+    'withEnvLaneContext',
+  ])
+  assertExports(
+    `@env-lane/core/env-document (${format})`,
+    builtModules.get(`core:env-document:${format}`),
+    [
+      // biome-ignore lint/security/noSecrets: Public API symbol name, not a credential.
+      'applyEnvDocumentPatches',
+      'formatEnvValue',
+      'loadEnvDocument',
+      'parseEnvDocument',
+      'parseEnvLine',
+    ],
+  )
+  assertExports(`@env-lane/vault (${format})`, builtModules.get(`vault:index:${format}`), [
+    'applyRestorePlan',
+    'buildRestorePlan',
+    'defineVaultConfig',
+    'decryptEnvFiles',
+    'encryptEnvFiles',
+    'loadVaultConfig',
+    'pruneVaultHistory',
+    'sanitizeVaultHistory',
+  ])
+  assertExports(`@env-lane/vault/cli (${format})`, builtModules.get(`vault:cli/index:${format}`), [
+    'registerVaultCommands',
+  ])
+  assertExports(`env-lane facade (${format})`, builtModules.get(`cli:index:${format}`), [
+    'defineConfig',
+    'resolveInjectedEnv',
+    'runEnvCheck',
+    'sortEnvFile',
+  ])
+
+  if ('resolveInjectedEnv' in builtModules.get(`core:env-document:${format}`)) {
+    throw new Error('@env-lane/core/env-document must not expose high-level Core use cases.')
+  }
+  if ('encryptEnvFiles' in builtModules.get(`vault:cli/index:${format}`)) {
+    throw new Error('@env-lane/vault/cli must not expose Vault automation use cases.')
+  }
+}
+
+const corePackageRequire = createRequire(path.join(rootDir, 'packages', 'core', 'package.json'))
+const vaultPackageRequire = createRequire(path.join(rootDir, 'packages', 'vault', 'package.json'))
+assertExports(
+  '@env-lane/core/env-document package export (cjs)',
+  corePackageRequire('@env-lane/core/env-document'),
+  ['parseEnvDocument'],
+)
+assertExports(
+  '@env-lane/vault/cli package export (cjs)',
+  vaultPackageRequire('@env-lane/vault/cli'),
+  ['registerVaultCommands'],
+)
 
 const cliPath = path.join(rootDir, 'packages', 'cli', 'dist', 'cli.js')
 accessSync(cliPath)
