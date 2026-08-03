@@ -46,7 +46,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && node ../../scripts/copy-file.mjs dist/index.d.ts dist/index.d.cts",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -57,7 +57,7 @@
     "c12": "^3.3.4",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
-    "picomatch": "^4.0.4",
+    "picomatch": "^4.0.5",
     "zod": "^4.4.3"
   }
 }

@@ -46,7 +46,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && node ../../scripts/copy-file.mjs dist/index.d.ts dist/index.d.cts",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -55,7 +55,7 @@
   "dependencies": {
     "c12": "^3.3.4",
     "dotenv": "^17.4.2",
-    "execa": "^9.6.1",
+    "execa": "^10.0.1",
     "fast-glob": "^3.3.3",
     "find-up": "^8.0.0",
     "yaml": "^2.9.0",
