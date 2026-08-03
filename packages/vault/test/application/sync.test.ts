@@ -9,7 +9,7 @@ import {
   deriveVaultKey,
   deriveVaultSyncKey,
   encryptEnvFiles,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const testDirectories = new Set<string>()
 

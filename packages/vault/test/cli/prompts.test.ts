@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { RestorePlan, RestorePlanEntry } from '../src/domain/types.js'
+import type { RestorePlan, RestorePlanEntry } from '../../src/domain/types.js'
 
 const promptMocks = vi.hoisted(() => ({
   checkbox: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock('@inquirer/prompts', () => ({
   },
 }))
 
-import { promptRestoreDecisions, promptStoreRewrite } from '../src/cli/prompts.js'
+import { promptRestoreDecisions, promptStoreRewrite } from '../../src/cli/prompts.js'
 
 function entry(action: RestorePlanEntry['action'], key: string): RestorePlanEntry {
   return {

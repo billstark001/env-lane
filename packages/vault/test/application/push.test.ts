@@ -8,7 +8,7 @@ import {
   decryptRecord,
   deriveVaultKey,
   encryptEnvFiles,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const testDirectories = new Set<string>()
 

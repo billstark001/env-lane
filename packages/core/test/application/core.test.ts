@@ -38,7 +38,7 @@ import {
   sortEnvFilesFromConfig,
   withEnvLaneContext,
   writeFileContentAtomically,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const testDirectories = new Set<string>()
 
@@ -733,7 +733,7 @@ describe('@env-lane/core', () => {
         /Unknown target/,
       )
 
-      const { loadEnvLaneConfig } = await import('../src/index.js')
+      const { loadEnvLaneConfig } = await import('../../src/index.js')
       const config = await loadEnvLaneConfig({ cwd: root })
       await expect(
         resolveTargetPackage(undefined, { cwd: '/some/external/path', config }),

@@ -10,7 +10,7 @@ import {
   restorePlanMatchesFailCondition,
   selectRestorePlan,
   selectRestorePlanByDecisions,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 function entry(
   action: RestoreAction,

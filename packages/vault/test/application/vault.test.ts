@@ -2,13 +2,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { type Diagnostic, withEnvLaneContext } from '../../core/src/index.js'
+import { type Diagnostic, withEnvLaneContext } from '../../../core/src/index.js'
 import {
   decryptEnvFiles,
   encryptEnvFiles,
   VAULT_UNSAFE_WARNING,
   warnUnsafeVault,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const testDirectories = new Set<string>()
 

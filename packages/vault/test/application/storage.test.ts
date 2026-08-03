@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { removeStaleLock, withFileLock } from '../src/adapters/file-lock.js'
+import { removeStaleLock, withFileLock } from '../../src/adapters/file-lock.js'
 import {
   buildRestorePlan,
   decryptEnvFiles,
@@ -22,7 +22,7 @@ import {
   loadVaultConfig,
   pruneVaultHistory,
   sanitizeVaultHistory,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const testDirectories = new Set<string>()
 

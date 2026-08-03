@@ -4,11 +4,11 @@ import path from 'node:path'
 import { EnvLaneError, parseEnvDocument, withEnvLaneContext } from '@env-lane/core'
 import { Command } from 'commander'
 import { afterEach, describe, expect, it } from 'vitest'
-import { registerVaultCommands } from '../../vault/src/cli/index.js'
-import { registerCoreCommands } from '../src/presentation/commands/core.js'
-import { registerSortCommands } from '../src/presentation/commands/sort.js'
-import { readCliBootstrapOptions } from '../src/presentation/runtime/bootstrap-options.js'
-import { createCliContext } from '../src/presentation/runtime/context.js'
+import { registerVaultCommands } from '../../../vault/src/cli/index.js'
+import { registerCoreCommands } from '../../src/presentation/commands/core.js'
+import { registerSortCommands } from '../../src/presentation/commands/sort.js'
+import { readCliBootstrapOptions } from '../../src/presentation/runtime/bootstrap-options.js'
+import { createCliContext } from '../../src/presentation/runtime/context.js'
 
 const testDirectories = new Set<string>()
 
