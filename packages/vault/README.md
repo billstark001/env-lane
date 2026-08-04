@@ -57,9 +57,19 @@ await loadVaultConfig(undefined, {
 });
 ~~~
 
-Plans contain redacted previews and are bound to current store and dotenv state. Deletes are skipped
-unless explicitly approved. Core and Vault library APIs never access terminal streams; diagnostics
-require an explicit Core context, and conflict decisions come from options or callbacks.
+Plans use full redaction by default and are bound to current store and dotenv state. Configure
+`restore.redaction` as `full`, `partial`, or `none`; `partial` preserves safe URL structure while
+hiding credentials, JWT/PASETO values, and opaque high-entropy URL components. `none` places
+plaintext values in output and approval files. Optional `restore.reveal` start/end
+counts produce hints such as `<redacted:0x12......3456>`; it defaults to `false` and never reveals a
+value too short to retain a hidden middle. Values and URL components shorter than eight characters
+are always preserved. `restore.promptLoop` controls wrapping in the interactive
+selection list and defaults to `false`. Selection rows show current and Vault previews inline, use
+a shared key-column width and responsive ten-line page, and accept `Esc` or `q` to cancel. The CLI
+supports one-off `--redaction`, `--reveal <start:end>`/`--no-reveal`, and
+`--prompt-loop`/`--no-prompt-loop` overrides. Deletes are skipped unless explicitly approved. Core
+and Vault library APIs never access terminal streams; diagnostics require an explicit Core context,
+and conflict decisions come from options or callbacks.
 `dryRun: true` reports the records and changes a push would produce without taking a write lock or
 creating/updating the store, sync state, or output directories.
 

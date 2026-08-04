@@ -1,6 +1,6 @@
 {
   "name": "env-lane",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "description": "CLI for env-lane dotenv injection and optional development vault helpers.",
   "license": "MIT",

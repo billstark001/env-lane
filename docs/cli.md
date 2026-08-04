@@ -105,7 +105,7 @@ pnpm add -D @env-lane/vault
 | Command | Purpose |
 | --- | --- |
 | `vault encrypt <keyFile>` | Append local dotenv changes to the encrypted store. |
-| `vault plan <keyFile>` | Build a redacted restore plan or approval document. |
+| `vault plan <keyFile>` | Build a restore plan or approval document with configurable redaction. |
 | `vault decrypt <keyFile>` | Preview or apply selected Vault values. |
 | `vault apply <keyFile>` | Apply an approval document after freshness validation. |
 | `vault sanitize <keyFile>` | Remove history covered by local-only exclude rules. |
@@ -114,6 +114,12 @@ pnpm add -D @env-lane/vault
 Selection options on encrypt, plan, and decrypt include `--file`, `--key`, `--include`,
 `--exclude`, `--only`, and `--approve-deletes`. Conflict policy is one of `abort`,
 `keep-local`, or `take-vault`.
+
+`vault plan`, `vault decrypt`, and `vault apply` accept `--redaction full|partial|none` and
+`--reveal <start:end>` as one-off overrides of `restore.redaction` and `restore.reveal`.
+`--no-reveal` suppresses configured value hints. Interactive decrypt also accepts `--prompt-loop`
+and `--no-prompt-loop`; wrapping defaults to off. The selector shows current/Vault previews in
+each row, displays ten lines when the terminal permits, and accepts `Esc` or `q` to cancel.
 
 `vault encrypt --dry-run` returns the same selected changes and record counts without creating or
 modifying the encrypted store, sync state, or output directories. Combine it with `--json` for CI

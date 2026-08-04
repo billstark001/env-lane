@@ -123,7 +123,8 @@ layers may own stdout, stderr, exit status, and prompts.
 - diagnostics, warnings, progress, and prompts use stderr;
 - JSON stdout is exactly one document;
 - expected public errors have stable codes and preserve structured details;
-- environment values are redacted by default;
+- eligible environment values are redacted by default, with the documented short-value floor;
+  otherwise plaintext Vault previews require an explicit `none` redaction mode;
 - new JSON fields require a secret-leak review;
 - `run` leaves stdout ownership to the child.
 
@@ -179,7 +180,9 @@ Tests should cover three levels where relevant:
 
 Tests must call production registration and wiring rather than reproduce it. Every public package
 entry is checked in ESM, CommonJS, and declaration output. Security-sensitive redaction, approval,
-selection, error, and concurrency changes require direct regression cases.
+selection, error, and concurrency changes require direct regression cases. Format-realistic secret
+tests share one locally generated synthetic credential fixture so each credential literal has a
+single definition and can never be confused with a provisioned account secret.
 
 Persisted path changes additionally require tests for both POSIX and Win32 semantics plus a
 cross-checkout application test. No-write modes require assertions that both existing file content

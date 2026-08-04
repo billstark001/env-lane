@@ -4,6 +4,11 @@
   "outputFile": "store.dat",
   "trackDeletions": true,
   "disableUnsafeWarning": false,
+  "restore": {
+    "redaction": "full",
+    "reveal": false,
+    "promptLoop": false
+  },
   "exclude": [
     {
       "files": ["**/.env*"],

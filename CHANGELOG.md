@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+## [0.4.1] - 2026-08-04
+
+### Added
+
+- Added configurable Vault restore preview redaction (`full`, URL-aware `partial`, or `none`),
+  optional prefix/suffix hints, and configurable wrapping for the interactive restore
+  selection list, with matching CLI overrides.
+- Added general JWT and PASETO recognition, heuristic high-entropy value detection, and
+  centralized locally generated synthetic credential fixtures covering common service and wallet
+  formats.
+- Added an eight-character redaction floor so shorter values and URL components remain visible.
+
+### Changed
+
+- Changed interactive restore choices to show current and Vault previews in aligned key columns,
+  cap displayed keys at 64 characters, display ten lines when the terminal permits, disable
+  navigation wrapping by default, and support `Esc`/`q` cancel.
+
+### Fixed
+
+- Fixed no-argument CLI invocation so it prints the generated command help instead of wrapping
+  Commander's internal help signal as `CLI_ARGUMENT_ERROR: (outputHelp)`.
+- Fixed partial restore preview false positives for ordinary RPC endpoints, public-key PEM values,
+  public wallet addresses, and provider-name lists.
+- Skipped interactive selection when a restore plan contains no selectable changes.
+
 ## [0.4.0] - 2026-08-04
 
 ### Added

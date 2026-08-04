@@ -30,7 +30,9 @@ The stable root contains:
   `sortEnvFilesFromConfig`.
 - Diagnostics and errors: `EnvLaneError`, `errorCode`, `withEnvLaneContext`, and the
   diagnostic formatting API.
-- Redaction and public configuration/result types.
+- Redaction and public configuration/result types, including provider-neutral `isJwt`, `isPaseto`,
+  configurable `isHighEntropyString` classifiers, and the eight-character default
+  `minRedactionLength` floor.
 
 Sorting options accept `check: true` to calculate and return drift without writing files. Per-file
 and aggregate results expose `changed`; `applied` remains false in check mode. `runWithInjectedEnv`
@@ -57,6 +59,11 @@ The stable root contains Vault configuration and automation use cases:
 - `pruneVaultHistory`, `sanitizeVaultHistory`.
 - Restore, conflict, record, selection, and result types.
 - `VAULT_UNSAFE_WARNING` and explicit `warnUnsafeVault()`.
+
+Vault restore configuration exposes `VaultRestoreRedaction` (`full`, `partial`, or `none`) and
+`VaultRestoreReveal` (leading/trailing hint lengths). Restore APIs accept one-off
+`restoreRedaction` and `restoreReveal` options; otherwise they use the Vault config. Full redaction
+without revealed characters remains the default, subject to the eight-character floor.
 
 `encryptEnvFiles` accepts `dryRun: true` for a no-write preview of selected records and changes.
 The result exposes `dryRun`, `applied`, record counts, conflicts, and the selected `changes`; no

@@ -29,6 +29,11 @@ export default defineVaultConfig({
   trackDeletions: true,
   autoRemapPaths: true,
   allowUnmanaged: false,
+  restore: {
+    redaction: 'full',
+    reveal: false,
+    promptLoop: false
+  },
   exclude: [
     {
       files: ['apps/api/.env.local'],
@@ -69,8 +74,81 @@ env-lane vault plan key.aes --json
 ~~~
 
 `encrypt` treats local dotenv files as its source. `plan` compares the current store with local
-files and returns only redacted previews. Stable keyed entry identifiers and a plan digest bind the
-plan to the current store and local state.
+files. Restore previews use `restore.redaction: 'full'` by default. Stable keyed entry identifiers
+and a plan digest bind the plan to the current store and local state.
+
+Restore preview and interactive navigation are configurable in the Vault config:
+
+~~~ts
+restore: {
+  redaction: 'partial', // 'full' | 'partial' | 'none'
+  reveal: false, // or { start: 4, end: 4 } for value hints
+  promptLoop: false
+}
+~~~
+
+- `full` replaces every eligible value with `<redacted>` and remains the safe default; the
+  eight-character lower bound described below still applies.
+- `partial` preserves non-sensitive URL structure while hiding URL credentials, credential query
+  parameters, JWT/PASETO values, and secret-like or opaque high-entropy path/query components.
+  Public-key PEM values, wallet addresses, and ordinary provider endpoints remain visible.
+- `none` includes plaintext current and Vault values in terminal/JSON output and approval files.
+  Treat those outputs as secrets and do not commit or share them.
+- `reveal` optionally keeps a configured number of leading/trailing characters inside each
+  redaction marker. It defaults to `false`. Values too short to retain a hidden middle always fall
+  back to plain `<redacted>`.
+- `promptLoop` controls whether Up/Down navigation wraps at the ends of the manual selection list;
+  it defaults to `false`.
+
+Interactive selection renders each entry's current and Vault previews directly in its checkbox
+row, with the key column padded to a shared width. It shows ten list lines by default, shrinking
+only for shorter terminals. Displayed keys are capped at 64 characters and end in `…` when
+truncated; internal entry identifiers and keys remain unchanged. Press `Esc` or `q` to cancel
+cleanly without applying files; `Ctrl+C` remains supported.
+
+For example, `{ start: 4, end: 4 }` renders a sufficiently long secret as:
+
+~~~text
+0x1234567890abcdef3456
+→ <redacted:0x12......3456>
+~~~
+
+With `partial`, representative URL previews look like this:
+
+~~~text
+https://api.example.com/v1/items
+→ https://api.example.com/v1/items
+
+https://mainnet.base.org
+→ https://mainnet.base.org
+
+postgres://user:password@db.example.com:5432/moment
+→ postgres://<redacted>@db.example.com:5432/moment
+
+https://example.com/callback?token=abc&mode=test
+→ https://example.com/callback?token=abc&mode=test
+
+https://rpc.provider.com/v2/secret-project-id
+→ https://rpc.provider.com/v2/<redacted>
+
+https://api.example.com/v2/Fv5D2gZr8Qx1Np7Ks4Yc6Tt0Wm9I/items?project_ref=Fv5D2gZr8Qx1Np7Ks4Yc6Tt0Wm9I
+→ https://api.example.com/v2/<redacted>/items?project_ref=<redacted>
+~~~
+
+Redaction has an eight-character lower bound: values and URL components shorter than eight
+characters are always shown. Exactly eight characters may still be redacted. This keeps short
+human-verifiable labels readable while longer credentials remain covered.
+
+Use CLI overrides for a one-off inspection or terminal preference:
+
+~~~bash
+env-lane vault plan key.aes --redaction partial --reveal 4:4
+env-lane vault decrypt key.aes --redaction none --no-prompt-loop
+~~~
+
+The redaction and reveal overrides are also available on `vault apply`; use `--no-reveal` to
+temporarily suppress configured hints. Library callers can pass `restoreRedaction` and
+`restoreReveal` to restore APIs or configure them in the Vault config.
 
 `encrypt --dry-run` performs selection, conflict detection, and change calculation but does not
 take a write lock or create/update the store, sync state, or output directories. Its result reports

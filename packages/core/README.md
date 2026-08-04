@@ -38,6 +38,13 @@ to `cwd`; it does not replace the invocation context.
 
 Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
+Redaction combines secret-like key names with value inspection. The public `isJwt`, `isPaseto`,
+and `isHighEntropyString` classifiers are provider-neutral; high-entropy detection can be tuned with
+`minEntropyLength`, `entropyThreshold`, and `minCharacterClasses`. `minRedactionLength` defaults to
+8, so shorter values are always preserved. Known public identifiers such as public-key PEM values,
+Ethereum addresses, Supabase publishable keys, and comma-separated human identifier lists are
+excluded from the heuristic.
+
 The stable package root contains configuration and high-level use cases. Deployment scripts may
 also access this curated root through the `env-lane` convenience facade. Import the lower-level
 dotenv document feature through its owning package:

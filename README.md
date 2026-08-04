@@ -143,11 +143,17 @@ env-lane vault plan key.aes --output restore-plan.json --json
 env-lane vault apply key.aes --plan restore-plan.json --yes --non-interactive
 ~~~
 
-Restore plans contain redacted previews and are bound to current store and dotenv state. Deletes
-are not selected by default. Schema v1 stores config-relative portable paths, so a store can move
-between Windows and POSIX checkouts without retaining the producer's absolute path. See the
-[Vault guide](docs/vault.md) for exclude rules, sync state, selection, conflict handling, history
-maintenance, and safety boundaries.
+Restore plans use full redaction by default and are bound to current store and dotenv state.
+`restore.redaction` supports full, partial URL-aware, or explicitly unredacted previews, while
+partial mode also masks JWT/PASETO and opaque high-entropy URL components. Optional
+`restore.reveal` counts retain configured prefix/suffix hints inside redaction markers.
+Values shorter than eight characters remain visible in every redaction mode.
+`restore.promptLoop` controls wrapping in the manual selection list and defaults to off. Selection
+rows show current and Vault previews inline, use a responsive ten-line page, and accept `Esc` or `q`
+to cancel. Deletes are not selected by default. Schema v1 stores config-relative portable paths,
+so a store can move between Windows and POSIX checkouts without retaining the producer's absolute
+path. See the [Vault guide](docs/vault.md) for exclude rules, sync state, selection, conflict
+handling, history maintenance, and safety boundaries.
 
 ## Documentation
 
