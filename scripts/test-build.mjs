@@ -1,5 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { accessSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  accessSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -75,6 +85,7 @@ for (const format of ['esm', 'cjs']) {
     'sanitizeVaultHistory',
   ])
   assertExports(`@env-lane/vault/cli (${format})`, builtModules.get(`vault:cli/index:${format}`), [
+    'VAULT_CLI_API_VERSION',
     'registerVaultCommands',
   ])
   assertExports(`env-lane facade (${format})`, builtModules.get(`cli:index:${format}`), [
@@ -102,8 +113,15 @@ assertExports(
 assertExports(
   '@env-lane/vault/cli package export (cjs)',
   vaultPackageRequire('@env-lane/vault/cli'),
-  ['registerVaultCommands'],
+  ['VAULT_CLI_API_VERSION', 'registerVaultCommands'],
 )
+
+const cliPackageJson = JSON.parse(
+  readFileSync(path.join(rootDir, 'packages', 'cli', 'package.json'), 'utf8'),
+)
+if (cliPackageJson.peerDependencies?.['@env-lane/vault'] !== '^0.4.2') {
+  throw new Error('Published env-lane must require the compatible @env-lane/vault ^0.4.2 peer.')
+}
 
 const cliPath = path.join(rootDir, 'packages', 'cli', 'dist', 'cli.js')
 accessSync(cliPath)
@@ -116,6 +134,54 @@ if (
   defaultHelp.stderr !== ''
 ) {
   throw new Error('Invoking the built CLI without arguments must print help and exit successfully.')
+}
+
+const incompatiblePeerFixture = mkdtempSync(
+  path.join(tmpdir(), 'env-lane-built-cli-incompatible-peer-'),
+)
+try {
+  const fixtureCliPath = path.join(incompatiblePeerFixture, 'dist', 'cli.js')
+  const fixtureModules = path.join(incompatiblePeerFixture, 'node_modules')
+  mkdirSync(path.dirname(fixtureCliPath), { recursive: true })
+  mkdirSync(path.join(fixtureModules, '@env-lane'), { recursive: true })
+  copyFileSync(cliPath, fixtureCliPath)
+  symlinkSync(
+    path.join(rootDir, 'packages', 'core'),
+    path.join(fixtureModules, '@env-lane', 'core'),
+  )
+  symlinkSync(
+    path.join(rootDir, 'packages', 'cli', 'node_modules', 'commander'),
+    path.join(fixtureModules, 'commander'),
+  )
+  const incompatibleVault = path.join(fixtureModules, '@env-lane', 'vault')
+  mkdirSync(incompatibleVault)
+  writeFileSync(
+    path.join(incompatibleVault, 'package.json'),
+    JSON.stringify({
+      name: '@env-lane/vault',
+      version: '0.4.1',
+      type: 'module',
+      exports: { './cli': './cli.js' },
+    }),
+  )
+  writeFileSync(
+    path.join(incompatibleVault, 'cli.js'),
+    // biome-ignore lint/security/noSecrets: Generated source for an incompatible peer fixture.
+    "export function registerVaultCommands() { throw new Error('legacy adapter loaded') }\n",
+  )
+  const incompatiblePeer = spawnSync(
+    process.execPath,
+    [fixtureCliPath, 'vault', 'encrypt', 'key.aes', '--cwd', incompatiblePeerFixture, '--json'],
+    { encoding: 'utf8' },
+  )
+  if (
+    incompatiblePeer.status !== 1 ||
+    JSON.parse(incompatiblePeer.stdout).error?.code !== 'VAULT_VERSION_UNSUPPORTED'
+  ) {
+    throw new Error('Built CLI must reject an incompatible optional Vault peer at runtime.')
+  }
+} finally {
+  rmSync(incompatiblePeerFixture, { recursive: true, force: true })
 }
 
 const jsonError = spawnSync(
@@ -502,23 +568,47 @@ try {
   }
 
   writeFileSync(path.join(runFixture, '.env'), '')
-  const blockedDelete = spawnSync(
+  const optedOutDelete = spawnSync(
+    process.execPath,
+    [cliPath, 'vault', 'encrypt', 'key.aes', '--cwd', runFixture, '--json', '--no-approve-deletes'],
+    { encoding: 'utf8' },
+  )
+  const defaultDelete = spawnSync(
     process.execPath,
     [cliPath, 'vault', 'encrypt', 'key.aes', '--cwd', runFixture, '--json'],
     { encoding: 'utf8' },
   )
-  const approvedDelete = spawnSync(
+  if (
+    optedOutDelete.status !== 0 ||
+    JSON.parse(optedOutDelete.stdout).deleteRecordsWritten !== 0 ||
+    defaultDelete.status !== 0 ||
+    JSON.parse(defaultDelete.stdout).deleteRecordsWritten === 0
+  ) {
+    throw new Error('Built Vault CLI deletes must be selected by default with an explicit opt-out.')
+  }
+
+  writeFileSync(path.join(runFixture, '.env'), 'MISSING_FILE_KEY=1\n')
+  const missingFileSetup = spawnSync(
     process.execPath,
-    [cliPath, 'vault', 'encrypt', 'key.aes', '--cwd', runFixture, '--json', '--approve-deletes'],
+    [cliPath, 'vault', 'encrypt', 'key.aes', '--cwd', runFixture, '--json'],
+    { encoding: 'utf8' },
+  )
+  rmSync(path.join(runFixture, '.env'))
+  const missingFileDelete = spawnSync(
+    process.execPath,
+    [cliPath, 'vault', 'encrypt', 'key.aes', '--cwd', runFixture, '--json'],
     { encoding: 'utf8' },
   )
   if (
-    blockedDelete.status !== 0 ||
-    JSON.parse(blockedDelete.stdout).deleteRecordsWritten !== 0 ||
-    approvedDelete.status !== 0 ||
-    JSON.parse(approvedDelete.stdout).deleteRecordsWritten === 0
+    missingFileSetup.status !== 0 ||
+    missingFileDelete.status !== 0 ||
+    JSON.parse(missingFileDelete.stdout).deleteRecordsWritten !== 1 ||
+    JSON.parse(missingFileDelete.stdout).missingFilesTreatedAsEmpty !== 1 ||
+    existsSync(path.join(runFixture, '.env'))
   ) {
-    throw new Error('Built Vault CLI deletes must require --approve-deletes.')
+    throw new Error(
+      'Built Vault CLI must treat missing managed files as empty without recreating them.',
+    )
   }
 } finally {
   rmSync(runFixture, { recursive: true, force: true })

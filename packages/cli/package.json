@@ -63,7 +63,7 @@
     "@env-lane/vault": "workspace:*"
   },
   "peerDependencies": {
-    "@env-lane/vault": "^0.3.0 || ^0.4.0"
+    "@env-lane/vault": "^0.4.2"
   },
   "peerDependenciesMeta": {
     "@env-lane/vault": {
