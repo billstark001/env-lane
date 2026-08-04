@@ -74,6 +74,17 @@ env-lane check --target api --build production
 `env-lane` reads `pnpm-workspace.yaml` when present, then falls back to `packages/*` and
 `apps/*`. Targets may be package names, relative directories, or configured aliases.
 
+`--cwd` defines config discovery and the base for caller-supplied relative paths. For `run`, place
+an explicit `--` after the target/options when forwarding a command; any later `--` belongs to the
+child unchanged:
+
+~~~bash
+env-lane run api -- node script.mjs -- --child-flag
+~~~
+
+`--run-cwd` is separate: it chooses the child working directory (`target`, `root`, or a path
+relative to `--cwd`) without changing config discovery.
+
 ## Output and automation
 
 Final payloads use stdout. Diagnostics, warnings, progress, and prompts use stderr. JSON mode emits
@@ -133,8 +144,10 @@ env-lane vault apply key.aes --plan restore-plan.json --yes --non-interactive
 ~~~
 
 Restore plans contain redacted previews and are bound to current store and dotenv state. Deletes
-are not selected by default. See the [Vault guide](docs/vault.md) for exclude rules, sync state,
-selection, conflict handling, history maintenance, and safety boundaries.
+are not selected by default. Schema v1 stores config-relative portable paths, so a store can move
+between Windows and POSIX checkouts without retaining the producer's absolute path. See the
+[Vault guide](docs/vault.md) for exclude rules, sync state, selection, conflict handling, history
+maintenance, and safety boundaries.
 
 ## Documentation
 

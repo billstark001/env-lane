@@ -32,6 +32,10 @@ sort config resolve from the discovered project root and the target `baseDir`.
 Set `check: true` (CLI: `--check`) to report `changed` without writing; the CLI exits with status 1
 when drift is found.
 
+Public use cases normalize `cwd` once for config discovery and caller-relative paths. In
+`runWithInjectedEnv`, `runCwd` independently selects `target`, `root`, or a child directory relative
+to `cwd`; it does not replace the invocation context.
+
 Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
 The stable package root contains configuration and high-level use cases. Deployment scripts may

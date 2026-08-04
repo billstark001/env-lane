@@ -28,11 +28,14 @@ The stable root contains:
   `runEnvCheck`, `runEnvSync`.
 - Execution and sorting: `runWithInjectedEnv`, `sortEnvFile`,
   `sortEnvFilesFromConfig`.
-
-Sorting options accept `check: true` to calculate and return drift without writing files.
 - Diagnostics and errors: `EnvLaneError`, `errorCode`, `withEnvLaneContext`, and the
   diagnostic formatting API.
 - Redaction and public configuration/result types.
+
+Sorting options accept `check: true` to calculate and return drift without writing files. Per-file
+and aggregate results expose `changed`; `applied` remains false in check mode. `runWithInjectedEnv`
+uses `cwd` for invocation/config resolution and the distinct `runCwd` option for the child working
+directory.
 
 The lower-level document feature has a stable dedicated entry:
 
@@ -56,6 +59,8 @@ The stable root contains Vault configuration and automation use cases:
 - `VAULT_UNSAFE_WARNING` and explicit `warnUnsafeVault()`.
 
 `encryptEnvFiles` accepts `dryRun: true` for a no-write preview of selected records and changes.
+The result exposes `dryRun`, `applied`, record counts, conflicts, and the selected `changes`; no
+store, sync state, output directory, or write lock is created by the preview.
 
 The optional Commander adapter has a stable dedicated entry:
 
@@ -117,10 +122,11 @@ rg "from ['\"](@env-lane/core|@env-lane/vault)['\"]"
 Then compare imported symbols with the table above. Imports from the `env-lane` convenience
 facade using the stable Core root API do not need to move.
 
-This cleanup does not imply a Vault record-format migration. Schema v0 record reads and legacy
-unkeyed sync-state rebasing are persisted-data compatibility paths and are not deprecated by the
-0.4.0 API boundary work. Any future removal of persisted formats requires a separate migration
-plan and release note.
+This cleanup does not imply a Vault record-format migration. Schema v1 uses portable
+Vault-config-relative paths; schema v0 record reads, absolute-path remapping, and legacy unkeyed
+sync-state rebasing are persisted-data compatibility paths and are not deprecated by the 0.4.0 API
+boundary work. Any future removal of persisted formats requires a separate migration plan and
+release note.
 
 ## Published contract verification
 

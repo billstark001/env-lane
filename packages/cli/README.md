@@ -15,9 +15,23 @@ env-lane check --target api --build production --require-override
 env-lane check --policy deploy --build production
 env-lane sync webFromApi --build production --dry-run
 env-lane sort api production --config env-lane.config.ts
+env-lane sort api production --check
+env-lane vault encrypt key.aes --dry-run --json
 ```
 
 Final command payloads use stdout; diagnostics use stderr. `--json` emits one JSON document on stdout. The `run` command accepts text only because its child owns stdout. Use `--non-interactive` together with explicit approval and conflict policies for agents and CI.
+
+`--cwd` controls config discovery and caller-relative CLI paths. `--run-cwd` only chooses the child
+working directory and defaults to the resolved target. Prefer an explicit child boundary; later
+separators remain child arguments:
+
+```bash
+env-lane run api -- node script.mjs -- --child-flag
+```
+
+`sort --check` and `sort-file --check` do not write and exit with status 1 on drift. Vault
+`encrypt --dry-run` previews selected record changes without creating or updating the encrypted
+store, sync state, or output directories.
 
 The package intentionally re-exports the stable `@env-lane/core` root API for configuration files
 and deployment scripts. This convenience facade remains stable. Feature entry points such as

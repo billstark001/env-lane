@@ -60,6 +60,8 @@ await loadVaultConfig(undefined, {
 Plans contain redacted previews and are bound to current store and dotenv state. Deletes are skipped
 unless explicitly approved. Core and Vault library APIs never access terminal streams; diagnostics
 require an explicit Core context, and conflict decisions come from options or callbacks.
+`dryRun: true` reports the records and changes a push would produce without taking a write lock or
+creating/updating the store, sync state, or output directories.
 
 ## CLI
 
@@ -87,6 +89,8 @@ details deprecated on the same schedule.
 
 - Schema v1 records store dotenv effective values and portable config-relative file paths;
   versionless/v0 records remain readable.
+- Schema v1 stores move directly between POSIX and Windows checkouts. `autoRemapPaths` is only for
+  legacy absolute versionless/v0 records.
 - `exclude` is a fail-closed local-only boundary; sanitize old matching history before continuing.
 - Optional `syncDir` uses keyed fingerprints for three-way conflict detection.
 - Restore plans bind digest, complete entry set, and explicit decisions before apply.

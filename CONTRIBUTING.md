@@ -57,6 +57,8 @@ Security-sensitive changes should test:
 - Vault plan freshness and complete decision coverage;
 - selection and delete defaults;
 - concurrent or stale writes where persistence is involved.
+- portable persisted paths under both POSIX and Win32 semantics;
+- no-write previews that preserve existing files and do not create absent output directories.
 
 ## Documentation
 
@@ -93,7 +95,12 @@ Keep unrelated user changes out of a commit. Review staged content with
 3. Run `pnpm check`.
 4. Run `pnpm pack:dry-run` and inspect package contents.
 5. Run `pnpm release:dry-run`.
-6. Publish with `pnpm release` or the release workflow.
+6. Run `pnpm release:verify -- --tag v<version>` from a clean release commit.
+7. Create and push the matching annotated `v<version>` tag. The release workflow validates that
+   the tag, package versions, changelog, clean tree, and checked-out commit agree before publishing.
+
+The npm environment must configure each package's Trusted Publisher for
+`.github/workflows/release.yml`. The workflow uses OIDC and does not require a long-lived npm token.
 
 `pnpm check` already includes a build, so a second standalone build is optional rather than a
 release requirement.

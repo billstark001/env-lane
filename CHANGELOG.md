@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build-time tests against the published ESM, CommonJS, declaration, and real CLI entry points.
 - Added operation-level Vault locking around store, sync-state, and dotenv transactions while
   retaining atomic file replacement and rewrite digest checks.
+- Added no-write sort drift checks through `sort --check`, `sort-file --check`, and the Core
+  `check: true` option. CLI checks exit with status 1 when a selected file would change.
+- Added `vault encrypt --dry-run` and the Vault `dryRun: true` option to preview selected records,
+  conflicts, and changes without creating or modifying the store, sync state, or output directory.
 
 ### Changed
 
@@ -29,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warnings, and prompts use stderr.
 - Split the repository documentation into focused CLI, configuration, Vault, API, architecture,
   and contributor guides.
+- Changed schema v1 Vault records to persist portable, Vault-config-relative file paths with `/`
+  separators. Runtime paths remain absolute; legacy versionless/v0 absolute paths remain readable
+  through the existing optional remapping behavior.
+- Normalized caller-relative paths once at CLI/API boundaries, passed nominal absolute paths
+  through private Core and Vault APIs, and moved child-process execution into a dedicated adapter.
+- Updated CI to current Node 24-based Actions, standardized on pnpm 11, verified both the minimum
+  Node 22 and Node 24 runtimes, and made npm publishing tag-driven with release metadata checks.
 
 ### Fixed
 
@@ -40,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redacted secret-like values in JSON output unless `--show-secrets` is explicit.
 - Corrected `--fail-on` to evaluate the selected plan and final decisions rather than editable
   approval summaries or unselected changes.
+- Preserved child command argument boundaries for invocations such as
+  `env-lane run api -- node script.mjs -- --child-flag`; a child-owned `--` no longer causes the
+  target to be reordered into the child arguments.
+- Made `sort --cwd` and `sort-file --cwd` consistently control config discovery and caller-relative
+  paths. Explicit relative config paths resolve from `--cwd`, while configured sort `baseDir`
+  values resolve from the project root.
+- Resolved relative `--run-cwd`, `--vault-config`, Vault key-file, and `--sync-dir` arguments from
+  the invocation `--cwd` before entering their application workflows.
 
 ### Deprecated
 

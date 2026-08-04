@@ -48,14 +48,18 @@ env-lane files api --build production --require-override
 env-lane print api --build production --json
 env-lane print api --format dotenv --no-process-env
 env-lane run api --build production --run-cwd root -- pnpm test
+env-lane run api -- node script.mjs -- --child-flag
 env-lane check --policy deploy --build production
 env-lane sync webFromApi --build production --dry-run --json
 ~~~
 
 `run` accepts text output only because the child process owns stdout. Options after the child
 boundary are passed through unchanged, including names such as `--json`, `--config`, and
-`--format`. A path passed to `--run-cwd` is resolved from `--cwd`; `target` and `root` select the
-resolved package directory and workspace root respectively.
+`--format`. Prefer the explicit boundary after the target/options; a later standalone `--` remains
+part of the child command. A path passed to `--run-cwd` is resolved from `--cwd`; `target` (the
+default) and `root` select the resolved package directory and workspace root respectively.
+`--run-cwd` changes only the child working directory, while `--cwd` controls config discovery and
+all caller-relative CLI paths.
 
 `check` requires exactly one of `--target` or `--policy`.
 
@@ -65,6 +69,7 @@ Sort one file against a template:
 
 ~~~bash
 env-lane sort-file apps/api/.env apps/api/.env.example
+env-lane sort-file apps/api/.env apps/api/.env.example --check
 ~~~
 
 Sort configured targets:

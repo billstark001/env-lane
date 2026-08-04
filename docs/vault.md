@@ -177,6 +177,10 @@ Operations on the same Vault store are serialized with an operation lock. Store 
 sync-state writes, and dotenv writes use same-directory temporary files followed by atomic
 replacement. History rewrites also validate the expected store digest.
 
+Dry-run encrypt is the exception: because it cannot write, it takes no operation lock and creates
+no parent directory. Its preview is advisory; a later real encrypt re-reads the store and sync state
+under the operation lock before applying changes.
+
 Atomic replacement prevents partial individual files; it does not turn several files into one
 crash-atomic database transaction. After process or machine failure, rerun `plan` before applying
 more changes and investigate any reported baseline conflict. Do not bypass or manually reorder lock

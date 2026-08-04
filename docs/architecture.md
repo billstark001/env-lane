@@ -34,7 +34,7 @@ packages/core/src/
 packages/vault/src/
   domain/       persisted and restore-plan types
   application/  push, restore, storage/history, sync state
-  adapters/     config/path loading, crypto, file locking
+  adapters/     config/path loading, portable record paths, crypto, file locking
   cli/          Commander registration, prompts, rendering, warnings
   index.ts      curated automation root
 ~~~
@@ -83,6 +83,10 @@ filesystem-validity guarantee.
 The global `--cwd` and run-specific `--run-cwd` are intentionally distinct. `--cwd` selects the
 invocation context; `--run-cwd` selects `target`, `root`, or a child path relative to that context.
 The child process adapter receives only the final absolute `childCwd`.
+
+The run presentation layer treats the first explicit separator after env-lane options as the child
+boundary. Once child parsing begins, every argument is opaque, including later standalone `--`
+tokens.
 
 Config adapters resolve config-owned paths. In particular, explicit sort `baseDir` values become
 absolute when the main config is loaded, while file and template names remain relative to that
@@ -148,6 +152,10 @@ operation lock -> store/sync-state file lock
 
 Lower layers must never acquire the operation lock after taking a file lock.
 
+No-write previews do not acquire the operation lock and must not create parent directories, store
+files, or sync state. Their reads may observe either side of a concurrent atomic replacement, so a
+preview is advisory and a later write-capable operation re-reads state under its operation lock.
+
 Atomic rename is not a multi-file database transaction. Store, sync-state, and dotenv files are
 individually crash-safe, but a process or machine failure between files may require a fresh plan and
 baseline reconciliation. This limitation must remain documented unless persistence becomes a true
@@ -172,3 +180,7 @@ Tests should cover three levels where relevant:
 Tests must call production registration and wiring rather than reproduce it. Every public package
 entry is checked in ESM, CommonJS, and declaration output. Security-sensitive redaction, approval,
 selection, error, and concurrency changes require direct regression cases.
+
+Persisted path changes additionally require tests for both POSIX and Win32 semantics plus a
+cross-checkout application test. No-write modes require assertions that both existing file content
+and absent parent directories remain unchanged.

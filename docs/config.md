@@ -134,6 +134,10 @@ Build names from `selector.builds` are discovered through patterns in `dotenv.or
 contain `{build}`. Variables absent from the template remain appended; use
 `unlistedVariablesComment` to label that section.
 
+Drift checking is an operation option rather than a config field: use `sort --check`,
+`sort-file --check`, or `{ check: true }` in the sorting APIs. It honors `create`: when creation is
+enabled, an absent target is reported as drift but is not created during the check.
+
 ## Checks and sync
 
 Check sources use exactly one of `target` or `file`. Rules support:
