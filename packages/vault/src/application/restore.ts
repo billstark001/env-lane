@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
 import { deriveVaultKey, keyedDigest, stableHash } from '../adapters/crypto.js'
 import { type AbsolutePath, resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
+import { restoreCurrentPreview, restoreValuePreview } from '../domain/restore-preview.js'
 import type {
   RestoreAction,
   RestoreDecision,
@@ -16,6 +17,8 @@ import type {
   RestorePlanFile,
   VaultConflictStrategy,
   VaultRecord,
+  VaultRestoreRedaction,
+  VaultRestoreReveal,
 } from '../domain/types.js'
 import {
   assertNoExcludedHistory,
@@ -47,10 +50,6 @@ interface InternalRestorePlanFile extends Omit<RestorePlanFile, 'entries'> {
 
 interface InternalRestorePlan extends Omit<RestorePlan, 'files'> {
   files: InternalRestorePlanFile[]
-}
-
-function redactedPreview(present: boolean): string {
-  return present ? '<redacted>' : '<missing>'
 }
 
 function publicRestorePlan(plan: InternalRestorePlan): RestorePlan {
@@ -129,8 +128,21 @@ function buildRestorePlanFromState(
         vaultAction,
         conflictReason: conflict.reason,
         preview: {
-          current: redactedPreview(occurrences.length > 0),
-          vault: record.op === 'delete' ? '<delete>' : '<redacted>',
+          current: restoreCurrentPreview(
+            record.k,
+            currentValues,
+            config.restore.redaction,
+            config.restore.reveal,
+          ),
+          vault:
+            record.op === 'delete'
+              ? '<delete>'
+              : restoreValuePreview(
+                  record.k,
+                  record.v ?? '',
+                  config.restore.redaction,
+                  config.restore.reveal,
+                ),
         },
       })
     }
@@ -200,6 +212,8 @@ interface BuildRestorePlanOptions {
   vaultConfigFile?: string
   autoRemapPaths?: boolean
   allowUnmanaged?: boolean
+  restoreRedaction?: VaultRestoreRedaction
+  restoreReveal?: VaultRestoreReveal | false
   resolvedConfig?: VaultConfig
 }
 
@@ -245,6 +259,8 @@ export async function decryptEnvFiles(
     vaultConfigFile?: string
     autoRemapPaths?: boolean
     allowUnmanaged?: boolean
+    restoreRedaction?: VaultRestoreRedaction
+    restoreReveal?: VaultRestoreReveal | false
     resolvedConfig?: VaultConfig
     approveDeletes?: boolean
     decisions?: RestoreDecision[]
@@ -385,6 +401,8 @@ interface ApplyRestoreOptions {
   vaultConfigFile?: string
   autoRemapPaths?: boolean
   allowUnmanaged?: boolean
+  restoreRedaction?: VaultRestoreRedaction
+  restoreReveal?: VaultRestoreReveal | false
   resolvedConfig?: VaultConfig
   approveDeletes?: boolean
   decisions?: RestoreDecision[]

@@ -117,23 +117,26 @@ describe('@env-lane/vault restore', () => {
     const keyPath = path.join(root, 'key.aes')
     mkdirSync(root, { recursive: true })
     writeFileSync(keyPath, 'dev-only-key-material')
-    writeFileSync(path.join(root, '.env'), 'A=vault-a\nB=vault-b\nDELETE_ME=vault-delete\n')
+    writeFileSync(
+      path.join(root, '.env'),
+      'A=vault-value-a\nB=vault-value-b\nDELETE_ME=vault-delete\n',
+    )
     writeFileSync(
       configPath,
       JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
     )
     await encryptEnvFiles(configPath, keyPath, {})
-    writeFileSync(path.join(root, '.env'), 'A=vault-a\nB=vault-b\n')
+    writeFileSync(path.join(root, '.env'), 'A=vault-value-a\nB=vault-value-b\n')
     await encryptEnvFiles(configPath, keyPath, {})
     writeFileSync(
       path.join(root, '.env'),
-      'A=local-a\nB=local-b\nDELETE_ME=local-delete\nLOCAL_ONLY=kept\n',
+      'A=local-value-a\nB=local-value-b\nDELETE_ME=local-delete\nLOCAL_ONLY=kept\n',
     )
 
     const plan = await buildRestorePlan(configPath, keyPath, {})
     const serialized = JSON.stringify(plan)
-    expect(serialized).not.toContain('vault-a')
-    expect(serialized).not.toContain('local-a')
+    expect(serialized).not.toContain('vault-value-a')
+    expect(serialized).not.toContain('local-value-a')
     expect(serialized).not.toContain('local-delete')
     expect(plan.files[0]?.entries.every((entry) => entry.entryId.length === 64)).toBe(true)
 
@@ -154,8 +157,68 @@ describe('@env-lane/vault restore', () => {
     })
     expect(applied).toMatchObject({ appliedEntries: 1, skippedEntries: 2, filesWritten: 1 })
     expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe(
-      'A=vault-a\nB=local-b\nDELETE_ME=local-delete\nLOCAL_ONLY=kept\n',
+      'A=vault-value-a\nB=local-value-b\nDELETE_ME=local-delete\nLOCAL_ONLY=kept\n',
     )
+  })
+
+  it('uses configured partial and unredacted restore previews', async () => {
+    const root = testDirectory(`env-lane-vault-preview`)
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(
+      path.join(root, '.env'),
+      [
+        'API_URL=https://api.example.com/v1/items',
+        'DATABASE_URL=postgres://user:password@db.example.com:5432/moment',
+        'CALLBACK_URL=https://example.com/callback?token=abc&mode=test',
+        'RPC_URL=https://rpc.provider.com/v2/secret-project-id',
+        '',
+      ].join('\n'),
+    )
+    const writeConfig = (redaction: 'full' | 'partial' | 'none') =>
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          envFiles: ['.env'],
+          outputDir: '.vault',
+          outputFile: 'store.dat',
+          restore: { redaction, promptLoop: false },
+        }),
+      )
+    writeConfig('partial')
+    await encryptEnvFiles(configPath, keyPath, {})
+    writeFileSync(
+      path.join(root, '.env'),
+      [
+        'API_URL=https://api.example.com/v1/local',
+        'DATABASE_URL=postgres://local:password@db.example.com:5432/moment',
+        'CALLBACK_URL=https://example.com/callback?token=local&mode=test',
+        'RPC_URL=https://rpc.provider.com/v2/local-project-id',
+        '',
+      ].join('\n'),
+    )
+
+    const partial = await buildRestorePlan(configPath, keyPath)
+    const vaultPreviews = Object.fromEntries(
+      partial.files[0].entries.map((entry) => [entry.key, entry.preview.vault]),
+    )
+    expect(vaultPreviews).toEqual({
+      API_URL: 'https://api.example.com/v1/items',
+      CALLBACK_URL: 'https://example.com/callback?token=abc&mode=test',
+      DATABASE_URL: 'postgres://<redacted>@db.example.com:5432/moment',
+      RPC_URL: 'https://rpc.provider.com/v2/<redacted>',
+    })
+
+    writeConfig('none')
+    const unredacted = await buildRestorePlan(configPath, keyPath)
+    expect(
+      unredacted.files[0].entries.find((entry) => entry.key === 'DATABASE_URL')?.preview,
+    ).toEqual({
+      current: 'postgres://local:password@db.example.com:5432/moment',
+      vault: 'postgres://user:password@db.example.com:5432/moment',
+    })
   })
 
   it('rejects stale approval plans before writing any file', async () => {

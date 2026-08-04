@@ -74,7 +74,7 @@ function fixture(): string {
     };\n`,
   )
   writeFileSync(path.join(root, 'apps/api/package.json'), JSON.stringify({ name: '@acme/api' }))
-  writeFileSync(path.join(root, 'apps/api/.env'), 'SECRET_TOKEN=abc\nA=1\n')
+  writeFileSync(path.join(root, 'apps/api/.env'), 'SECRET_TOKEN=secret-value\nA=1\n')
   writeFileSync(path.join(root, 'apps/api/.env.production'), 'A=2\nB=3\n')
   writeFileSync(path.join(root, 'apps/api/.env.example'), 'A=\nSECRET_TOKEN=\n')
   return root
@@ -260,7 +260,7 @@ describe('CLI context & commands', () => {
       'json',
       '--show-secrets',
     ])
-    expect(JSON.parse(harness.stdout()).SECRET_TOKEN.value).toBe('abc')
+    expect(JSON.parse(harness.stdout()).SECRET_TOKEN.value).toBe('secret-value')
   })
 
   it('renders dotenv output that preserves escaped control characters', async () => {
@@ -437,7 +437,7 @@ describe('CLI context & commands', () => {
     }
 
     expect(await run(false)).toBe('<redacted>')
-    expect(await run(true)).toBe('abc')
+    expect(await run(true)).toBe('secret-value')
   })
 
   it('resolves relative Vault config, key, and store paths from --cwd', async () => {
@@ -593,10 +593,12 @@ describe('CLI context & commands', () => {
     const keyPath = path.join(root, 'key.aes')
     const configPath = path.join(root, 'vault.json')
     const planPath = path.join(root, 'restore-plan.json')
+    const revealedPlanPath = path.join(root, 'restore-plan-revealed.json')
+    const unredactedPlanPath = path.join(root, 'restore-plan-unredacted.json')
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'vault-fixture' }))
     writeFileSync(keyPath, 'dev-only-key-material')
-    writeFileSync(path.join(root, '.env'), 'A=vault-a\nB=vault-b\n')
+    writeFileSync(path.join(root, '.env'), 'A=vault-value-a\nB=vault-value-b\n')
     writeFileSync(
       configPath,
       JSON.stringify({
@@ -628,7 +630,7 @@ describe('CLI context & commands', () => {
       root,
       '--json',
     ])
-    writeFileSync(path.join(root, '.env'), 'A=local-a\nB=local-b\n')
+    writeFileSync(path.join(root, '.env'), 'A=local-value-a\nB=local-value-b\n')
     await makeProgram().parseAsync([
       'node',
       'cli',
@@ -645,8 +647,44 @@ describe('CLI context & commands', () => {
     ])
 
     const document = JSON.parse(readFileSync(planPath, 'utf8'))
-    expect(JSON.stringify(document)).not.toContain('vault-a')
-    expect(JSON.stringify(document)).not.toContain('local-a')
+    expect(JSON.stringify(document)).not.toContain('vault-value-a')
+    expect(JSON.stringify(document)).not.toContain('local-value-a')
+    await makeProgram().parseAsync([
+      'node',
+      'cli',
+      'vault',
+      'plan',
+      keyPath,
+      '--vault-config',
+      configPath,
+      '--cwd',
+      root,
+      '--output',
+      revealedPlanPath,
+      '--reveal',
+      '2:2',
+      '--json',
+    ])
+    expect(readFileSync(revealedPlanPath, 'utf8')).toContain('<redacted:va......-a>')
+    expect(readFileSync(revealedPlanPath, 'utf8')).toContain('<redacted:lo......-a>')
+    await makeProgram().parseAsync([
+      'node',
+      'cli',
+      'vault',
+      'plan',
+      keyPath,
+      '--vault-config',
+      configPath,
+      '--cwd',
+      root,
+      '--output',
+      unredactedPlanPath,
+      '--redaction',
+      'none',
+      '--json',
+    ])
+    expect(readFileSync(unredactedPlanPath, 'utf8')).toContain('vault-value-a')
+    expect(readFileSync(unredactedPlanPath, 'utf8')).toContain('local-value-a')
     const entryB = document.plan.files[0].entries.find((entry: any) => entry.key === 'B')
     document.decisions.find((item: any) => item.entryId === entryB.entryId).decision = 'skip'
     writeFileSync(planPath, `${JSON.stringify(document, null, 2)}\n`)
@@ -667,7 +705,7 @@ describe('CLI context & commands', () => {
       '--non-interactive',
       '--json',
     ])
-    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=vault-a\nB=local-b\n')
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=vault-value-a\nB=local-value-b\n')
   })
 
   it('runs sort commands', async () => {

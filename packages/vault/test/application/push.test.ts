@@ -131,7 +131,7 @@ describe('@env-lane/vault push', () => {
     )
     expect(plan.files[0]?.entries.find((entry) => entry.key === 'A')).toMatchObject({
       action: 'modify',
-      preview: { current: '<redacted>', vault: '<redacted>' },
+      preview: { current: 'local', vault: 'one' },
     })
 
     await decryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {

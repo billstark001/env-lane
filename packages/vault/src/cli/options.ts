@@ -1,7 +1,11 @@
 import { EnvLaneError, type EnvLaneOutputFormat } from '@env-lane/core'
 import type { Command } from 'commander'
 import { parseVaultFailCondition } from '../application/restore.js'
-import type { VaultConflictStrategy } from '../domain/types.js'
+import type {
+  VaultConflictStrategy,
+  VaultRestoreRedaction,
+  VaultRestoreReveal,
+} from '../domain/types.js'
 
 export function assertVaultFormat(format: EnvLaneOutputFormat): void {
   if (format === 'dotenv') {
@@ -21,6 +25,40 @@ export function parseVaultConflictStrategy(
     'VAULT_INVALID_CONFLICT_STRATEGY',
     '--conflicts must be one of: abort, keep-local, take-vault',
   )
+}
+
+export function parseVaultRestoreRedaction(
+  value: string | undefined,
+): VaultRestoreRedaction | undefined {
+  if (value === undefined) return undefined
+  if (value === 'full' || value === 'partial' || value === 'none') return value
+  throw new EnvLaneError(
+    'VAULT_INVALID_REDACTION',
+    '--redaction must be one of: full, partial, none',
+  )
+}
+
+export function addRestoreRedactionOption(command: Command): Command {
+  return command
+    .option('--redaction <mode>', 'restore preview redaction: full, partial, or none')
+    .option('--reveal <start:end>', 'show this many leading and trailing characters when redacting')
+    .option('--no-reveal', 'do not show leading or trailing characters when redacting')
+}
+
+export function parseVaultRestoreReveal(
+  value: string | boolean | undefined,
+): VaultRestoreReveal | false | undefined {
+  if (value === undefined || value === false) return value
+  const match = /^(\d+):(\d+)$/.exec(typeof value === 'string' ? value : '')
+  const start = Number(match?.[1])
+  const end = Number(match?.[2])
+  if (!match || start > 64 || end > 64) {
+    throw new EnvLaneError(
+      'VAULT_INVALID_REVEAL',
+      '--reveal must use start:end counts between 0 and 64, for example: --reveal 4:4',
+    )
+  }
+  return { start, end }
 }
 
 export function addSelectionOptions(command: Command): Command {

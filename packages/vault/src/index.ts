@@ -32,6 +32,8 @@ export type {
   VaultConflictStrategy,
   VaultOperation,
   VaultRecord,
+  VaultRestoreRedaction,
+  VaultRestoreReveal,
 } from './domain/types.js'
 export { VAULT_UNSAFE_WARNING, warnUnsafeVault } from './cli/warning.js'
 

@@ -7,6 +7,7 @@ import {
   type ResolvedEnvLaneConfig,
 } from '@env-lane/core'
 import { z } from 'zod'
+import type { VaultRestoreRedaction, VaultRestoreReveal } from '../domain/types.js'
 import {
   type AbsolutePath,
   absoluteDirname,
@@ -22,6 +23,21 @@ const schema = z.object({
   trackDeletions: z.boolean().default(true),
   autoRemapPaths: z.boolean().default(true),
   allowUnmanaged: z.boolean().default(false),
+  restore: z
+    .object({
+      redaction: z.enum(['full', 'partial', 'none']).default('full'),
+      reveal: z
+        .literal(false)
+        .or(
+          z.object({
+            start: z.number().int().min(0).max(64).default(4),
+            end: z.number().int().min(0).max(64).default(4),
+          }),
+        )
+        .default(false),
+      promptLoop: z.boolean().default(false),
+    })
+    .default({ redaction: 'full', reveal: false, promptLoop: false }),
   exclude: z
     .array(
       z.object({
@@ -113,9 +129,52 @@ export interface VaultConfig {
   trackDeletions: boolean
   autoRemapPaths: boolean
   allowUnmanaged: boolean
+  restore: {
+    redaction: VaultRestoreRedaction
+    reveal: VaultRestoreReveal | false
+    promptLoop: boolean
+  }
   exclude: Array<{ files: string[]; keys: string[] }>
   sort?: Record<string, { file: string; template: string; files?: Record<string, string> }>
   disableUnsafeWarning: boolean
+}
+
+function resolveRestoreConfig(
+  configured: VaultConfig['restore'],
+  overrides?: {
+    restoreRedaction?: VaultRestoreRedaction
+    restoreReveal?: VaultRestoreReveal | false
+    promptLoop?: boolean
+  },
+): VaultConfig['restore'] {
+  const redaction = overrides?.restoreRedaction ?? configured.redaction
+  if (redaction !== 'full' && redaction !== 'partial' && redaction !== 'none') {
+    throw new EnvLaneError(
+      'VAULT_INVALID_CONFIG',
+      'restoreRedaction must be one of: full, partial, none.',
+    )
+  }
+  const reveal = overrides?.restoreReveal ?? configured.reveal
+  if (
+    reveal !== false &&
+    (!reveal ||
+      !Number.isInteger(reveal.start) ||
+      reveal.start < 0 ||
+      reveal.start > 64 ||
+      !Number.isInteger(reveal.end) ||
+      reveal.end < 0 ||
+      reveal.end > 64)
+  ) {
+    throw new EnvLaneError(
+      'VAULT_INVALID_CONFIG',
+      'restoreReveal start/end must be integers between 0 and 64.',
+    )
+  }
+  const promptLoop = overrides?.promptLoop ?? configured.promptLoop
+  if (typeof promptLoop !== 'boolean') {
+    throw new EnvLaneError('VAULT_INVALID_CONFIG', 'promptLoop must be a boolean.')
+  }
+  return { redaction, reveal, promptLoop }
 }
 
 export function defineVaultConfig(config: z.input<typeof schema>): z.input<typeof schema> {
@@ -134,6 +193,9 @@ async function loadVaultConfigUnchecked(
     vaultConfigFile?: string
     autoRemapPaths?: boolean
     allowUnmanaged?: boolean
+    restoreRedaction?: VaultRestoreRedaction
+    restoreReveal?: VaultRestoreReveal | false
+    promptLoop?: boolean
   },
 ): Promise<VaultConfig> {
   const invocationCwd = resolveInvocationCwd(options?.cwd)
@@ -230,6 +292,7 @@ async function loadVaultConfigUnchecked(
     trackDeletions: parsed.trackDeletions,
     autoRemapPaths: options?.autoRemapPaths ?? parsed.autoRemapPaths,
     allowUnmanaged: options?.allowUnmanaged ?? parsed.allowUnmanaged,
+    restore: resolveRestoreConfig(parsed.restore, options),
     exclude: parsed.exclude.map((rule) => ({
       files: Array.isArray(rule.files) ? rule.files : rule.files ? [rule.files] : [],
       keys: Array.isArray(rule.keys) ? rule.keys : rule.keys ? [rule.keys] : [],
@@ -247,6 +310,9 @@ export async function loadVaultConfig(
     vaultConfigFile?: string
     autoRemapPaths?: boolean
     allowUnmanaged?: boolean
+    restoreRedaction?: VaultRestoreRedaction
+    restoreReveal?: VaultRestoreReveal | false
+    promptLoop?: boolean
   },
 ): Promise<VaultConfig> {
   try {

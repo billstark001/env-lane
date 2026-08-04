@@ -2,6 +2,7 @@ import { emitDiagnostic } from '@env-lane/core'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
 import { parseVaultFailCondition, restorePlanMatchesFailCondition } from '../application/restore.js'
 import type { RestorePlan } from '../domain/types.js'
+import { parseVaultRestoreRedaction, parseVaultRestoreReveal } from './options.js'
 import type { VaultCommandOptions } from './types.js'
 import { warnUnsafeVault } from './warning.js'
 
@@ -11,6 +12,9 @@ export async function emitUnsafeWarning(allOpts: VaultCommandOptions): Promise<V
     vaultConfigFile: allOpts.vaultConfig,
     autoRemapPaths: allOpts.autoRemap,
     allowUnmanaged: allOpts.allowUnmanaged,
+    restoreRedaction: parseVaultRestoreRedaction(allOpts.redaction),
+    restoreReveal: parseVaultRestoreReveal(allOpts.reveal),
+    promptLoop: allOpts.promptLoop,
   })
   warnUnsafeVault({ disableUnsafeWarning: config.disableUnsafeWarning })
   return config

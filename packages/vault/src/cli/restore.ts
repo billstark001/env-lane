@@ -16,6 +16,7 @@ import type { RestoreDecision } from '../domain/types.js'
 import { applyRestoreFailOn, emitPlanDiagnostics, emitUnsafeWarning } from './common.js'
 import {
   addFailOnOption,
+  addRestoreRedactionOption,
   addSelectionOptions,
   assertVaultFormat,
   parseVaultConflictStrategy,
@@ -26,8 +27,10 @@ import { renderRestorePlan } from './render.js'
 import type { VaultCliContext } from './types.js'
 
 function registerVaultPlanCommand(vault: Command, ctx: VaultCliContext): void {
-  addFailOnOption(addSelectionOptions(ctx.addCommonOptions(vault.command('plan <keyFile>'))))
-    .description('Create a redacted, verifiable Vault restore plan.')
+  addRestoreRedactionOption(
+    addFailOnOption(addSelectionOptions(ctx.addCommonOptions(vault.command('plan <keyFile>')))),
+  )
+    .description('Create a verifiable Vault restore plan with configurable preview redaction.')
     .option('--output <file>', 'write an editable approval document')
     .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')
     .option('--vault-config <file>', 'vault configuration file')
@@ -61,13 +64,17 @@ function registerVaultPlanCommand(vault: Command, ctx: VaultCliContext): void {
 }
 
 function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void {
-  addFailOnOption(addSelectionOptions(ctx.addCommonOptions(vault.command('decrypt <keyFile>'))))
-    .option('--dry-run', 'show the redacted plan without writing files')
+  addRestoreRedactionOption(
+    addFailOnOption(addSelectionOptions(ctx.addCommonOptions(vault.command('decrypt <keyFile>')))),
+  )
+    .option('--dry-run', 'show the restore plan without writing files')
     .option('-y, --yes', 'apply the selected entries without confirmation')
     .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')
     .option('--vault-config <file>', 'vault configuration file')
     .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
     .option('--allow-unmanaged', 'allow restoring files not listed in config.envFiles')
+    .option('--prompt-loop', 'wrap interactive selection from the last entry to the first')
+    .option('--no-prompt-loop', 'stop interactive selection at the first and last entries')
     .option('--conflicts <mode>', 'abort, keep-local, or take-vault', 'abort')
     .action(async (keyFile, opts) => {
       const allOpts = ctx.mergeOptions(opts)
@@ -111,7 +118,11 @@ function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void
             'Non-interactive restore requires --yes.',
           )
         }
-        decisions = await promptRestoreDecisions(plan, allOpts)
+        decisions = await promptRestoreDecisions(plan, allOpts, {
+          loop: resolvedConfig.restore.promptLoop,
+          redaction: resolvedConfig.restore.redaction,
+          reveal: resolvedConfig.restore.reveal,
+        })
       }
 
       const result = await applyRestorePlan(allOpts.config, keyFile, plan, {
@@ -138,7 +149,7 @@ function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void
 }
 
 function registerVaultApplyCommand(vault: Command, ctx: VaultCliContext): void {
-  addFailOnOption(ctx.addCommonOptions(vault.command('apply <keyFile>')))
+  addRestoreRedactionOption(addFailOnOption(ctx.addCommonOptions(vault.command('apply <keyFile>'))))
     .requiredOption('--plan <file>', 'approval document created by vault plan --output')
     .requiredOption('-y, --yes', 'apply the approval document')
     .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')

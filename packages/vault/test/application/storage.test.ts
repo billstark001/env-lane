@@ -111,7 +111,7 @@ describe('@env-lane/vault storage', () => {
     expect(plan.files[0]?.entries[0]).toMatchObject({
       key: 'A',
       action: 'modify',
-      preview: { current: '<redacted>', vault: '<redacted>' },
+      preview: { current: 'local', vault: '<redacted>' },
     })
 
     await decryptEnvFiles(path.join(root, 'vault.json'), keyFile, {
@@ -163,6 +163,7 @@ describe('@env-lane/vault storage', () => {
         outputDir: '.vault',
         outputFile: 'store.dat',
         exclude: { '.env': ['SECRET_*'] },
+        restore: { redaction: 'partial', reveal: { start: 4, end: 4 }, promptLoop: false },
       }),
     )
 
@@ -171,6 +172,26 @@ describe('@env-lane/vault storage', () => {
     expect(config.envFiles).toEqual([path.join(root, '.env')])
     expect(config.storePath).toBe(path.join(root, '.vault/store.dat'))
     expect(config.exclude).toEqual([{ files: ['.env'], keys: ['SECRET_*'] }])
+    expect(config.restore).toEqual({
+      redaction: 'partial',
+      reveal: { start: 4, end: 4 },
+      promptLoop: false,
+    })
+  })
+
+  it('rejects unsafe restore reveal override ranges', async () => {
+    const root = testDirectory(`env-lane-vault-reveal-range`)
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    const configPath = path.join(root, 'vault.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+
+    await expect(
+      loadVaultConfig(configPath, { restoreReveal: { start: 65, end: 4 } }),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_CONFIG' })
   })
 
   it('fails closed until excluded historical records are sanitized', async () => {
@@ -332,6 +353,11 @@ describe('@env-lane/vault storage', () => {
 
     const resolvedConfig = await loadVaultConfig(undefined, { cwd: root })
     expect(resolvedConfig.disableUnsafeWarning).toBe(true)
+    expect(resolvedConfig.restore).toEqual({
+      redaction: 'full',
+      reveal: false,
+      promptLoop: false,
+    })
     writeFileSync(
       path.join(root, 'custom-vault.json'),
       JSON.stringify({

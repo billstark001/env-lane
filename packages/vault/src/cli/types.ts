@@ -13,6 +13,9 @@ export interface VaultCommandOptions extends Record<string, unknown> {
   syncDir?: string
   autoRemap?: boolean
   allowUnmanaged?: boolean
+  redaction?: string
+  reveal?: string | boolean
+  promptLoop?: boolean
   conflicts?: string
   failOn?: string
   file?: string
