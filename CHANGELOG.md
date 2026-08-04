@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-04
+
+### Changed
+
+- Treat missing managed dotenv files as empty during Vault encrypt by default, so removing a file
+  produces the same delete tombstones as emptying it. Use `--missing-files skip` or the library
+  `missingFiles: 'skip'` option to retain the previous skip behavior.
+- Select Vault delete entries by default. Use `--no-approve-deletes` or the library
+  `approveDeletes: false` option to opt out.
+- Require `@env-lane/vault ^0.4.2` as the optional CLI peer and validate a runtime CLI API
+  handshake, preventing 0.3.x or earlier 0.4.x Vault adapters from silently running with
+  incompatible command semantics.
+
+### Fixed
+
+- Allowed a resolved missing-file conflict to converge by recording its delete tombstones and sync
+  baseline while leaving the local file absent. Applying deletes continues to preserve existing
+  dotenv files, including when the result is empty.
+- Return `VAULT_VERSION_UNSUPPORTED` when an incompatible optional Vault peer is forced into the
+  install instead of loading its legacy registration API.
+
 ## [0.4.1] - 2026-08-04
 
 ### Added

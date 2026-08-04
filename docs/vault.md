@@ -11,8 +11,11 @@ production secrets.
 ## Install and configure
 
 ~~~bash
-pnpm add -D env-lane @env-lane/vault
+pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
 ~~~
+
+Keep the optional CLI and Vault adapter on a compatible release line. Env-lane 0.4.2 declares
+`@env-lane/vault ^0.4.2` and validates the adapter API at runtime.
 
 The default file is `env-lane.vault`; TypeScript, JavaScript ESM/CJS, and JSON are supported.
 
@@ -184,10 +187,18 @@ Encrypt, plan, and decrypt support:
 - `--include <glob>`: match a `file:key` pair.
 - `--exclude <glob>`: exclude a `file:key` pair.
 - `--only add,modify,delete,conflict`: select action kinds.
-- `--approve-deletes`: permit default delete selection.
+- `--approve-deletes`: select delete entries; this is the default.
+- `--no-approve-deletes`: skip delete entries by default.
 
-Deletes are skipped by default. An approval document can opt in per entry with an explicit
-`apply-vault` decision.
+Encrypt treats a missing managed dotenv file as empty by default. This produces the same delete
+candidates as an existing empty file and never deletes or creates the local file. Pass
+`--missing-files skip` to preserve the previous behavior for a particular encrypt operation.
+Applying delete records removes matching variable lines but preserves the dotenv file itself, even
+when it becomes empty.
+
+Approval documents select deletes by default and can still use an explicit `skip` decision per
+entry. CLI and library callers can opt out globally with `--no-approve-deletes` or
+`approveDeletes: false`.
 
 `--fail-on conflict|change|warning` evaluates only the selected plan/final decisions and returns
 status 2 when matched.

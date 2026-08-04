@@ -67,15 +67,24 @@ are always preserved. `restore.promptLoop` controls wrapping in the interactive
 selection list and defaults to `false`. Selection rows show current and Vault previews inline, use
 a shared key-column width and responsive ten-line page, and accept `Esc` or `q` to cancel. The CLI
 supports one-off `--redaction`, `--reveal <start:end>`/`--no-reveal`, and
-`--prompt-loop`/`--no-prompt-loop` overrides. Deletes are skipped unless explicitly approved. Core
-and Vault library APIs never access terminal streams; diagnostics require an explicit Core context,
-and conflict decisions come from options or callbacks.
+`--prompt-loop`/`--no-prompt-loop` overrides. Deletes are selected by default; use
+`--no-approve-deletes` or `approveDeletes: false` to opt out. Encrypt treats missing managed files
+as empty by default and writes delete tombstones without creating or removing the local file; use
+`--missing-files skip` or `missingFiles: 'skip'` for the former skip behavior. Core and Vault
+library APIs never access terminal streams; diagnostics require an explicit Core context, and
+conflict decisions come from options or callbacks.
 `dryRun: true` reports the records and changes a push would produce without taking a write lock or
 creating/updating the store, sync state, or output directories.
 
 ## CLI
 
-Install `env-lane` alongside this package:
+Install a matching `env-lane` release alongside this package:
+
+~~~bash
+pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
+~~~
+
+Then use the Vault commands:
 
 ~~~bash
 env-lane vault encrypt key.aes

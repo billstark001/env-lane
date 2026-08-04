@@ -30,7 +30,7 @@ pnpm add -D @env-lane/core
 Install Vault only when its library or CLI commands are needed:
 
 ~~~bash
-pnpm add -D @env-lane/vault
+pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
 ~~~
 
 ## Quick start
@@ -150,10 +150,12 @@ partial mode also masks JWT/PASETO and opaque high-entropy URL components. Optio
 Values shorter than eight characters remain visible in every redaction mode.
 `restore.promptLoop` controls wrapping in the manual selection list and defaults to off. Selection
 rows show current and Vault previews inline, use a responsive ten-line page, and accept `Esc` or `q`
-to cancel. Deletes are not selected by default. Schema v1 stores config-relative portable paths,
-so a store can move between Windows and POSIX checkouts without retaining the producer's absolute
-path. See the [Vault guide](docs/vault.md) for exclude rules, sync state, selection, conflict
-handling, history maintenance, and safety boundaries.
+to cancel. Deletes are selected by default. Encrypt treats a missing managed file as empty and
+records delete tombstones without creating or removing that file; both behaviors have explicit
+opt-outs. Schema v1 stores config-relative portable paths, so a store can move between Windows and
+POSIX checkouts without retaining the producer's absolute path. See the [Vault guide](docs/vault.md)
+for exclude rules, sync state, selection, conflict handling, history maintenance, and safety
+boundaries.
 
 ## Documentation
 

@@ -75,6 +75,10 @@ The optional Commander adapter has a stable dedicated entry:
 import { registerVaultCommands } from '@env-lane/vault/cli';
 ~~~
 
+`env-lane` and its optional Vault adapter must share a compatible CLI contract. Version 0.4.2
+requires `@env-lane/vault ^0.4.2` and validates `VAULT_CLI_API_VERSION` before registering Vault
+commands. A forced incompatible peer fails with `VAULT_VERSION_UNSUPPORTED`.
+
 Library APIs are terminal-independent. Put diagnostics behind an explicit async context:
 
 ~~~ts
@@ -117,8 +121,6 @@ compatibility work is limited and explicit:
 
 1. Remove the deprecated Core root exports listed above.
 2. Remove Vault-root CLI and crypto compatibility exports.
-3. Remove the CLI fallback that loads `registerVaultCommands` from the old Vault root.
-4. Drop `@env-lane/vault` 0.3 from the optional peer range once the fallback is removed.
 
 Before that release, search consumer code for:
 

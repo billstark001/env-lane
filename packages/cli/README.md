@@ -38,9 +38,9 @@ and deployment scripts. This convenience facade remains stable. Feature entry po
 `@env-lane/core/env-document` are available only from their owning package.
 
 Vault commands are optional and require installing `@env-lane/vault` alongside `env-lane`.
-The CLI loads their adapter from `@env-lane/vault/cli`. Version 0.4 still falls back to the legacy
-Vault-root registration export for Vault 0.3; that fallback and the 0.3 peer range are planned for
-removal in the next intentionally breaking release.
+The CLI loads their adapter from `@env-lane/vault/cli`. Env-lane 0.4.2 requires
+`@env-lane/vault ^0.4.2` and validates the adapter API at runtime; forced incompatible peers fail
+with `VAULT_VERSION_UNSUPPORTED` rather than loading legacy command behavior.
 
 Configured `cli.aliases` were introduced in 0.3.0 and removed in 0.4.0. Use package scripts for
 command macros.

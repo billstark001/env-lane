@@ -99,8 +99,11 @@ A missing template is always an error.
 Vault commands require `@env-lane/vault`:
 
 ~~~bash
-pnpm add -D @env-lane/vault
+pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
 ~~~
+
+The CLI and Vault adapter must use a compatible release line. Env-lane 0.4.2 requires
+`@env-lane/vault ^0.4.2` and reports `VAULT_VERSION_UNSUPPORTED` for a forced incompatible peer.
 
 | Command | Purpose |
 | --- | --- |
@@ -112,8 +115,12 @@ pnpm add -D @env-lane/vault
 | `vault prune <keyFile>` | Compact selected history. |
 
 Selection options on encrypt, plan, and decrypt include `--file`, `--key`, `--include`,
-`--exclude`, `--only`, and `--approve-deletes`. Conflict policy is one of `abort`,
-`keep-local`, or `take-vault`.
+`--exclude`, `--only`, `--approve-deletes`, and `--no-approve-deletes`. Deletes are selected by
+default. Conflict policy is one of `abort`, `keep-local`, or `take-vault`.
+
+Vault encrypt treats a missing managed dotenv file as empty by default: active Vault entries for
+that file become delete candidates, while env-lane leaves the local file absent. Pass
+`--missing-files skip` to retain the Vault entries and skip the missing file instead.
 
 `vault plan`, `vault decrypt`, and `vault apply` accept `--redaction full|partial|none` and
 `--reveal <start:end>` as one-off overrides of `restore.redaction` and `restore.reveal`.
@@ -131,8 +138,7 @@ For unattended restore, make every policy explicit:
 env-lane vault decrypt key.aes \
   --yes \
   --non-interactive \
-  --conflicts take-vault \
-  --approve-deletes
+  --conflicts take-vault
 ~~~
 
 `--fail-on conflict|change|warning` returns status 2 when the selected result matches the

@@ -137,7 +137,9 @@ Vault apply is fail closed. Before writing, it binds:
 3. the complete canonical entry set;
 4. exactly one decision for every non-identical entry.
 
-Deletes default to skipped. Only applied or identical entries advance the sync baseline.
+Deletes default to selected. An explicit opt-out leaves them skipped. Only applied or identical
+entries advance the sync baseline. Encrypt treats missing managed files as empty by default and
+records tombstones without creating or removing the local file.
 `--fail-on` uses the selected plan and final decisions, never editable approval summaries.
 
 Plans and diagnostics must not contain plaintext dotenv values.
