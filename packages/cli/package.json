@@ -1,6 +1,6 @@
 {
   "name": "env-lane",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "CLI for env-lane dotenv injection and optional development vault helpers.",
   "license": "MIT",
@@ -63,7 +63,7 @@
     "@env-lane/vault": "workspace:*"
   },
   "peerDependencies": {
-    "@env-lane/vault": "^0.3.0"
+    "@env-lane/vault": "^0.3.0 || ^0.4.0"
   },
   "peerDependenciesMeta": {
     "@env-lane/vault": {

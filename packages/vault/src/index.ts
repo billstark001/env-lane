@@ -36,18 +36,19 @@ export type {
 export { VAULT_UNSAFE_WARNING, warnUnsafeVault } from './cli/warning.js'
 
 /**
- * Compatibility root export for the optional CLI adapter. New consumers should import it from
- * `@env-lane/vault/cli`.
+ * Breaking-release compatibility bridge for the optional CLI adapter at the package root.
  *
- * @deprecated Import from `@env-lane/vault/cli` instead.
+ * @deprecated Since 0.4.0. Import from `@env-lane/vault/cli` instead. This root re-export is
+ * planned for removal in the next intentionally breaking release.
  */
 export { type VaultCliContext, registerVaultCommands } from './cli/index.js'
 
 /**
- * Compatibility exports for cryptographic implementation details. They remain available during
- * the boundary migration but are not part of the stable Vault automation API.
+ * Breaking-release compatibility bridge for cryptographic implementation details. These functions
+ * are not a supported record-format or key-management API.
  *
- * @deprecated Not part of the stable root API.
+ * @deprecated Since 0.4.0. Planned for removal in the next intentionally breaking release;
+ * not part of the stable Vault automation API.
  */
 export {
   decryptRecord,

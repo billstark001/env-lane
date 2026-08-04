@@ -64,10 +64,11 @@ export {
 } from './domain/variants.js'
 
 /**
- * Compatibility exports for configuration internals. These remain available during the
- * boundary migration, but new consumers should use the stable configuration API above.
+ * Breaking-release compatibility bridge for configuration internals. These remain in 0.4.x,
+ * but new consumers should use `defineConfig` and `loadEnvLaneConfig` instead.
  *
- * @deprecated Not part of the stable root API.
+ * @deprecated Since 0.4.0. Planned for removal in the next intentionally breaking release;
+ * not part of the stable root API.
  */
 export {
   type LoadConfigOptionsWithC12,
@@ -77,17 +78,18 @@ export {
 } from './adapters/config.js'
 
 /**
- * Compatibility exports for resolved-input helpers.
+ * Breaking-release compatibility bridge for resolved-input helpers.
  *
- * @deprecated Not part of the stable root API.
+ * @deprecated Since 0.4.0. Planned for removal in the next intentionally breaking release;
+ * use `listEnvFiles` and pass the build through public options instead.
  */
 export { listEnvFilesForTarget, resolveBuildName } from './application/dotenv.js'
 
 /**
- * Compatibility root exports for the dotenv document feature. New consumers should import
- * these symbols from `@env-lane/core/env-document`.
+ * Breaking-release compatibility bridge for the dotenv document feature at the package root.
  *
- * @deprecated Import from `@env-lane/core/env-document` instead.
+ * @deprecated Since 0.4.0. Import from `@env-lane/core/env-document` instead. These root
+ * re-exports are planned for removal in the next intentionally breaking release.
  */
 export {
   type EnvDocumentPatch,
@@ -112,17 +114,19 @@ export {
 } from './env-document.js'
 
 /**
- * Compatibility export for the current Node file adapter.
+ * Breaking-release compatibility bridge for the current Node file adapter.
  *
- * @deprecated Not part of the stable root API.
+ * @deprecated Since 0.4.0. Planned for removal in the next intentionally breaking release;
+ * not part of the stable root API.
  */
 export { writeFileContentAtomically } from './adapters/file-utils.js'
 
 /**
- * Compatibility exports for the current sort planner. File-oriented sorting remains available
- * through `sortEnvFile` and `sortEnvFilesFromConfig`.
+ * Breaking-release compatibility bridge for the current sort planner. File-oriented sorting
+ * remains available through `sortEnvFile` and `sortEnvFilesFromConfig`.
  *
- * @deprecated Not part of the stable root API.
+ * @deprecated Since 0.4.0. Planned for removal in the next intentionally breaking release;
+ * use the file-oriented sorting APIs for stable automation.
  */
 export {
   type EnvSortPlan,
@@ -131,9 +135,10 @@ export {
 } from './application/sort.js'
 
 /**
- * Compatibility exports for workspace orchestration internals.
+ * Breaking-release compatibility bridge for workspace orchestration internals.
  *
- * @deprecated Not part of the stable root API.
+ * @deprecated Since 0.4.0. Planned for removal in the next intentionally breaking release;
+ * use `listWorkspacePackages` and `resolveTargetPackage` instead.
  */
 export {
   listWorkspacePackagesForConfig,

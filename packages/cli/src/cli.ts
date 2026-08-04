@@ -31,7 +31,8 @@ async function loadVaultCliModule(): Promise<VaultCliModule | undefined> {
       'code' in error &&
       (error as { code?: unknown }).code === 'ERR_PACKAGE_PATH_NOT_EXPORTED'
     ) {
-      // Compatibility with Vault releases that predate the dedicated CLI subpath.
+      // Breaking-release compatibility bridge: remove this fallback together with support for
+      // Vault releases that predate the dedicated `@env-lane/vault/cli` entry point.
       return import('@env-lane/vault')
     }
     if (

@@ -5,6 +5,7 @@ export interface EnvSortTargetConfig {
   file?: string
   template?: string
   files?: Record<string, string>
+  /** Create a missing target env file from an existing template. Defaults to true. */
   create?: boolean
   /** Comment shown before variables that are not present in the template. Defaults to empty. */
   unlistedVariablesComment?: string

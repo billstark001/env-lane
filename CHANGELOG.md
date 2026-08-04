@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-08-04
+
+### Added
+
+- Added the stable `@env-lane/core/env-document` feature entry point and the optional
+  `@env-lane/vault/cli` adapter entry point for both ESM and CommonJS consumers.
+- Added redacted, digest-bound Vault restore plans, editable approval documents, partial entry
+  selection, delete approval, and `--fail-on conflict|change|warning` automation contracts.
+- Added stable public CLI error codes, structured error details, default secret redaction, and
+  build-time tests against the published ESM, CommonJS, declaration, and real CLI entry points.
+- Added operation-level Vault locking around store, sync-state, and dotenv transactions while
+  retaining atomic file replacement and rewrite digest checks.
+
+### Changed
+
+- Curated the three package export boundaries around stable use cases and feature entry points.
+- Organized production code and tests into coarse-grained `domain`, `application`, `adapters`,
+  and `presentation`/`cli` layers without increasing the number of implementation or test files.
+- Made Core and Vault library APIs terminal-independent; CLI payloads use stdout while diagnostics,
+  warnings, and prompts use stderr.
+- Split the repository documentation into focused CLI, configuration, Vault, API, architecture,
+  and contributor guides.
+
+### Fixed
+
+- Bound Vault approval decisions to the complete, freshly recomputed restore plan so entries cannot
+  be omitted by editing both a plan entry and its decision.
+- Resolved Vault configuration, store, and sync paths consistently from `--cwd`.
+- Prevented concurrent Vault operations from losing store updates or interleaving sync-state and
+  dotenv commits.
+- Redacted secret-like values in JSON output unless `--show-secrets` is explicit.
+- Corrected `--fail-on` to evaluate the selected plan and final decisions rather than editable
+  approval summaries or unselected changes.
+
+### Deprecated
+
+- Deprecated Core configuration internals, resolved-input helpers, the Node file adapter, sort
+  planner internals, and workspace orchestration internals from the package root.
+- Deprecated env-document symbols from the Core package root; import them from
+  `@env-lane/core/env-document` instead.
+- Deprecated `registerVaultCommands` from the Vault package root; import it from
+  `@env-lane/vault/cli` instead.
+- Deprecated Vault cryptographic implementation helpers from the package root. These compatibility
+  exports remain in 0.4.x and are planned for removal in the next intentionally breaking release.
+
+### Removed
+
+- Removed `cli.aliases` and configured command alias expansion. The 0.3.0 release introduced this
+  feature; 0.4.0 is the release that formally removes it. Built-in `env-files` and `env-json`
+  aliases are unchanged.
+
+---
+
 ## [0.3.0]
 
 ### Added
@@ -17,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added matching patterns for common developer credentials (e.g. GitHub PATs, Slack/Stripe/Claude keys) and query-embedded URL credentials.
 - Added `dotenv` options: `eol` ('auto', 'lf', 'crlf') and `preserveBOM` (boolean) to control how environment files are written.
 - Added `output.prefix` configuration and a global `--no-prefix` CLI option to toggle console log prefixes.
-- Added target sort option `create` (boolean) to allow creating sorting files or templates if they are missing.
+- Added target sort option `create` (boolean) to allow creating missing target env files from an
+  existing template.
 - Added CLI command aliases via the `cli.aliases` configuration.
 - Added `--vault-config <file>`, `--no-auto-remap` (`autoRemapPaths`), and `--allow-unmanaged` (`allowUnmanaged`) configuration options and flags to the vault module.
 
@@ -52,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed the configured env sync command from `sync-env` to `sync`.
 - Generalized `localBuildName` / `localOverrideFile` so local override mapping applies to any dotenv order pattern containing `{build}`.
 - Standardized env file writes through the shared env document writer while preserving vault restore layout compatibility.
-- Documented the intentional parser split: runtime dotenv injection and selector checks use `dotenv.parse()`, while editing workflows use the structured env document parser/writer.
+- Unified runtime and editing workflows on the shared line-level env document model while retaining
+  `dotenv`-compatible effective values.
 
 ### Fixed
 

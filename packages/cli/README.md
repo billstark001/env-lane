@@ -14,17 +14,22 @@ env-lane run api --build production -- pnpm start
 env-lane check --target api --build production --require-override
 env-lane check --policy deploy --build production
 env-lane sync webFromApi --build production --dry-run
-env-lane sort env-lane.config.ts api production
+env-lane sort api production --config env-lane.config.ts
 ```
 
 Final command payloads use stdout; diagnostics use stderr. `--json` emits one JSON document on stdout. The `run` command accepts text only because its child owns stdout. Use `--non-interactive` together with explicit approval and conflict policies for agents and CI.
 
 The package intentionally re-exports the stable `@env-lane/core` root API for configuration files
-and deployment scripts. Feature entry points such as `@env-lane/core/env-document` are available
-only from their owning package.
+and deployment scripts. This convenience facade remains stable. Feature entry points such as
+`@env-lane/core/env-document` are available only from their owning package.
 
 Vault commands are optional and require installing `@env-lane/vault` alongside `env-lane`.
-The CLI loads their adapter from `@env-lane/vault/cli`; the legacy Vault-root registration export
-remains available only for compatibility.
+The CLI loads their adapter from `@env-lane/vault/cli`. Version 0.4 still falls back to the legacy
+Vault-root registration export for Vault 0.3; that fallback and the 0.3 peer range are planned for
+removal in the next intentionally breaking release.
 
-See the full documentation at https://github.com/billstark001/env-lane#readme.
+Configured `cli.aliases` were introduced in 0.3.0 and removed in 0.4.0. Use package scripts for
+command macros.
+
+See the [CLI reference](https://github.com/billstark001/env-lane/blob/main/docs/cli.md) and
+[API compatibility guide](https://github.com/billstark001/env-lane/blob/main/docs/api.md).

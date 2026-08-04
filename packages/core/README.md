@@ -1,13 +1,20 @@
 # @env-lane/core
 
-Core APIs for `env-lane`: config loading, pnpm workspace package discovery, target resolution, dotenv injection order, final environment resolution, selector checks, env policy checks, env sync, command execution, redaction, shared env document editing, and env-file sorting.
+Core APIs for `env-lane`: config loading, pnpm workspace discovery, dotenv resolution, policies,
+redaction, command execution, shared env-document editing, and env-file sorting.
 
 ```bash
 pnpm add -D @env-lane/core
 ```
 
 ```ts
-import { listEnvFiles, resolveInjectedEnv, runEnvCheck, runEnvSync, sortEnvFilesFromConfig } from '@env-lane/core';
+import {
+  listEnvFiles,
+  resolveInjectedEnv,
+  runEnvCheck,
+  runEnvSync,
+  sortEnvFilesFromConfig
+} from '@env-lane/core';
 
 const files = await listEnvFiles({ target: 'api', build: 'production' });
 const env = await resolveInjectedEnv({ target: 'api', build: 'production' });
@@ -18,8 +25,9 @@ await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 
 Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
-The stable package root contains configuration and high-level use cases. Import the lower-level
-dotenv document feature through its dedicated entry point:
+The stable package root contains configuration and high-level use cases. Deployment scripts may
+also access this curated root through the `env-lane` convenience facade. Import the lower-level
+dotenv document feature through its owning package:
 
 ```ts
 import {
@@ -29,8 +37,10 @@ import {
 } from '@env-lane/core/env-document';
 ```
 
-The same document symbols remain available from the package root during the compatibility period,
-but new code should use the feature entry point so internal Core restructuring does not affect it.
+The same document symbols remain at the Core root in 0.4.x as deprecated compatibility exports.
+They are planned for removal in the next intentionally breaking release. Config adapter internals,
+resolved-input helpers, the Node file adapter, sort planner internals, and workspace orchestration
+internals exported from the root are deprecated on the same schedule.
 
 Core and Vault APIs are silent unless called inside an explicit async context. Diagnostics are emitted through the context logger and are not mixed into operation results:
 
@@ -43,4 +53,8 @@ await withEnvLaneContext(
 );
 ```
 
-See the full documentation at https://github.com/billstark001/env-lane#readme.
+Documentation:
+
+- [Configuration](https://github.com/billstark001/env-lane/blob/main/docs/config.md)
+- [API and compatibility](https://github.com/billstark001/env-lane/blob/main/docs/api.md)
+- [Architecture](https://github.com/billstark001/env-lane/blob/main/docs/architecture.md)

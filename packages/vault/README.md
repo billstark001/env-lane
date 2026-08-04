@@ -2,75 +2,95 @@
 
 Development-only reversible encrypted dotenv record storage for `env-lane`.
 
-```bash
+~~~bash
 pnpm add -D @env-lane/vault
-```
+~~~
 
-This package is intentionally unsafe for production secret management. Prefer CI/CD Secrets, cloud KMS, HashiCorp Vault, SOPS, age, or a platform Secret Manager for production secrets.
+This package is intentionally unsafe for production secret management. Encryption does not make a
+Vault store or key file safe to publish and cannot prevent Git, backups, cloud-sync clients, logs,
+or other tools from copying local files. Prefer a platform Secret Manager, KMS, SOPS, age, or
+HashiCorp Vault for production secrets.
 
-Encryption does not make the Vault store or key file safe to publish. Env-lane cannot prevent Git, cloud-sync clients, backups, logs, or other tools from uploading local files.
+## Library
 
-Vault schema version 1 records store dotenv effective values. Records without a version, or with version 0, are treated as the earlier raw-value format and converted through the shared dotenv AST when loaded. New records always use version 1.
-
-```ts
+~~~ts
 import {
+  applyRestorePlan,
   buildRestorePlan,
-  decryptEnvFiles,
   encryptEnvFiles,
   loadVaultConfig,
   pruneVaultHistory,
-  sanitizeVaultHistory,
+  sanitizeVaultHistory
 } from '@env-lane/vault';
 
-await encryptEnvFiles('env-lane.vault.json', 'key.aes');
-await buildRestorePlan('env-lane.vault.json', 'key.aes');
-await decryptEnvFiles('env-lane.vault.json', 'key.aes', { dryRun: true });
-await pruneVaultHistory('env-lane.vault.json', 'key.aes', { keepRecent: 3, dryRun: true });
-await sanitizeVaultHistory('env-lane.vault.json', 'key.aes', { excluded: true, dryRun: true });
-await loadVaultConfig('env-lane.vault.ts');
-```
+await encryptEnvFiles(undefined, 'key.aes', {
+  vaultConfigFile: 'env-lane.vault.ts'
+});
 
-Vault config files can be TypeScript, JavaScript ESM, JavaScript CJS, or JSON.
+const plan = await buildRestorePlan(undefined, 'key.aes', {
+  vaultConfigFile: 'env-lane.vault.ts'
+});
 
-## Local-only exclude rules
+await applyRestorePlan(undefined, 'key.aes', plan, {
+  autoApprove: true,
+  decisions: plan.files.flatMap(file =>
+    file.entries
+      .filter(entry => entry.action !== 'identical')
+      .map(entry => ({
+        entryId: entry.entryId,
+        decision: entry.action === 'delete' ? 'skip' : 'apply-vault'
+      }))
+  )
+});
 
-`exclude` means that matching values are local-only: Vault never persists, restores, syncs, deletes, or previews them. This is only an env-lane Vault boundary and cannot prevent Git or other software from uploading the original dotenv files.
+await pruneVaultHistory(undefined, 'key.aes', {
+  keepRecent: 3,
+  dryRun: true
+});
+await sanitizeVaultHistory(undefined, 'key.aes', {
+  excluded: true,
+  dryRun: true
+});
+await loadVaultConfig(undefined, {
+  vaultConfigFile: 'env-lane.vault.ts'
+});
+~~~
 
-If matching records already exist in Vault history, normal commands fail closed. Inspect and atomically remove all of them before continuing:
+Plans contain redacted previews and are bound to current store and dotenv state. Deletes are skipped
+unless explicitly approved. Core and Vault library APIs never access terminal streams; diagnostics
+require an explicit Core context, and conflict decisions come from options or callbacks.
 
-```bash
-env-lane vault sanitize key.aes --vault-config env-lane.vault.json --excluded --dry-run
-env-lane vault sanitize key.aes --vault-config env-lane.vault.json --excluded --yes
-```
+## CLI
 
-Rotate previously stored secrets because sanitizing local Vault history cannot remove copies held elsewhere.
+Install `env-lane` alongside this package:
 
-## Optional sync state
+~~~bash
+env-lane vault encrypt key.aes
+env-lane vault plan key.aes --output restore-plan.json --json
+env-lane vault apply key.aes --plan restore-plan.json --yes --non-interactive
+env-lane vault prune key.aes --keep-recent 3 --dry-run
+~~~
 
-Vault sync conflict detection does not change the encrypted Vault record format. Passing `syncDir` or `--sync-dir` explicitly consents to creation of additional local state in that directory; it is never created implicitly. `vault-sync-state.json` contains variable names, relative paths, timestamps, and HMAC-SHA256 value fingerprints keyed with a key derived from the Vault key. It does not copy dotenv files or contain plaintext values, and excluded variables are omitted.
+The CLI loads its adapter from `@env-lane/vault/cli`.
 
-```bash
-env-lane vault encrypt key.aes --vault-config env-lane.vault.json --sync-dir .env-lane-sync
-env-lane vault plan key.aes --vault-config env-lane.vault.json --sync-dir .env-lane-sync
-env-lane vault decrypt key.aes --vault-config env-lane.vault.json --sync-dir .env-lane-sync --conflicts ask
-```
+~~~ts
+import { registerVaultCommands } from '@env-lane/vault/cli';
+~~~
 
-Sync state schema v1 uses keyed fingerprints. Existing unkeyed sync state is treated as version 0 and safely rebased. A differing first sync is an unbased conflict; file mtimes are never used to guess a winner.
+The Vault-root `registerVaultCommands` export is deprecated in 0.4.0 and is planned for removal in
+the next intentionally breaking release. Vault-root cryptographic helpers are implementation
+details deprecated on the same schedule.
 
-Use `--conflicts abort` (the default), `keep-local`, `take-vault`, or the explicitly interactive `ask`. The preferred source has the same name in every command.
+## Safety model
 
-Without `--sync-dir`, schema v1 has no causal baseline: encrypt uses local values as its source and decrypt uses Vault as its source, but reliable conflict detection is intentionally unsupported. Store, sync-state, and dotenv writes use atomic replacement.
+- Schema v1 records store dotenv effective values; versionless/v0 records remain readable.
+- `exclude` is a fail-closed local-only boundary; sanitize old matching history before continuing.
+- Optional `syncDir` uses keyed fingerprints for three-way conflict detection.
+- Restore plans bind digest, complete entry set, and explicit decisions before apply.
+- Operations on the same store are serialized and individual files use atomic replacement.
+- Multi-file writes are not a crash-atomic database transaction; rerun plan after interruption.
 
-## History pruning
+Full documentation:
 
-Vault history can be compacted without changing the record format:
-
-```bash
-env-lane vault prune key.aes --vault-config env-lane.vault.json --keep-recent 3 --dry-run
-env-lane vault prune key.aes --vault-config env-lane.vault.json --older-than-days 30 --yes
-env-lane vault prune key.aes --vault-config env-lane.vault.json --file apps/api/.env.local --key API_TOKEN --keep-recent 2 --yes
-```
-
-By default, pruning keeps the latest record for every file/key pair so the current restore result remains available.
-
-See the full documentation at https://github.com/billstark001/env-lane#readme.
+- [Vault workflows and configuration](https://github.com/billstark001/env-lane/blob/main/docs/vault.md)
+- [API and compatibility](https://github.com/billstark001/env-lane/blob/main/docs/api.md)
