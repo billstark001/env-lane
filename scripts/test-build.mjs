@@ -36,8 +36,12 @@ for (const packageName of packages) {
 
 for (const format of ['esm', 'cjs']) {
   assertExports(`@env-lane/core (${format})`, builtModules.get(`core:index:${format}`), [
+    'DEFAULT_MIN_REDACTION_LENGTH',
     'checkDotenvSelector',
     'defineConfig',
+    'isHighEntropyString',
+    'isJwt',
+    'isPaseto',
     'listEnvFiles',
     'listWorkspacePackages',
     'resolveInjectedEnv',
@@ -103,6 +107,16 @@ assertExports(
 
 const cliPath = path.join(rootDir, 'packages', 'cli', 'dist', 'cli.js')
 accessSync(cliPath)
+
+const defaultHelp = spawnSync(process.execPath, [cliPath], { encoding: 'utf8' })
+if (
+  defaultHelp.status !== 0 ||
+  !defaultHelp.stdout.startsWith('Usage: env-lane [options] [command]') ||
+  !defaultHelp.stdout.includes('Commands:') ||
+  defaultHelp.stderr !== ''
+) {
+  throw new Error('Invoking the built CLI without arguments must print help and exit successfully.')
+}
 
 const jsonError = spawnSync(
   process.execPath,
