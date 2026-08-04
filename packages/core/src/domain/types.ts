@@ -128,6 +128,7 @@ export interface ResolvedEnvLaneConfig {
   }
   vault: Required<NonNullable<EnvLaneConfig['vault']>>
   output: Required<NonNullable<EnvLaneConfig['output']>> & { prefix: boolean }
+  /** Configured baseDir values are absolute after loading. */
   sort?: Record<string, EnvSortTargetConfig>
   checks?: Record<string, EnvCheckConfig>
   sync?: Record<string, EnvSyncConfig>

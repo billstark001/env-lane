@@ -1,3 +1,4 @@
+import path from 'node:path'
 import {
   type DiagnosticLogger,
   EnvLaneError,
@@ -20,7 +21,7 @@ export interface CliStreams {
 export interface CliOptionValues extends Record<string, unknown> {
   config?: string
   build?: string
-  cwd?: string
+  cwd: string
   format?: string
   json?: boolean
   nonInteractive?: boolean
@@ -81,7 +82,7 @@ export function createCliContext(
       return command
         .option('-c, --config <file>', 'env-lane config file')
         .option('-b, --build <name>', 'build selector value')
-        .option('--cwd <dir>', 'working directory')
+        .option('--cwd <dir>', 'base directory for config discovery and relative CLI paths')
         .option('--format <format>', 'output format (text, json, dotenv)')
         .option('--json', 'use json output format (shorthand for --format json)')
         .option('--non-interactive', 'disable prompts and require every decision explicitly')
@@ -114,7 +115,10 @@ export function createCliContext(
         ...Object.fromEntries(Object.entries(opts).filter(([, value]) => value !== undefined)),
       }
       if (rootOptions.prefix === false) merged.prefix = false
-      return merged
+      return {
+        ...merged,
+        cwd: path.resolve(typeof merged.cwd === 'string' ? merged.cwd : process.cwd()),
+      }
     },
     output,
     renderError(error, json) {

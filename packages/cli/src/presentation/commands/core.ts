@@ -292,7 +292,11 @@ function registerRunCommand(program: Command, ctx: CliContext): void {
         .passThroughOptions(),
     )
     .description('Run a command with injected dotenv environment.')
-    .option('--run-cwd <target|root|path>', 'command working directory', 'target')
+    .option(
+      '--run-cwd <target|root|path>',
+      'command working directory; relative paths resolve from --cwd',
+      'target',
+    )
     .option('--quiet', 'suppress run summary')
     .action(async (target, command, opts) => {
       const allOpts = ctx.mergeOptions(opts)

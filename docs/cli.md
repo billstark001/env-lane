@@ -14,7 +14,7 @@ Global options may be placed before or after a subcommand:
 | --- | --- |
 | `-c, --config <file>` | Main env-lane config file. |
 | `-b, --build <name>` | Build selector value. |
-| `--cwd <dir>` | Directory from which configs and relative paths are resolved. |
+| `--cwd <dir>` | Base directory for config discovery and relative CLI path arguments. |
 | `--format <text|json|dotenv>` | Output format. Dotenv is supported only by `print`. |
 | `--json` | Shorthand for `--format json`. |
 | `--non-interactive` | Disable prompts and require explicit decisions. |
@@ -54,7 +54,8 @@ env-lane sync webFromApi --build production --dry-run --json
 
 `run` accepts text output only because the child process owns stdout. Options after the child
 boundary are passed through unchanged, including names such as `--json`, `--config`, and
-`--format`.
+`--format`. A path passed to `--run-cwd` is resolved from `--cwd`; `target` and `root` select the
+resolved package directory and workspace root respectively.
 
 `check` requires exactly one of `--target` or `--policy`.
 
@@ -78,6 +79,10 @@ env-lane sort api production --config env-lane.config.ts
 The config path is an option, not a positional argument. `key` defaults to `all`, and
 `envSuffix` defaults to `all`. Both commands support `--eol <auto|lf|crlf>` and
 `--no-preserve-bom`.
+
+For `sort-file`, relative env and template arguments are resolved from `--cwd`. For `sort`,
+default config discovery starts from `--cwd`, and an explicit relative `--config` path is also
+resolved from `--cwd`. Paths declared inside the sort config follow the configuration rules below.
 
 When `sort.create` is true, a missing target env file may be created from an existing template.
 A missing template is always an error.

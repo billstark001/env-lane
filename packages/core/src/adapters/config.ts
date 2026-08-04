@@ -6,6 +6,13 @@ import YAML from 'yaml'
 import { z } from 'zod'
 import { EnvLaneError } from '../domain/errors.js'
 import type { EnvLaneConfig, ResolvedEnvLaneConfig } from '../domain/types.js'
+import {
+  type AbsolutePath,
+  absoluteDirname,
+  assertAbsolutePath,
+  resolveFromDirectory,
+  resolveInvocationCwd,
+} from './paths.js'
 
 const sortTargetSchema = z.object({
   baseDir: z.string().min(1).optional(),
@@ -139,18 +146,23 @@ export function defineConfig(config: EnvLaneConfig): EnvLaneConfig {
   return config
 }
 
-export async function findWorkspaceRoot(cwd = process.cwd()): Promise<string> {
+export async function findWorkspaceRoot(cwd?: string): Promise<AbsolutePath> {
+  const invocationCwd = resolveInvocationCwd(cwd)
   const marker = await findUp(['pnpm-workspace.yaml', 'package.json', '.git'], {
-    cwd,
+    cwd: invocationCwd,
     type: 'file',
   })
-  if (!marker) return path.resolve(cwd)
-  if (path.basename(marker) === '.git') return path.dirname(marker)
+  if (!marker) return invocationCwd
+  assertAbsolutePath(marker, 'Workspace marker')
+  if (path.basename(marker) === '.git') return absoluteDirname(marker)
   if (path.basename(marker) === 'package.json') {
-    const pnpm = await findUp('pnpm-workspace.yaml', { cwd: path.dirname(marker), type: 'file' })
-    return pnpm ? path.dirname(pnpm) : path.dirname(marker)
+    const markerDir = absoluteDirname(marker)
+    const pnpm = await findUp('pnpm-workspace.yaml', { cwd: markerDir, type: 'file' })
+    if (!pnpm) return markerDir
+    assertAbsolutePath(pnpm, 'pnpm workspace file')
+    return absoluteDirname(pnpm)
   }
-  return path.dirname(marker)
+  return absoluteDirname(marker)
 }
 
 export function readPnpmWorkspaceGlobs(rootDir: string): string[] {
@@ -172,9 +184,10 @@ export interface LoadConfigOptionsWithC12 {
 export async function loadConfigWithC12<T extends object>(
   options: LoadConfigOptionsWithC12,
 ): Promise<{ config: T; configFile?: string; rootDir: string }> {
-  const rootDir = await findWorkspaceRoot(options.cwd)
+  const resolutionCwd = resolveInvocationCwd(options.cwd)
+  const rootDir = await findWorkspaceRoot(resolutionCwd)
   const configFileName = options.configFile
-    ? path.relative(rootDir, path.resolve(rootDir, options.configFile))
+    ? path.relative(rootDir, resolveFromDirectory(resolutionCwd, options.configFile))
     : undefined
 
   const loaded = await c12LoadConfig<T>({
@@ -203,6 +216,7 @@ async function loadEnvLaneConfigUnchecked(
     configFile: options.configFile,
     name: 'env-lane',
   })
+  assertAbsolutePath(rootDir, 'Project root')
   const parsed = schema.parse(config ?? {})
   const workspaceGlobs = parsed.workspace?.packageGlobs ?? readPnpmWorkspaceGlobs(rootDir) ?? []
   return {
@@ -238,7 +252,17 @@ async function loadEnvLaneConfigUnchecked(
       format: parsed.output?.format ?? 'text',
       prefix: parsed.output?.prefix ?? true,
     },
-    sort: parsed.sort,
+    sort: parsed.sort
+      ? Object.fromEntries(
+          Object.entries(parsed.sort).map(([key, target]) => [
+            key,
+            {
+              ...target,
+              baseDir: target.baseDir ? resolveFromDirectory(rootDir, target.baseDir) : undefined,
+            },
+          ]),
+        )
+      : undefined,
     checks: parsed.checks as EnvLaneConfig['checks'],
     sync: parsed.sync as EnvLaneConfig['sync'],
   }

@@ -23,6 +23,10 @@ await runEnvSync('webFromApi', { build: 'production', dryRun: true });
 await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
 ```
 
+Sorting APIs accept `cwd` in their options. Relative config, env-file, and template paths resolve
+from that directory, or from `process.cwd()` when it is omitted. Relative paths declared inside a
+sort config resolve from the discovered project root and the target `baseDir`.
+
 Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
 The stable package root contains configuration and high-level use cases. Deployment scripts may

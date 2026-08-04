@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
-import path from 'node:path'
 import { loadEnvDocument } from '@env-lane/core/env-document'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
 import { deriveVaultKey, keyedDigest } from '../adapters/crypto.js'
+import { type AbsolutePath, resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
 import type { RestorePlanEntry, VaultConflictStrategy, VaultRecord } from '../domain/types.js'
 import {
   appendRecordsAtomically,
@@ -259,11 +259,13 @@ async function processEnvFileForEncryption(
   accumulator.shadowedEntriesIgnored += envDoc.shadowedEntryCount
 }
 
-async function encryptEnvFilesLocked(config: VaultConfig, key: Buffer, options: EncryptOptions) {
-  const syncContext = loadSyncContext(
-    options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
-    key,
-  )
+async function encryptEnvFilesLocked(
+  config: VaultConfig,
+  key: Buffer,
+  syncDir: AbsolutePath | undefined,
+  options: EncryptOptions,
+) {
+  const syncContext = loadSyncContext(syncDir, key)
   scrubExcludedSyncEntries(config, syncContext)
   const store = readStore(config, key, {
     allowMissing: true,
@@ -312,7 +314,11 @@ export async function encryptEnvFiles(
   keyFilePath: string,
   options: EncryptOptions = {},
 ) {
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
-  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
-  return withVaultOperationLock(config, () => encryptEnvFilesLocked(config, key, options))
+  const invocationCwd = resolveInvocationCwd(options.cwd)
+  const config =
+    options.resolvedConfig ??
+    (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
+  const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
+  const syncDir = options.syncDir ? resolveFromDirectory(invocationCwd, options.syncDir) : undefined
+  return withVaultOperationLock(config, () => encryptEnvFilesLocked(config, key, syncDir, options))
 }

@@ -22,6 +22,7 @@ import {
   isSecretLikeValue,
   listEnvFiles,
   listWorkspacePackages,
+  loadEnvLaneConfig,
   normalizeEnvFileVariant,
   parseEnvDocument,
   parseEnvLine,
@@ -376,7 +377,7 @@ describe('@env-lane/core', () => {
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
     writeFileSync(path.join(root, '.env.example'), 'A=\nB=\nC=\n')
-    await sortEnvFile(path.join(root, '.env'), path.join(root, '.env.example'))
+    await sortEnvFile('.env', '.env.example', { cwd: root })
     expect(readFileSync(path.join(root, '.env'), 'utf8').split('\n').slice(0, 3)).toEqual([
       'A=1',
       'B=2',
@@ -651,6 +652,25 @@ describe('@env-lane/core', () => {
     expect(rootPkg.isRoot).toBe(true)
   })
 
+  it('resolves an explicit relative config file from cwd', async () => {
+    const root = fixture()
+    const configDir = path.join(root, 'apps/api/config')
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(
+      path.join(configDir, 'custom.json'),
+      JSON.stringify({
+        output: { prefix: false },
+        sort: { custom: { baseDir: 'apps/api' } },
+      }),
+    )
+
+    const config = await loadEnvLaneConfig({ cwd: configDir, configFile: 'custom.json' })
+
+    expect(config.rootDir).toBe(root)
+    expect(config.output.prefix).toBe(false)
+    expect(config.sort?.custom.baseDir).toBe(path.join(root, 'apps/api'))
+  })
+
   it('implicitly resolves and sorts env files from default config file', async () => {
     const root = testDirectory(`env-lane-sort-implicit`)
     mkdirSync(root, { recursive: true })
@@ -662,7 +682,7 @@ describe('@env-lane/core', () => {
         dotenv: { order: ['.env'] },
         sort: {
           custom: {
-            baseDir: root,
+            baseDir: '.',
             file: '.env',
             template: '.env.example',
           },
@@ -672,16 +692,10 @@ describe('@env-lane/core', () => {
     writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
     writeFileSync(path.join(root, '.env.example'), 'A=\nB=\n')
 
-    const originalCwd = process.cwd
-    process.cwd = () => root
-    try {
-      const result = await sortEnvFilesFromConfig(undefined, 'custom', 'all')
-      expect(result.count).toBe(1)
-      expect(result.applied).toBe(true)
-      expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=1\nB=2\n')
-    } finally {
-      process.cwd = originalCwd
-    }
+    const result = await sortEnvFilesFromConfig(undefined, 'custom', 'all', { cwd: root })
+    expect(result.count).toBe(1)
+    expect(result.applied).toBe(true)
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=1\nB=2\n')
   })
 
   describe('unhappy paths', () => {

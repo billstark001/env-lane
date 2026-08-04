@@ -18,6 +18,7 @@ export function registerSortCommands(program: Command, ctx: CliContext): void {
         )
       }
       const result = await sortEnvFile(envFile, templateFile, {
+        cwd: allOpts.cwd,
         preserveBOM: allOpts.preserveBom,
         eol: allOpts.eol,
       })
@@ -48,6 +49,7 @@ export function registerSortCommands(program: Command, ctx: CliContext): void {
         )
       }
       const result = await sortEnvFilesFromConfig(allOpts.config, key, envSuffix, {
+        cwd: allOpts.cwd,
         preserveBOM: allOpts.preserveBom,
         eol: allOpts.eol,
       })

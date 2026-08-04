@@ -6,6 +6,7 @@ import type { LoadedEnvDocument } from '@env-lane/core/env-document'
 import type { VaultConfig } from '../adapters/config.js'
 import { deriveVaultSyncKey, stableHash } from '../adapters/crypto.js'
 import { withFileLock } from '../adapters/file-lock.js'
+import { type AbsolutePath, resolveFromDirectory } from '../adapters/paths.js'
 import type {
   RestorePlanEntry,
   VaultConflictStrategy,
@@ -30,8 +31,8 @@ interface SyncState {
 }
 
 export interface SyncContext {
-  syncDir: string
-  statePath: string
+  syncDir: AbsolutePath
+  statePath: AbsolutePath
   state: SyncState
   initialEntries: Record<string, SyncStateEntry>
   syncKey: Buffer
@@ -62,8 +63,8 @@ function syncEntryId(config: VaultConfig, filePath: string, key: string): string
   return stableHash(`${portable(path.relative(config.baseDir, filePath))}\0${key}`)
 }
 
-function syncStateFilePath(syncDir: string): string {
-  return path.join(path.resolve(syncDir), SYNC_STATE_FILE)
+function syncStateFilePath(syncDir: AbsolutePath): AbsolutePath {
+  return resolveFromDirectory(syncDir, SYNC_STATE_FILE)
 }
 
 function emptySyncState(): SyncState {
@@ -71,16 +72,15 @@ function emptySyncState(): SyncState {
 }
 
 export function loadSyncContext(
-  syncDir: string | undefined,
+  syncDir: AbsolutePath | undefined,
   vaultKey: Buffer,
 ): SyncContext | undefined {
   if (!syncDir) return undefined
-  const resolvedSyncDir = path.resolve(syncDir)
-  const statePath = syncStateFilePath(resolvedSyncDir)
+  const statePath = syncStateFilePath(syncDir)
   const syncKey = deriveVaultSyncKey(vaultKey)
   if (!existsSync(statePath))
     return {
-      syncDir: resolvedSyncDir,
+      syncDir,
       statePath,
       state: emptySyncState(),
       initialEntries: {},
@@ -116,7 +116,7 @@ export function loadSyncContext(
       ))
   if (isLegacyVersion0) {
     return {
-      syncDir: resolvedSyncDir,
+      syncDir,
       statePath,
       state: emptySyncState(),
       initialEntries: {},
@@ -143,7 +143,7 @@ export function loadSyncContext(
     }
   }
   return {
-    syncDir: resolvedSyncDir,
+    syncDir,
     statePath,
     state: raw as unknown as SyncState,
     initialEntries: structuredClone((raw as unknown as SyncState).entries),

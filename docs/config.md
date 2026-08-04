@@ -2,7 +2,7 @@
 
 Env-lane loads `env-lane.config.ts`, JavaScript ESM/CJS, or JSON through its config loader.
 Use `--config <file>` or the API `configFile` option for a non-default name. Relative paths are
-resolved from `--cwd` and the discovered project root.
+resolved from `--cwd`; default config discovery still searches the discovered project root.
 
 ~~~ts
 import { defineConfig } from '@env-lane/core';
@@ -124,7 +124,8 @@ colon separators, inline comments, duplicate entries, and multiline syntax while
 
 Every workspace alias is available as a conventional sort target using `.env` and
 `.env.example`. Explicit entries can override `baseDir`, `file`, and `template`, or define
-additional named files.
+additional named files. A relative `baseDir` is resolved from the project root; `file`, `template`,
+and entries in `files` are resolved from that target's `baseDir`.
 
 `create` defaults to true and permits creation of a missing target env file from an existing
 template. It never creates a missing template. Set it to false to skip absent target files.

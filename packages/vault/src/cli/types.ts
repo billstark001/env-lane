@@ -4,7 +4,7 @@ import type { Command } from 'commander'
 export interface VaultCommandOptions extends Record<string, unknown> {
   config?: string
   build?: string
-  cwd?: string
+  cwd: string
   format?: string
   json?: boolean
   nonInteractive?: boolean

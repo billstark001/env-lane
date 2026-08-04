@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { EnvLaneError, parseEnvDocument, withEnvLaneContext } from '@env-lane/core'
@@ -73,6 +81,16 @@ function fixture(): string {
 }
 
 describe('CLI context & commands', () => {
+  it('normalizes merged cwd to an absolute invocation context', () => {
+    const root = fixture()
+    const program = new Command()
+    const { ctx } = testContext(program)
+    ctx.addCommonOptions(program)
+
+    const relativeCwd = path.relative(process.cwd(), root)
+    expect(ctx.mergeOptions({ cwd: relativeCwd }).cwd).toBe(path.resolve(relativeCwd))
+  })
+
   it('keeps payloads on stdout and structured diagnostics on stderr', async () => {
     const root = fixture()
     const program = new Command()
@@ -424,12 +442,13 @@ describe('CLI context & commands', () => {
 
   it('resolves relative Vault config, key, and store paths from --cwd', async () => {
     const root = testDirectory(`env-lane-cli-vault-cwd`)
-    mkdirSync(root, { recursive: true })
+    const workDir = path.join(root, 'ops')
+    mkdirSync(workDir, { recursive: true })
     writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'vault-cwd' }))
-    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
-    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    writeFileSync(path.join(workDir, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(path.join(workDir, '.env'), 'A=1\n')
     writeFileSync(
-      path.join(root, 'env-lane.vault.json'),
+      path.join(workDir, 'custom-vault.json'),
       JSON.stringify({
         envFiles: ['.env'],
         outputDir: '.vault',
@@ -450,11 +469,16 @@ describe('CLI context & commands', () => {
       'encrypt',
       'key.aes',
       '--cwd',
-      root,
+      workDir,
+      '--vault-config',
+      'custom-vault.json',
+      '--sync-dir',
+      '.sync',
       '--json',
     ])
     expect(JSON.parse(harness.stdout()).storePath).toMatch(/\/\.vault\/store\.dat$/)
-    expect(existsSync(path.join(root, '.vault/store.dat'))).toBe(true)
+    expect(existsSync(path.join(workDir, '.vault/store.dat'))).toBe(true)
+    expect(existsSync(path.join(workDir, '.sync/vault-sync-state.json'))).toBe(true)
   })
 
   it.each([
@@ -502,6 +526,43 @@ describe('CLI context & commands', () => {
       ])
       expect(JSON.parse(readFileSync(marker, 'utf8'))).toEqual(childArguments)
       expect(harness.stderr()).toBe('')
+    } finally {
+      process.exitCode = previousExitCode
+    }
+  })
+
+  it('resolves a relative run cwd from --cwd', async () => {
+    const root = fixture()
+    const runDir = path.join(root, 'tools')
+    const marker = path.join(root, 'run-cwd.txt')
+    const child = path.join(root, 'capture-cwd.mjs')
+    mkdirSync(runDir)
+    writeFileSync(
+      child,
+      `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, process.cwd());\n`,
+    )
+    const program = new Command()
+    program.enablePositionalOptions()
+    const { ctx } = testContext(program)
+    registerCoreCommands(program, ctx)
+    const previousExitCode = process.exitCode
+
+    try {
+      await program.parseAsync([
+        'node',
+        'cli',
+        'run',
+        'api',
+        '--cwd',
+        root,
+        '--run-cwd',
+        'tools',
+        '--quiet',
+        '--',
+        process.execPath,
+        child,
+      ])
+      expect(realpathSync(readFileSync(marker, 'utf8'))).toBe(realpathSync(runDir))
     } finally {
       process.exitCode = previousExitCode
     }
@@ -598,14 +659,12 @@ describe('CLI context & commands', () => {
     registerSortCommands(program, ctx)
 
     // Sort single file
-    const envFile = path.join(root, 'apps/api/.env')
-    const templateFile = path.join(root, 'apps/api/.env.example')
     await program.parseAsync([
       'node',
       'cli',
       'sort-file',
-      envFile,
-      templateFile,
+      'apps/api/.env',
+      'apps/api/.env.example',
       '--cwd',
       root,
       '--format',
@@ -622,8 +681,6 @@ describe('CLI context & commands', () => {
       'sort',
       'api',
       'all',
-      '--config',
-      path.join(root, 'env-lane.config.ts'),
       '--cwd',
       root,
       '--format',

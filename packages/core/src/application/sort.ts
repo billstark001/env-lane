@@ -1,6 +1,13 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { loadEnvLaneConfig } from '../adapters/config.js'
+import {
+  type AbsolutePath,
+  absoluteDirname,
+  assertAbsolutePath,
+  resolveFromDirectory,
+  resolveInvocationCwd,
+} from '../adapters/paths.js'
 import { EnvLaneError } from '../domain/errors.js'
 import type {
   EnvSortTargetConfig,
@@ -17,10 +24,14 @@ import {
 } from './env-document.js'
 import { listWorkspacePackagesForConfig } from './workspace.js'
 
+type ResolvedEnvSortTargetConfig = Omit<EnvSortTargetConfig, 'baseDir'> & {
+  baseDir: AbsolutePath
+}
+
 interface EnvSortConfig {
-  baseDir: string
+  baseDir: AbsolutePath
   envFiles: string[]
-  sort: Record<string, EnvSortTargetConfig>
+  sort: Record<string, ResolvedEnvSortTargetConfig>
   dotenv: ResolvedEnvLaneConfig['dotenv']
   selector: ResolvedEnvLaneConfig['selector']
   packages: WorkspacePackage[]
@@ -68,16 +79,39 @@ export interface EnvSortPlan {
   }
 }
 
-async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
+interface SortRenderOptions {
+  preserveBOM?: boolean
+  eol?: 'auto' | 'lf' | 'crlf'
+  unlistedVariablesComment?: string
+}
+
+interface SortFileOptions extends SortRenderOptions {
+  cwd?: string
+  create?: boolean
+}
+
+interface SortConfigOptions {
+  cwd?: string
+  create?: boolean
+  preserveBOM?: boolean
+  eol?: 'auto' | 'lf' | 'crlf'
+}
+
+async function loadSortConfig(
+  configPath: AbsolutePath | undefined,
+  configDiscoveryCwd: AbsolutePath,
+): Promise<EnvSortConfig> {
   let config: ResolvedEnvLaneConfig
   if (configPath) {
-    const abs = path.resolve(configPath)
-    if (!existsSync(abs)) {
-      throw new EnvLaneError('SORT_CONFIG_NOT_FOUND', `Sort config does not exist: ${abs}`)
+    if (!existsSync(configPath)) {
+      throw new EnvLaneError('SORT_CONFIG_NOT_FOUND', `Sort config does not exist: ${configPath}`)
     }
-    config = await loadEnvLaneConfig({ cwd: path.dirname(abs), configFile: abs })
+    config = await loadEnvLaneConfig({
+      cwd: configDiscoveryCwd,
+      configFile: configPath,
+    })
   } else {
-    config = await loadEnvLaneConfig({ cwd: process.cwd() })
+    config = await loadEnvLaneConfig({ cwd: configDiscoveryCwd })
   }
   const packages = await listWorkspacePackagesForConfig(config)
   const sort: Record<string, EnvSortTargetConfig> = { ...config.sort }
@@ -109,10 +143,19 @@ async function loadSortConfig(configPath?: string): Promise<EnvSortConfig> {
     }
   }
 
+  assertAbsolutePath(config.rootDir, 'Project root')
+  const resolvedSort = Object.fromEntries(
+    Object.entries(sort).map(([key, target]) => {
+      const baseDir = target.baseDir ?? config.rootDir
+      assertAbsolutePath(baseDir, `Sort target ${key} baseDir`)
+      return [key, { ...target, baseDir }]
+    }),
+  )
+
   return {
     baseDir: config.rootDir,
     envFiles: [],
-    sort,
+    sort: resolvedSort,
     dotenv: config.dotenv,
     selector: config.selector,
     packages,
@@ -321,26 +364,20 @@ function summarizeSortOperations(operations: EnvSortPlan['operations']): EnvSort
   )
 }
 
-export function buildEnvSortPlan(
-  envFilePath: string,
-  templateFilePath: string,
-  options?: {
-    preserveBOM?: boolean
-    eol?: 'auto' | 'lf' | 'crlf'
-    unlistedVariablesComment?: string
-  },
+function buildEnvSortPlanResolved(
+  envFilePath: AbsolutePath,
+  templateFilePath: AbsolutePath,
+  options?: SortRenderOptions,
 ): EnvSortPlan {
-  const resolvedEnvFilePath = path.resolve(envFilePath)
-  const resolvedTemplateFilePath = path.resolve(templateFilePath)
-  if (!existsSync(resolvedTemplateFilePath)) {
+  if (!existsSync(templateFilePath)) {
     throw new EnvLaneError(
       'SORT_TEMPLATE_NOT_FOUND',
-      `Template env file does not exist: ${resolvedTemplateFilePath}`,
+      `Template env file does not exist: ${templateFilePath}`,
     )
   }
 
-  const envDoc = loadEnvDocument(resolvedEnvFilePath)
-  const templateDoc = loadEnvDocument(resolvedTemplateFilePath)
+  const envDoc = loadEnvDocument(envFilePath)
+  const templateDoc = loadEnvDocument(templateFilePath)
   const envLayout = buildEnvSortLayout(envDoc)
   const templateLayout = buildEnvSortLayout(templateDoc)
 
@@ -429,8 +466,8 @@ export function buildEnvSortPlan(
   const summary = summarizeSortOperations(operations)
 
   return {
-    filePath: resolvedEnvFilePath,
-    templateFilePath: resolvedTemplateFilePath,
+    filePath: envFilePath,
+    templateFilePath,
     changed: currentContent !== nextContent,
     currentContent,
     nextContent,
@@ -439,25 +476,35 @@ export function buildEnvSortPlan(
   }
 }
 
-export async function sortEnvFile(
+export function buildEnvSortPlan(
   envFilePath: string,
   templateFilePath: string,
-  options?: {
-    create?: boolean
-    preserveBOM?: boolean
-    eol?: 'auto' | 'lf' | 'crlf'
-    unlistedVariablesComment?: string
-  },
+  options?: SortRenderOptions & { cwd?: string },
+): EnvSortPlan {
+  const invocationCwd = resolveInvocationCwd(options?.cwd)
+  return buildEnvSortPlanResolved(
+    resolveFromDirectory(invocationCwd, envFilePath),
+    resolveFromDirectory(invocationCwd, templateFilePath),
+    {
+      preserveBOM: options?.preserveBOM,
+      eol: options?.eol,
+      unlistedVariablesComment: options?.unlistedVariablesComment,
+    },
+  )
+}
+
+async function sortEnvFileResolved(
+  envFilePath: AbsolutePath,
+  templateFilePath: AbsolutePath,
+  options?: Omit<SortFileOptions, 'cwd'>,
 ) {
   const create = options?.create ?? true
-  const resolvedEnvFilePath = path.resolve(envFilePath)
-  const resolvedTemplateFilePath = path.resolve(templateFilePath)
 
-  if (!create && !existsSync(resolvedEnvFilePath)) {
+  if (!create && !existsSync(envFilePath)) {
     return {
       applied: false,
-      filePath: resolvedEnvFilePath,
-      templateFilePath: resolvedTemplateFilePath,
+      filePath: envFilePath,
+      templateFilePath,
       operations: [],
       movedCount: 0,
       insertedCommentedCount: 0,
@@ -467,7 +514,7 @@ export async function sortEnvFile(
     }
   }
 
-  const plan = buildEnvSortPlan(resolvedEnvFilePath, resolvedTemplateFilePath, options)
+  const plan = buildEnvSortPlanResolved(envFilePath, templateFilePath, options)
   if (!plan.changed) {
     return {
       applied: false,
@@ -485,6 +532,24 @@ export async function sortEnvFile(
     operations: plan.operations,
     ...plan.summary,
   }
+}
+
+export async function sortEnvFile(
+  envFilePath: string,
+  templateFilePath: string,
+  options?: SortFileOptions,
+) {
+  const invocationCwd = resolveInvocationCwd(options?.cwd)
+  return sortEnvFileResolved(
+    resolveFromDirectory(invocationCwd, envFilePath),
+    resolveFromDirectory(invocationCwd, templateFilePath),
+    {
+      create: options?.create,
+      preserveBOM: options?.preserveBOM,
+      eol: options?.eol,
+      unlistedVariablesComment: options?.unlistedVariablesComment,
+    },
+  )
 }
 
 function normalizeSortSelector(
@@ -513,9 +578,17 @@ export async function sortEnvFilesFromConfig(
   configPath?: string,
   keyArg = 'all',
   envSuffixArg = 'all',
-  options?: { create?: boolean; preserveBOM?: boolean; eol?: 'auto' | 'lf' | 'crlf' },
+  options?: SortConfigOptions,
 ) {
-  const config = await loadSortConfig(configPath)
+  const invocationCwd = resolveInvocationCwd(options?.cwd)
+  const resolvedConfigPath = configPath
+    ? resolveFromDirectory(invocationCwd, configPath)
+    : undefined
+  const configDiscoveryCwd =
+    options?.cwd === undefined && resolvedConfigPath
+      ? absoluteDirname(resolvedConfigPath)
+      : invocationCwd
+  const config = await loadSortConfig(resolvedConfigPath, configDiscoveryCwd)
   const keySelector = normalizeSortSelector(keyArg, 'all', 'key')
   const envSuffixSelector = normalizeSortSelector(envSuffixArg, 'all', 'env-suffix')
   const selectedTargets = Object.entries(config.sort).filter(
@@ -528,18 +601,18 @@ export async function sortEnvFilesFromConfig(
   const results = []
   const seenFiles = new Set<string>()
   for (const [key, target] of selectedTargets) {
-    const baseDir = target.baseDir ?? config.baseDir
+    const baseDir = target.baseDir
     const file = target.file ?? '.env'
     const template = target.template ?? '.env.example'
-    const defaultFilePath = path.resolve(baseDir, file)
-    const templateFilePath = path.resolve(baseDir, template)
-    const targetDir = path.dirname(defaultFilePath)
-    const files = new Map<string, string>([[DEFAULT_ENV_FILE_VARIANT, defaultFilePath]])
+    const defaultFilePath = resolveFromDirectory(baseDir, file)
+    const templateFilePath = resolveFromDirectory(baseDir, template)
+    const targetDir = absoluteDirname(defaultFilePath)
+    const files = new Map<string, AbsolutePath>([[DEFAULT_ENV_FILE_VARIANT, defaultFilePath]])
 
     for (const pattern of config.dotenv.order) {
       if (pattern.includes('{build}')) {
         for (const build of config.selector.builds) {
-          files.set(build, path.resolve(targetDir, pattern.replace('{build}', build)))
+          files.set(build, resolveFromDirectory(targetDir, pattern.replace('{build}', build)))
         }
       }
     }
@@ -551,31 +624,33 @@ export async function sortEnvFilesFromConfig(
             'SORT_INVALID_CONFIG',
             `config.sort.${key}.files must not use reserved suffix "default".`,
           )
-        files.set(suffix, path.resolve(baseDir, interpolateSortFilePattern(file, suffix)))
+        files.set(suffix, resolveFromDirectory(baseDir, interpolateSortFilePattern(file, suffix)))
       }
     }
 
-    const jobs =
+    const jobs: Array<[string, AbsolutePath]> =
       envSuffixSelector === 'all'
         ? [...files.entries()]
         : [
             [
               envSuffixSelector,
               files.get(envSuffixSelector) ??
-                path.resolve(targetDir, `${path.basename(defaultFilePath)}.${envSuffixSelector}`),
+                resolveFromDirectory(
+                  targetDir,
+                  `${path.basename(defaultFilePath)}.${envSuffixSelector}`,
+                ),
             ],
           ]
     for (const [, file] of jobs) {
-      const absFile = path.resolve(file)
-      if (seenFiles.has(absFile)) continue
-      seenFiles.add(absFile)
+      if (seenFiles.has(file)) continue
+      seenFiles.add(file)
       const mergedOptions = {
         create: options?.create ?? target.create,
         preserveBOM: options?.preserveBOM ?? config.dotenv.preserveBOM,
         eol: options?.eol ?? config.dotenv.eol,
         unlistedVariablesComment: target.unlistedVariablesComment ?? '',
       }
-      results.push(await sortEnvFile(absFile, templateFilePath, mergedOptions))
+      results.push(await sortEnvFileResolved(file, templateFilePath, mergedOptions))
     }
   }
   return { applied: results.some((result) => result.applied), count: results.length, results }

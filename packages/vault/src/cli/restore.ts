@@ -50,7 +50,7 @@ function registerVaultPlanCommand(vault: Command, ctx: VaultCliContext): void {
       emitPlanDiagnostics(plan)
       if (allOpts.output) {
         writeApprovalDocument(
-          path.resolve(allOpts.cwd ?? process.cwd(), allOpts.output),
+          path.resolve(allOpts.cwd, allOpts.output),
           createApprovalDocument(plan, allOpts),
         )
       }
@@ -152,9 +152,7 @@ function registerVaultApplyCommand(vault: Command, ctx: VaultCliContext): void {
       validateFailOnOption(allOpts.failOn)
       const resolvedConfig = await emitUnsafeWarning(allOpts)
       if (!allOpts.plan) throw new EnvLaneError('VAULT_PLAN_REQUIRED', 'Missing --plan file.')
-      const document = readApprovalDocument(
-        path.resolve(allOpts.cwd ?? process.cwd(), allOpts.plan),
-      )
+      const document = readApprovalDocument(path.resolve(allOpts.cwd, allOpts.plan))
       const result = await applyRestorePlan(allOpts.config, keyFile, document.plan, {
         cwd: allOpts.cwd,
         autoApprove: true,

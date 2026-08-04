@@ -23,7 +23,7 @@ Core and dynamically load the optional Vault CLI entry.
 packages/core/src/
   domain/       types, errors, variants, redaction
   application/  dotenv resolution, checks, policies, run, sort, workspace, env document
-  adapters/     config loading, file writes, diagnostic context
+  adapters/     config/path loading, file writes, child execution, diagnostic context
   index.ts      curated public root
   env-document.ts  stable feature facade
 ~~~
@@ -34,7 +34,7 @@ packages/core/src/
 packages/vault/src/
   domain/       persisted and restore-plan types
   application/  push, restore, storage/history, sync state
-  adapters/     config, crypto, file locking
+  adapters/     config/path loading, crypto, file locking
   cli/          Commander registration, prompts, rendering, warnings
   index.ts      curated automation root
 ~~~
@@ -57,6 +57,36 @@ cycle, or a test boundary that cannot otherwise be expressed.
 Tests mirror these coarse areas under `test/application`, `test/domain`, and
 `test/presentation` or `test/cli`. A suite may still cover several closely related functions;
 the directory communicates the primary boundary.
+
+## Path resolution invariant
+
+Path resolution distinguishes four concepts:
+
+- `invocationCwd`: absolute directory used for config discovery and caller-supplied relative paths;
+- `projectRoot`: absolute workspace root returned by the config adapter;
+- `configDir`: directory that owns config-relative paths;
+- `childCwd`: absolute directory passed to the child process adapter.
+
+CLI presentation and every public library use case are input boundaries. They may accept an
+optional raw `cwd`, normalize it once, and then pass an absolute `invocationCwd` onward. Private
+application helpers must not read `process.cwd()` or reinterpret caller-relative paths. Once file
+arguments are resolved, deeper sort, Vault, and process helpers receive absolute paths instead of
+another optional cwd.
+
+Internally, `AbsolutePath` is a nominal string type created only by the path adapter's resolution
+helpers or by an assertion at an external-library boundary. This carries the proof through private
+APIs, so they neither re-resolve nor repeatedly assert the same path. Do not cache path assertions:
+`path.isAbsolute` is inexpensive, a string-value cache has lifecycle and memory costs, and it cannot
+prove that the filesystem target still exists. The brand is a lexical proof of normalization, not a
+filesystem-validity guarantee.
+
+The global `--cwd` and run-specific `--run-cwd` are intentionally distinct. `--cwd` selects the
+invocation context; `--run-cwd` selects `target`, `root`, or a child path relative to that context.
+The child process adapter receives only the final absolute `childCwd`.
+
+Config adapters resolve config-owned paths. In particular, explicit sort `baseDir` values become
+absolute when the main config is loaded, while file and template names remain relative to that
+resolved target base. Vault config contents remain relative to the Vault config file.
 
 ## Public boundaries
 

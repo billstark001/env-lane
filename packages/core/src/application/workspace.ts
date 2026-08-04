@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import fg from 'fast-glob'
 import { loadEnvLaneConfig } from '../adapters/config.js'
+import { type AbsolutePath, resolveInvocationCwd } from '../adapters/paths.js'
 import { EnvLaneError } from '../domain/errors.js'
 import type { ResolvedEnvLaneConfig, ResolveEnvOptions, WorkspacePackage } from '../domain/types.js'
 
@@ -9,6 +10,8 @@ type WorkspaceResolveOptions = Pick<ResolveEnvOptions, 'cwd' | 'configFile'> & {
   config?: ResolvedEnvLaneConfig
   packages?: WorkspacePackage[]
 }
+
+type ResolvedWorkspaceOptions = Omit<WorkspaceResolveOptions, 'cwd'> & { cwd?: AbsolutePath }
 
 function readPackageName(dir: string): string | undefined {
   const file = path.join(dir, 'package.json')
@@ -90,18 +93,17 @@ function formatAvailableTargets(packages: WorkspacePackage[]): string {
   return unique(packages.flatMap((pkg) => pkg.aliases)).join(', ')
 }
 
-export function resolveTargetPackageFromList(
+function resolveTargetPackageFromListResolved(
   target: string | undefined,
   config: ResolvedEnvLaneConfig,
   packages: WorkspacePackage[],
-  options: WorkspaceResolveOptions = {},
+  options: ResolvedWorkspaceOptions,
 ): WorkspacePackage {
   let value = (target || config.workspace.defaultTarget || '').trim()
 
   if (!value && options.cwd) {
-    const absoluteCwd = path.resolve(options.cwd)
     const matchedPkg = packages
-      .filter((pkg) => absoluteCwd === pkg.dir || absoluteCwd.startsWith(pkg.dir + path.sep))
+      .filter((pkg) => options.cwd === pkg.dir || options.cwd?.startsWith(pkg.dir + path.sep))
       .sort((a, b) => b.dir.length - a.dir.length)[0]
     if (matchedPkg) {
       value = matchedPkg.aliases[0] || matchedPkg.name || matchedPkg.relativeDir
@@ -114,8 +116,7 @@ export function resolveTargetPackageFromList(
 
     const rootPkg = packages.find((pkg) => pkg.isRoot)
     if (rootPkg && options.cwd) {
-      const absoluteCwd = path.resolve(options.cwd)
-      if (absoluteCwd === path.resolve(rootPkg.dir)) {
+      if (options.cwd === rootPkg.dir) {
         return rootPkg
       }
     }
@@ -145,11 +146,24 @@ export function resolveTargetPackageFromList(
   return matched
 }
 
+export function resolveTargetPackageFromList(
+  target: string | undefined,
+  config: ResolvedEnvLaneConfig,
+  packages: WorkspacePackage[],
+  options: WorkspaceResolveOptions = {},
+): WorkspacePackage {
+  return resolveTargetPackageFromListResolved(target, config, packages, {
+    ...options,
+    cwd: options.cwd ? resolveInvocationCwd(options.cwd) : undefined,
+  })
+}
+
 export async function resolveTargetPackage(
   target: string | undefined,
   options: WorkspaceResolveOptions = {},
 ): Promise<WorkspacePackage> {
-  const config = options.config ?? (await loadEnvLaneConfig(options))
+  const resolvedOptions = { ...options, cwd: resolveInvocationCwd(options.cwd) }
+  const config = options.config ?? (await loadEnvLaneConfig(resolvedOptions))
   const packages = options.packages ?? (await listWorkspacePackagesForConfig(config))
-  return resolveTargetPackageFromList(target, config, packages, options)
+  return resolveTargetPackageFromListResolved(target, config, packages, resolvedOptions)
 }

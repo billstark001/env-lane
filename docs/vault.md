@@ -38,8 +38,9 @@ export default defineVaultConfig({
 });
 ~~~
 
-Paths are resolved relative to the Vault config. The main env-lane config may point to a different
-file through `vault.configFile`. `--vault-config <file>` takes precedence.
+Paths declared inside the Vault config are resolved relative to that config file. The main env-lane
+config may point to a different file through `vault.configFile`. An explicit relative
+`--vault-config <file>` takes precedence and is resolved from `--cwd`.
 
 Vault CLI commands emit the unsafe-development warning unless `disableUnsafeWarning` is enabled
 in the main or Vault config. Library operations are silent. Programmatic callers that want the
@@ -118,6 +119,8 @@ env-lane vault decrypt key.aes \
   --yes \
   --conflicts take-vault
 ~~~
+
+A relative `--sync-dir` is resolved from `--cwd`, like other CLI path arguments.
 
 `vault-sync-state.json` contains relative paths, env key names, timestamps, and keyed
 HMAC-SHA256 fingerprints. It contains no plaintext values. Legacy unkeyed state is treated as

@@ -7,6 +7,13 @@ import {
   type ResolvedEnvLaneConfig,
 } from '@env-lane/core'
 import { z } from 'zod'
+import {
+  type AbsolutePath,
+  absoluteDirname,
+  assertAbsolutePath,
+  resolveFromDirectory,
+  resolveInvocationCwd,
+} from './paths.js'
 
 const schema = z.object({
   envFiles: z.array(z.string().min(1)),
@@ -93,8 +100,8 @@ function normalizeExclude(rawExclude: unknown): Array<{ files: string[]; keys: s
   })
 }
 
-function uniqueResolvedFiles(baseDir: string, files: string[]): string[] {
-  return [...new Set(files.map((file) => path.resolve(baseDir, file)))]
+function uniqueResolvedFiles(baseDir: AbsolutePath, files: string[]): AbsolutePath[] {
+  return [...new Set(files.map((file) => resolveFromDirectory(baseDir, file)))]
 }
 
 export interface VaultConfig {
@@ -129,17 +136,20 @@ async function loadVaultConfigUnchecked(
     allowUnmanaged?: boolean
   },
 ): Promise<VaultConfig> {
+  const invocationCwd = resolveInvocationCwd(options?.cwd)
   let mainConfigPath: string | undefined
-  let vaultConfigPath: string | undefined = options?.vaultConfigFile
+  let vaultConfigPath: AbsolutePath | undefined = options?.vaultConfigFile
+    ? resolveFromDirectory(invocationCwd, options.vaultConfigFile)
+    : undefined
 
   if (configPath && !vaultConfigPath) {
-    const resolvedPath = path.resolve(options?.cwd ?? process.cwd(), configPath)
+    const resolvedPath = resolveFromDirectory(invocationCwd, configPath)
     let rawConfig: unknown
     if (path.extname(resolvedPath) === '.json' && existsSync(resolvedPath)) {
       rawConfig = JSON.parse(readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, ''))
     } else {
       const loaded = await loadConfigWithC12<Record<string, unknown>>({
-        cwd: path.dirname(resolvedPath),
+        cwd: absoluteDirname(resolvedPath),
         configFile: resolvedPath,
         name: 'env-lane.vault',
         configFileRequired: true,
@@ -157,17 +167,18 @@ async function loadVaultConfigUnchecked(
   }
 
   const mainConfig: ResolvedEnvLaneConfig = await loadEnvLaneConfig({
-    cwd: options?.cwd,
+    cwd: invocationCwd,
     configFile: mainConfigPath,
   })
 
   const baseDir = mainConfig.rootDir
-  let configFileToLoad: string
+  assertAbsolutePath(baseDir, 'Project root')
+  let configFileToLoad: AbsolutePath
 
   if (vaultConfigPath) {
-    configFileToLoad = path.resolve(baseDir, vaultConfigPath)
+    configFileToLoad = resolveFromDirectory(baseDir, vaultConfigPath)
   } else {
-    configFileToLoad = path.resolve(baseDir, mainConfig.vault.configFile)
+    configFileToLoad = resolveFromDirectory(baseDir, mainConfig.vault.configFile)
   }
 
   const hasJsonExt = path.extname(configFileToLoad) === '.json'
@@ -180,7 +191,7 @@ async function loadVaultConfigUnchecked(
     >
   } else {
     const loaded = await loadConfigWithC12<Record<string, unknown>>({
-      cwd: path.dirname(configFileToLoad),
+      cwd: absoluteDirname(configFileToLoad),
       configFile: configFileToLoad,
       name: 'env-lane.vault',
       configFileRequired: true,
@@ -191,18 +202,19 @@ async function loadVaultConfigUnchecked(
         `Vault config does not exist: ${configFileToLoad}`,
       )
     }
+    assertAbsolutePath(loaded.configFile, 'Loaded Vault config file')
     configFileToLoad = loaded.configFile
     raw = loaded.config ?? {}
   }
 
-  const baseDirOfConfig = path.dirname(configFileToLoad)
+  const baseDirOfConfig = absoluteDirname(configFileToLoad)
   const parsed = schema.parse({
     ...raw,
     exclude: normalizeExclude(raw.exclude ?? raw.excludes),
   })
-  const outputDir = path.resolve(baseDirOfConfig, parsed.outputDir)
+  const outputDir = resolveFromDirectory(baseDirOfConfig, parsed.outputDir)
   const envFiles = uniqueResolvedFiles(baseDirOfConfig, parsed.envFiles)
-  const storePath = path.resolve(outputDir, parsed.outputFile)
+  const storePath = resolveFromDirectory(outputDir, parsed.outputFile)
   if (envFiles.includes(storePath)) {
     throw new EnvLaneError(
       'VAULT_STORE_OVERLAP',

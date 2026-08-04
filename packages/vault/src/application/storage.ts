@@ -8,6 +8,7 @@ import picomatch from 'picomatch'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
 import { decryptRecord, deriveVaultKey, encryptRecord, stableHash } from '../adapters/crypto.js'
 import { withFileLock } from '../adapters/file-lock.js'
+import { resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
 import type { VaultRecord } from '../domain/types.js'
 
 export interface StoreReadResult {
@@ -407,8 +408,11 @@ export async function pruneVaultHistory(
       'olderThanDays must be a non-negative number.',
     )
   }
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
-  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  const invocationCwd = resolveInvocationCwd(options.cwd)
+  const config =
+    options.resolvedConfig ??
+    (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
+  const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
   return withVaultOperationLock(config, async () => {
     const store = readStoreRecordLines(config, key, {
       ignoreCorruptRecords: options.ignoreCorruptRecords,
@@ -498,8 +502,11 @@ export async function sanitizeVaultHistory(
       'Vault sanitize requires --excluded so the removal scope is explicit.',
     )
   }
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
-  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  const invocationCwd = resolveInvocationCwd(options.cwd)
+  const config =
+    options.resolvedConfig ??
+    (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
+  const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
   return withVaultOperationLock(config, async () => {
     const store = readStoreRecordLines(config, key)
     const storeDigest = stableHash(store.rawLines.join('\n'))

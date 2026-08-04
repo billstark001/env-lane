@@ -6,6 +6,7 @@ import picomatch from 'picomatch'
 import { z } from 'zod'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
 import { deriveVaultKey, keyedDigest, stableHash } from '../adapters/crypto.js'
+import { type AbsolutePath, resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
 import type {
   RestoreAction,
   RestoreDecision,
@@ -205,12 +206,10 @@ interface BuildRestorePlanOptions {
 function buildRestorePlanLocked(
   config: VaultConfig,
   key: Buffer,
+  syncDir: AbsolutePath | undefined,
   options: BuildRestorePlanOptions,
 ): RestorePlan {
-  const syncContext = loadSyncContext(
-    options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
-    key,
-  )
+  const syncContext = loadSyncContext(syncDir, key)
   scrubExcludedSyncEntries(config, syncContext)
   const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
   assertNoExcludedHistory(config, store.records, store.failedRecords)
@@ -222,9 +221,15 @@ export async function buildRestorePlan(
   keyFilePath: string,
   options: BuildRestorePlanOptions = {},
 ) {
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
-  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
-  return withVaultOperationLock(config, async () => buildRestorePlanLocked(config, key, options))
+  const invocationCwd = resolveInvocationCwd(options.cwd)
+  const config =
+    options.resolvedConfig ??
+    (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
+  const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
+  const syncDir = options.syncDir ? resolveFromDirectory(invocationCwd, options.syncDir) : undefined
+  return withVaultOperationLock(config, async () =>
+    buildRestorePlanLocked(config, key, syncDir, options),
+  )
 }
 
 export async function decryptEnvFiles(
@@ -392,13 +397,11 @@ interface ApplyRestoreOptions {
 async function applyRestorePlanLocked(
   config: VaultConfig,
   key: Buffer,
+  syncDir: AbsolutePath | undefined,
   submittedPlan: RestorePlan,
   options: ApplyRestoreOptions,
 ) {
-  const syncContext = loadSyncContext(
-    options.syncDir ? path.resolve(options.cwd ?? config.baseDir, options.syncDir) : undefined,
-    key,
-  )
+  const syncContext = loadSyncContext(syncDir, key)
   scrubExcludedSyncEntries(config, syncContext)
   const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
   assertNoExcludedHistory(config, store.records, store.failedRecords)
@@ -485,10 +488,14 @@ export async function applyRestorePlan(
   submittedPlan: RestorePlan,
   options: ApplyRestoreOptions = {},
 ) {
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
-  const key = deriveVaultKey(path.resolve(options.cwd ?? process.cwd(), keyFilePath))
+  const invocationCwd = resolveInvocationCwd(options.cwd)
+  const config =
+    options.resolvedConfig ??
+    (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
+  const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
+  const syncDir = options.syncDir ? resolveFromDirectory(invocationCwd, options.syncDir) : undefined
   return withVaultOperationLock(config, () =>
-    applyRestorePlanLocked(config, key, submittedPlan, options),
+    applyRestorePlanLocked(config, key, syncDir, submittedPlan, options),
   )
 }
 
@@ -554,8 +561,9 @@ export function createApprovalDocument(
 
 export function readApprovalDocument(filePath: string): ApprovalDocument {
   try {
+    const resolvedFilePath = resolveFromDirectory(resolveInvocationCwd(), filePath)
     const document = approvalDocumentSchema.parse(
-      JSON.parse(readFileSync(path.resolve(filePath), 'utf8')),
+      JSON.parse(readFileSync(resolvedFilePath, 'utf8')),
     ) as ApprovalDocument
     const expectedIds = new Set(
       document.plan.files.flatMap((file) =>
@@ -579,7 +587,8 @@ export function readApprovalDocument(filePath: string): ApprovalDocument {
 }
 
 export function writeApprovalDocument(filePath: string, document: ApprovalDocument): void {
-  writeFileContentAtomically(path.resolve(filePath), `${JSON.stringify(document, null, 2)}\n`)
+  const resolvedFilePath = resolveFromDirectory(resolveInvocationCwd(), filePath)
+  writeFileContentAtomically(resolvedFilePath, `${JSON.stringify(document, null, 2)}\n`)
 }
 
 export interface VaultSelectionOptions {
