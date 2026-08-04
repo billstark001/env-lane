@@ -472,6 +472,8 @@ describe('CLI context & commands', () => {
       'child-format',
       '--help',
       '--quiet',
+      '--',
+      '--child-flag',
     ]
     writeFileSync(
       child,

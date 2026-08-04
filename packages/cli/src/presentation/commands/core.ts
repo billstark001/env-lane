@@ -42,19 +42,18 @@ function matchingRunOption(options: readonly Option[], argument: string): Option
 
 /**
  * Move env-lane options between the target and child command ahead of the target.
- * The child starts at `--`, or at the first non-option after the target when the
- * explicit boundary is omitted. Commander then preserves every child argument.
+ * The child starts after `--`, or at the first non-option after the target when
+ * the explicit boundary is omitted. Once the child starts, its arguments are
+ * opaque so a later `--` remains part of the child command.
  */
 export function normalizeRunArguments(
   args: readonly string[],
   options: readonly Option[],
 ): string[] {
-  const boundaryIndex = args.indexOf('--')
-  const cliEndIndex = boundaryIndex === -1 ? args.length : boundaryIndex
   const beforeTarget: string[] = []
   let targetIndex = -1
 
-  for (let index = 0; index < cliEndIndex; index += 1) {
+  for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
     const option = matchingRunOption(options, argument)
     if (option) {
@@ -84,19 +83,13 @@ export function normalizeRunArguments(
   if (targetIndex === -1) return [...args]
 
   const target = args[targetIndex]
-  if (boundaryIndex !== -1) {
-    return [
-      ...beforeTarget,
-      ...args.slice(targetIndex + 1, boundaryIndex),
-      target,
-      ...args.slice(boundaryIndex),
-    ]
-  }
-
   const afterTargetOptions: string[] = []
   let childIndex = targetIndex + 1
   while (childIndex < args.length) {
     const argument = args[childIndex]
+    if (argument === '--') {
+      return [...beforeTarget, ...afterTargetOptions, target, ...args.slice(childIndex)]
+    }
     const option = matchingRunOption(options, argument)
     if (!option) {
       if (argument.startsWith('-')) {
