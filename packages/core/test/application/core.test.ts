@@ -18,6 +18,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   checkDotenvSelector,
   type Diagnostic,
+  isHighEntropyString,
+  isJwt,
+  isPaseto,
   isSecretLikeKey,
   isSecretLikeValue,
   listEnvFiles,
@@ -40,6 +43,11 @@ import {
   withEnvLaneContext,
   writeFileContentAtomically,
 } from '../../src/index.js'
+import {
+  SYNTHETIC_CREDENTIALS,
+  SYNTHETIC_PUBLIC_CASES,
+  SYNTHETIC_SECRET_CASES,
+} from '../fixtures/synthetic-credentials.js'
 
 const testDirectories = new Set<string>()
 
@@ -1052,12 +1060,23 @@ describe('@env-lane/core', () => {
       expect(redactValue('SECRET_TOKEN', 'super-secret')).toBe('<redacted>')
       expect(redactValue('SECRET_TOKEN', 'super-secret', true)).toBe('super-secret')
       expect(redactObject({ nested: { apiKey: 'value' }, safe: 'visible' })).toEqual({
-        nested: { apiKey: '<redacted>' },
+        nested: { apiKey: 'value' },
         safe: 'visible',
       })
     })
 
-    it('covers redaction key allowlists, denylists, and provider credential values', () => {
+    it('never redacts values below the configurable minimum length', () => {
+      expect(shouldRedact('PASSWORD', '1234567')).toBe(false)
+      expect(redactValue('PASSWORD', '1234567')).toBe('1234567')
+      expect(shouldRedact('PASSWORD', '12345678')).toBe(true)
+      expect(
+        shouldRedact('PASSWORD', '12345678', {
+          minRedactionLength: 9,
+        }),
+      ).toBe(false)
+    })
+
+    it('covers redaction key allowlists and denylists', () => {
       for (const key of [
         'password',
         'clientSecret',
@@ -1067,22 +1086,19 @@ describe('@env-lane/core', () => {
       ]) {
         expect(isSecretLikeKey(key)).toBe(true)
       }
-      for (const key of ['PUBLIC_KEY', 'token_count', 'key_id', 'certificate']) {
+      for (const key of [
+        'PUBLIC_KEY',
+        'JWT_PUBLIC_KEY',
+        'WEBHOOK_PUBLIC_CERTIFICATE',
+        'PRIVY_OAUTH_PROVIDERS',
+        'token_count',
+        'key_id',
+        'certificate',
+      ]) {
         expect(isSecretLikeKey(key)).toBe(false)
       }
       expect(isSecretLikeKey('PUBLIC_KEY', { denyListKeys: [/^PUBLIC_KEY$/] })).toBe(true)
       expect(isSecretLikeKey('PASSWORD', { allowListKeys: [/^PASSWORD$/] })).toBe(false)
-
-      for (const value of [
-        `ghp_${'A'.repeat(36)}`,
-        `sk-proj-${'aB0_'.repeat(8)}`,
-        'Bearer abcdefghijklmnopqrstuvwxyz',
-        'https://user:password@example.test/database',
-        'https://example.test/callback?access_token=abcdefgh1234',
-        'config={"client_secret":"abcdefgh1234"}',
-      ]) {
-        expect(isSecretLikeValue(value)).toBe(true)
-      }
       for (const value of [
         'https://example.test/public',
         '1234567890123456789012345678901234567890',
@@ -1093,17 +1109,67 @@ describe('@env-lane/core', () => {
       }
     })
 
+    it.each(SYNTHETIC_SECRET_CASES)(
+      'redacts the locally generated $name fixture',
+      ({ key, value, detectableByValue }) => {
+        expect(isSecretLikeValue(value)).toBe(detectableByValue)
+        expect(shouldRedact(key, value)).toBe(true)
+        expect(redactValue(key, value)).toBe('<redacted>')
+      },
+    )
+
+    it('recognizes JWT and PASETO independently of their provider', () => {
+      expect(isJwt(SYNTHETIC_CREDENTIALS.supabase.anonJwt)).toBe(true)
+      expect(isJwt(SYNTHETIC_CREDENTIALS.supabase.serviceRoleJwt)).toBe(true)
+      expect(isPaseto(SYNTHETIC_CREDENTIALS.paseto.local)).toBe(true)
+      expect(isPaseto(SYNTHETIC_CREDENTIALS.paseto.public)).toBe(true)
+      expect(isJwt('one.two.three')).toBe(false)
+      expect(isPaseto('v4.public.too-short')).toBe(false)
+    })
+
+    it('supports stricter high-entropy classification for partial previews', () => {
+      expect(isHighEntropyString(SYNTHETIC_CREDENTIALS.generic.opaqueHighEntropy)).toBe(true)
+      expect(
+        isHighEntropyString('mixedProject123-id', {
+          minEntropyLength: 16,
+          entropyThreshold: 3.5,
+          minCharacterClasses: 2,
+        }),
+      ).toBe(true)
+      expect(isHighEntropyString(SYNTHETIC_CREDENTIALS.ethereum.address)).toBe(false)
+      expect(isHighEntropyString(SYNTHETIC_CREDENTIALS.supabase.publishableKey)).toBe(false)
+      expect(
+        isHighEntropyString(SYNTHETIC_CREDENTIALS.privy.oauthProviders, {
+          minEntropyLength: 16,
+          entropyThreshold: 3.5,
+          minCharacterClasses: 2,
+        }),
+      ).toBe(false)
+    })
+
+    it.each(SYNTHETIC_PUBLIC_CASES)(
+      'preserves the locally generated/public $name fixture',
+      ({ key, value }) => {
+        expect(isSecretLikeKey(key)).toBe(false)
+        expect(isSecretLikeValue(value)).toBe(false)
+        expect(shouldRedact(key, value)).toBe(false)
+        expect(redactValue(key, value)).toBe(value)
+      },
+    )
+
     it('honors redaction options across records, values, arrays, and circular objects', () => {
       expect(shouldRedact('safe', 'https://user:password@example.test')).toBe(true)
       expect(
         shouldRedact('safe', 'https://user:password@example.test', { detectValues: false }),
       ).toBe(false)
-      expect(redactValue('PASSWORD', 'secret', { redactionText: '[hidden]' })).toBe('[hidden]')
-      expect(redactRecord({ PASSWORD: 'secret', SAFE: 'visible' })).toEqual({
+      expect(redactValue('PASSWORD', 'secret-value', { redactionText: '[hidden]' })).toBe(
+        '[hidden]',
+      )
+      expect(redactRecord({ PASSWORD: 'secret-value', SAFE: 'visible' })).toEqual({
         PASSWORD: '<redacted>',
         SAFE: 'visible',
       })
-      expect(redactObject({ tokens: [{ password: 'secret' }], safe: ['visible'] })).toEqual({
+      expect(redactObject({ tokens: [{ password: 'secret-value' }], safe: ['visible'] })).toEqual({
         tokens: [{ password: '<redacted>' }],
         safe: ['visible'],
       })
@@ -1111,7 +1177,9 @@ describe('@env-lane/core', () => {
       const circular: { safe: string; self?: unknown } = { safe: 'visible' }
       circular.self = circular
       expect(redactObject(circular)).toEqual({ safe: 'visible', self: '[Circular]' })
-      expect(redactObject({ PASSWORD: 'secret' }, true)).toEqual({ PASSWORD: 'secret' })
+      expect(redactObject({ PASSWORD: 'secret-value' }, true)).toEqual({
+        PASSWORD: 'secret-value',
+      })
     })
 
     it('rejects sources that specify both target and file', async () => {

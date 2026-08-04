@@ -2,8 +2,10 @@ export interface RedactOptions {
   showSecrets?: boolean
   redactionText?: string
   detectValues?: boolean
+  minRedactionLength?: number
   minEntropyLength?: number
   entropyThreshold?: number
+  minCharacterClasses?: number
   allowListKeys?: RegExp[]
   denyListKeys?: RegExp[]
 }
@@ -11,23 +13,34 @@ export interface RedactOptions {
 type ResolvedRedactOptions = Required<
   Pick<
     RedactOptions,
-    'showSecrets' | 'redactionText' | 'detectValues' | 'minEntropyLength' | 'entropyThreshold'
+    | 'showSecrets'
+    | 'redactionText'
+    | 'detectValues'
+    | 'minRedactionLength'
+    | 'minEntropyLength'
+    | 'entropyThreshold'
+    | 'minCharacterClasses'
   >
 > &
   Pick<RedactOptions, 'allowListKeys' | 'denyListKeys'>
+
+export const DEFAULT_MIN_REDACTION_LENGTH = 8
 
 const DEFAULT_OPTIONS: ResolvedRedactOptions = {
   showSecrets: false,
   redactionText: '<redacted>',
   detectValues: true,
+  minRedactionLength: DEFAULT_MIN_REDACTION_LENGTH,
   minEntropyLength: 40,
   entropyThreshold: 4.0,
+  minCharacterClasses: 3,
   allowListKeys: [],
   denyListKeys: [],
 }
 
 const SAFE_KEY_PATTERNS = [
   /^public_key$/,
+  /^(?:[a-z0-9]+_)*public_(?:key|cert(?:ificate)?)$/,
   /^public_cert(?:ificate)?$/,
   /^certificate$/,
   /^cert$/,
@@ -37,6 +50,10 @@ const SAFE_KEY_PATTERNS = [
   /^max_tokens$/,
   /^key_(?:id|name|type|version)$/,
   /^(?:id|name|type|version)_key$/,
+  /^(?:[a-z0-9]+_)*providers?$/,
+  /^(?:(?:next_public|vite)_)?supabase_(?:publishable|anon)_key$/,
+  /^(?:supabase_)?publishable_key$/,
+  /^(?:eth(?:ereum)?|wallet|account|contract)_(?:public_)?address$/,
 ]
 
 const SENSITIVE_KEY_TOKENS = new Set([
@@ -57,13 +74,23 @@ const SENSITIVE_KEY_TOKENS = new Set([
   'session',
   'jwt',
   'dsn',
+  'mnemonic',
 ])
 
 const SENSITIVE_KEY_PHRASE_RE =
-  /(?:^|_)(?:api_key|access_key|secret_key|private_key|client_secret|client_token|access_token|refresh_token|id_token|auth_token|csrf_token|database_url|db_url|redis_url|redis_uri|rpc_url|mongo_url|mongodb_url|mongo_uri|mongodb_uri|postgres_url|postgresql_url|connection_string|signing_secret|webhook_secret|webhook_url)(?:$|_)/i
+  /(?:^|_)(?:api_key|access_key|secret_key|private_key|client_secret|client_token|access_token|refresh_token|id_token|auth_token|csrf_token|database_url|db_url|redis_url|redis_uri|rpc_url|mongo_url|mongodb_url|mongo_uri|mongodb_uri|postgres_url|postgresql_url|connection_string|signing_secret|webhook_secret|webhook_url|seed_phrase|recovery_phrase)(?:$|_)/i
 
 const COMPACT_SENSITIVE_KEY_RE =
-  /(?:apikey|accesskey|secretkey|privatekey|clientsecret|clienttoken|accesstoken|refreshtoken|idtoken|authtoken|csrftoken|databaseurl|dburl|redisurl|redisuri|rpcurl|mongourl|mongodburl|mongouri|mongodburi|postgresurl|postgresqlurl|connectionstring|signingsecret|webhooksecret|webhookurl|pgpassword)/i
+  /(?:apikey|accesskey|secretkey|privatekey|clientsecret|clienttoken|accesstoken|refreshtoken|idtoken|authtoken|csrftoken|databaseurl|dburl|redisurl|redisuri|rpcurl|mongourl|mongodburl|mongouri|mongodburi|postgresurl|postgresqlurl|connectionstring|signingsecret|webhooksecret|webhookurl|pgpassword|seedphrase|recoveryphrase)/i
+
+const SAFE_VALUE_PATTERNS = [
+  /^sb_publishable_[A-Za-z0-9_-]{20,}$/,
+  /^0x[0-9a-fA-F]{40}$/,
+  /^-----BEGIN ((?:[A-Z0-9]+ )?PUBLIC KEY)-----[\s\S]+-----END \1-----$/,
+]
+
+const JWT_RE = /^[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/
+const PASETO_RE = /^v[1-4]\.(?:local|public)\.[A-Za-z0-9_-]{20,}(?:\.[A-Za-z0-9_-]+)?$/
 
 const SECRET_VALUE_PATTERNS = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/,
@@ -72,16 +99,21 @@ const SECRET_VALUE_PATTERNS = [
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
   /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/,
   /\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
-  /\bsk-proj-[A-Za-z0-9_-]{20,}\b/,
+  /\bsk-(?:proj|svcacct)-[A-Za-z0-9_-]{20,}\b/,
   /\bsk-[A-Za-z0-9]{20,}\b/,
+  /\bsb_secret_[A-Za-z0-9_-]{20,}\b/,
+  /\bsbp_[A-Za-z0-9]{20,}\b/,
+  /\b(?:cfk|cfut|cfat)_[A-Za-z0-9_-]{40,}\b/,
+  /\bgsk_[A-Za-z0-9]{20,}\b/,
+  /\bhf_[A-Za-z0-9]{20,}\b/,
+  /\bnpm_[A-Za-z0-9]{20,}\b/,
   /\bAIza[0-9A-Za-z_-]{35}\b/,
   /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
   /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}\b/i,
-  /^[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/,
 ]
 
 const CREDENTIAL_QUERY_KEY_RE =
-  /^(?:access_?token|id_?token|refresh_?token|api_?key|key|token|secret|password|passwd|pwd|signature|sig|client_secret)$/i
+  /^(?:_?token|access_?token|id_?token|refresh_?token|api_?key|key|secret|password|passwd|pwd|signature|sig|client_secret)$/i
 
 const INLINE_KV_RE =
   /(?:^|[\s,{])["']?([A-Za-z][A-Za-z0-9_.-]{1,80})["']?\s*[:=]\s*["']?([^"',}\]\s;]{8,})["']?/g
@@ -128,6 +160,12 @@ export function isSecretLikeValue(value: string, options: RedactOptions = {}): b
 
   if (!trimmed) return false
 
+  if (SAFE_VALUE_PATTERNS.some((re) => testRegExp(re, trimmed))) {
+    return false
+  }
+
+  if (isJwt(trimmed) || isPaseto(trimmed)) return true
+
   if (SECRET_VALUE_PATTERNS.some((re) => testRegExp(re, trimmed))) {
     return true
   }
@@ -140,7 +178,30 @@ export function isSecretLikeValue(value: string, options: RedactOptions = {}): b
     return true
   }
 
-  return looksHighEntropy(trimmed, opts)
+  const urlHasOpaqueComponent = hasHighEntropyUrlComponent(trimmed)
+  if (urlHasOpaqueComponent !== undefined) return urlHasOpaqueComponent
+
+  return isHighEntropyString(trimmed, opts)
+}
+
+export function isJwt(value: string): boolean {
+  const trimmed = value.trim()
+  if (!testRegExp(JWT_RE, trimmed)) return false
+  try {
+    const [headerSegment, payloadSegment] = trimmed.split('.')
+    if (!headerSegment || !payloadSegment) return false
+    const header = JSON.parse(Buffer.from(headerSegment, 'base64url').toString('utf8')) as {
+      alg?: unknown
+    }
+    const payload = JSON.parse(Buffer.from(payloadSegment, 'base64url').toString('utf8'))
+    return typeof header.alg === 'string' && Boolean(payload) && typeof payload === 'object'
+  } catch {
+    return false
+  }
+}
+
+export function isPaseto(value: string): boolean {
+  return testRegExp(PASETO_RE, value.trim())
 }
 
 export function shouldRedact(
@@ -150,7 +211,7 @@ export function shouldRedact(
 ): boolean {
   const opts = resolveOptions(options)
 
-  if (opts.showSecrets || !value) return false
+  if (opts.showSecrets || value.trim().length < opts.minRedactionLength) return false
 
   return isSecretLikeKey(key, opts) || (opts.detectValues && isSecretLikeValue(value, opts))
 }
@@ -239,8 +300,10 @@ function resolveOptions(options: boolean | RedactOptions = false): ResolvedRedac
     showSecrets: partial.showSecrets ?? DEFAULT_OPTIONS.showSecrets,
     redactionText: partial.redactionText ?? DEFAULT_OPTIONS.redactionText,
     detectValues: partial.detectValues ?? DEFAULT_OPTIONS.detectValues,
+    minRedactionLength: partial.minRedactionLength ?? DEFAULT_OPTIONS.minRedactionLength,
     minEntropyLength: partial.minEntropyLength ?? DEFAULT_OPTIONS.minEntropyLength,
     entropyThreshold: partial.entropyThreshold ?? DEFAULT_OPTIONS.entropyThreshold,
+    minCharacterClasses: partial.minCharacterClasses ?? DEFAULT_OPTIONS.minCharacterClasses,
     allowListKeys: partial.allowListKeys ?? DEFAULT_OPTIONS.allowListKeys,
     denyListKeys: partial.denyListKeys ?? DEFAULT_OPTIONS.denyListKeys,
   }
@@ -273,10 +336,29 @@ function hasCredentialsInUrl(value: string): boolean {
   } catch {
     return (
       /:\/\/[^/@\s]+:[^/@\s]+@/.test(value) ||
-      /[?&](?:access_?token|id_?token|refresh_?token|api_?key|key|token|secret|password|passwd|pwd|signature|sig|client_secret)=[^&\s]{8,}/i.test(
+      /[?&](?:_?token|access_?token|id_?token|refresh_?token|api_?key|key|secret|password|passwd|pwd|signature|sig|client_secret)=[^&\s]{8,}/i.test(
         value,
       )
     )
+  }
+}
+
+function hasHighEntropyUrlComponent(value: string): boolean | undefined {
+  try {
+    const url = new URL(value)
+    const components = [
+      ...url.pathname.split('/').filter(Boolean),
+      ...[...url.searchParams.values()].filter(Boolean),
+    ]
+    return components.some((component) =>
+      isHighEntropyString(component, {
+        minEntropyLength: 16,
+        entropyThreshold: 3.5,
+        minCharacterClasses: 2,
+      }),
+    )
+  } catch {
+    return undefined
   }
 }
 
@@ -299,18 +381,26 @@ function hasInlineSecretAssignment(value: string, options: ResolvedRedactOptions
   return false
 }
 
+export function isHighEntropyString(value: string, options: RedactOptions = {}): boolean {
+  const resolved = resolveOptions(options)
+  const trimmed = value.trim()
+  if (SAFE_VALUE_PATTERNS.some((re) => testRegExp(re, trimmed))) return false
+  return looksHighEntropy(trimmed, resolved)
+}
+
 function looksHighEntropy(value: string, options: ResolvedRedactOptions): boolean {
   if (value.length < options.minEntropyLength) return false
   if (/\s/.test(value)) return false
 
-  // UUID / hash / pure numeric IDs are usually non-secret
+  // UUID / hash / pure numeric IDs and short identifier lists are usually non-secret.
   if (/^[0-9]+$/.test(value)) return false
+  if (/^[a-z][a-z0-9-]{0,31}(?:,[a-z][a-z0-9-]{0,31})+$/i.test(value)) return false
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
     return false
   }
   if (/^[0-9a-f]{32,128}$/i.test(value)) return false
 
-  if (countCharacterClasses(value) < 3) return false
+  if (countCharacterClasses(value) < options.minCharacterClasses) return false
 
   return shannonEntropy(value) >= options.entropyThreshold
 }

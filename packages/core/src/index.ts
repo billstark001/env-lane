@@ -28,7 +28,11 @@ export {
 } from './adapters/logger.js'
 export { EnvLaneError, errorCode } from './domain/errors.js'
 export {
+  DEFAULT_MIN_REDACTION_LENGTH,
   type RedactOptions,
+  isHighEntropyString,
+  isJwt,
+  isPaseto,
   isSecretLikeKey,
   isSecretLikeValue,
   redactObject,
