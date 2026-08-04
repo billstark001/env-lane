@@ -1,6 +1,7 @@
 export type VaultOperation = 'set' | 'delete'
 export type RestoreAction = 'add' | 'modify' | 'delete' | 'identical' | 'conflict'
 export type VaultConflictStrategy = 'abort' | 'keep-local' | 'take-vault'
+export type VaultMissingFileStrategy = 'delete' | 'skip'
 export type VaultRestoreRedaction = 'full' | 'partial' | 'none'
 export type RestoreDecisionChoice = 'apply-vault' | 'keep-local' | 'skip'
 

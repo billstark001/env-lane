@@ -85,7 +85,7 @@ export async function promptRestoreDecisions(
       short: `${entry.action} ${visibleKey}`,
       checked:
         entry.action !== 'conflict' &&
-        (entry.action !== 'delete' || Boolean(options.approveDeletes)),
+        (entry.action !== 'delete' || options.approveDeletes !== false),
     })
   }
 

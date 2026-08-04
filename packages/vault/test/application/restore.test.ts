@@ -161,6 +161,30 @@ describe('@env-lane/vault restore', () => {
     )
   })
 
+  it('applies delete entries by default and preserves the resulting empty file', async () => {
+    const root = testDirectory(`env-lane-vault-preserve-empty-file`)
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    const envFile = path.join(root, '.env')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(envFile, 'A=vault\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    await encryptEnvFiles(configPath, keyPath)
+    writeFileSync(envFile, '')
+    await encryptEnvFiles(configPath, keyPath)
+    writeFileSync(envFile, 'A=local\n')
+
+    const result = await decryptEnvFiles(configPath, keyPath, { autoApprove: true })
+
+    expect(result).toMatchObject({ appliedEntries: 1, filesWritten: 1 })
+    expect(existsSync(envFile)).toBe(true)
+    expect(readFileSync(envFile, 'utf8')).toBe('')
+  })
+
   it('uses configured partial and unredacted restore previews', async () => {
     const root = testDirectory(`env-lane-vault-preview`)
     const configPath = path.join(root, 'vault.json')

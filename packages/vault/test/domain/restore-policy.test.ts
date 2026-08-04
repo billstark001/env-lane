@@ -75,15 +75,16 @@ describe('Vault selection and fail-on policies', () => {
     expect(() => matchesVaultSelection(modify, { only: 'unknown' })).toThrow(/unknown action/)
   })
 
-  it('requires --approve-deletes for push and default restore selection', () => {
+  it('selects deletes by default and supports an explicit opt-out', () => {
     const deletion = entry('delete')
-    expect(matchesVaultPushSelection(deletion, {})).toBe(false)
+    expect(matchesVaultPushSelection(deletion, {})).toBe(true)
     expect(matchesVaultPushSelection(deletion, { approveDeletes: true })).toBe(true)
+    expect(matchesVaultPushSelection(deletion, { approveDeletes: false })).toBe(false)
     expect(buildDefaultRestoreDecisions(plan([deletion]), {})).toEqual([
-      { entryId: deletion.entryId, decision: 'skip' },
-    ])
-    expect(buildDefaultRestoreDecisions(plan([deletion]), { approveDeletes: true })).toEqual([
       { entryId: deletion.entryId, decision: 'apply-vault' },
+    ])
+    expect(buildDefaultRestoreDecisions(plan([deletion]), { approveDeletes: false })).toEqual([
+      { entryId: deletion.entryId, decision: 'skip' },
     ])
   })
 

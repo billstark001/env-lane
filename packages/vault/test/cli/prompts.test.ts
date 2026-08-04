@@ -74,7 +74,7 @@ describe('Vault interactive prompts', () => {
     Object.defineProperty(process.stderr, 'rows', { value: stderrRows, configurable: true })
   })
 
-  it('leaves deletes unselected and maps unselected conflicts to keep-local', async () => {
+  it('checks deletes by default and maps manually unselected conflicts to keep-local', async () => {
     const deletion = entry('delete', 'DELETE_ME')
     const conflict = entry('conflict', 'MUCH_LONGER_CONFLICT_KEY')
     promptMocks.checkbox.mockResolvedValue([])
@@ -101,7 +101,7 @@ describe('Vault interactive prompts', () => {
       (choice: { value?: string }) => choice.value === deletion.entryId,
     )
     expect(deleteChoice).toMatchObject({
-      checked: false,
+      checked: true,
       name: 'delete   DELETE_ME                 current-DELETE_ME → vault-DELETE_ME',
       short: 'delete DELETE_ME',
     })

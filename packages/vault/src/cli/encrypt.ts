@@ -7,6 +7,7 @@ import {
   addSelectionOptions,
   assertVaultFormat,
   parseVaultConflictStrategy,
+  parseVaultMissingFileStrategy,
   validateFailOnOption,
 } from './options.js'
 import type { VaultCliContext } from './types.js'
@@ -17,6 +18,7 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
     .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')
     .option('--vault-config <file>', 'vault configuration file')
     .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
+    .option('--missing-files <mode>', 'treat missing managed files as delete or skip', 'delete')
     .option('--conflicts <mode>', 'abort, keep-local, or take-vault', 'abort')
     .action(async (keyFile, opts) => {
       const allOpts = ctx.mergeOptions(opts)
@@ -30,6 +32,7 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
         syncDir: allOpts.syncDir,
         vaultConfigFile: allOpts.vaultConfig,
         conflictStrategy: parseVaultConflictStrategy(allOpts.conflicts),
+        missingFiles: parseVaultMissingFileStrategy(allOpts.missingFiles),
         autoRemapPaths: allOpts.autoRemap,
         selectEntry: (entry) => matchesVaultPushSelection(entry, allOpts),
         resolvedConfig,
@@ -44,6 +47,9 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
           ctx.output(`  Delete: ${res.deleteRecordsWritten}`)
           ctx.output(`  Skipped unchanged: ${res.skippedUnchanged}`)
           ctx.output(`  Skipped by selection: ${res.selectionSkipped}`)
+          if (res.missingFilesTreatedAsEmpty) {
+            ctx.output(`  Missing files treated as empty: ${res.missingFilesTreatedAsEmpty}`)
+          }
           if (res.conflicts) ctx.output(`  Conflicts: ${res.conflicts}`)
         },
       })

@@ -1,6 +1,6 @@
 {
   "name": "@env-lane/core",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "type": "module",
   "description": "Core dotenv injection, workspace resolution, selector checks, and env sorting for env-lane.",
   "license": "MIT",

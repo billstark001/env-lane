@@ -1,5 +1,13 @@
 import { createHmac } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -170,6 +178,38 @@ describe('@env-lane/vault sync', () => {
       action: 'conflict',
       conflictReason: 'local and vault differ without a sync baseline',
     })
+  })
+
+  it('resolves an unbased missing-file deletion once and leaves the file missing', async () => {
+    const root = testDirectory(`env-lane-vault-sync-missing-delete`)
+    const syncDir = path.join(root, '.sync-state')
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    const envFile = path.join(root, '.env')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(envFile, 'A=vault\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    await encryptEnvFiles(configPath, keyPath)
+    rmSync(envFile)
+
+    const result = await encryptEnvFiles(configPath, keyPath, {
+      syncDir,
+      conflictStrategy: 'keep-local',
+    })
+
+    expect(result).toMatchObject({
+      deleteRecordsWritten: 1,
+      conflicts: 1,
+      conflictsKeptLocal: 1,
+      missingFilesTreatedAsEmpty: 1,
+    })
+    expect(existsSync(envFile)).toBe(false)
+    const plan = await buildRestorePlan(configPath, keyPath, { syncDir })
+    expect(plan.summary).toMatchObject({ identical: 1, conflict: 0 })
   })
 
   it('throws when sync state file is invalid or unsupported JSON', async () => {

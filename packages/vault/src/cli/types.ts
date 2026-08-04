@@ -24,6 +24,7 @@ export interface VaultCommandOptions extends Record<string, unknown> {
   exclude?: string
   only?: string
   approveDeletes?: boolean
+  missingFiles?: string
   dryRun?: boolean
   yes?: boolean
   excluded?: boolean

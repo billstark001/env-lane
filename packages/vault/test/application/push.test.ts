@@ -89,6 +89,80 @@ describe('@env-lane/vault push', () => {
     expect(readFileSync(syncStatePath, 'utf8')).toBe(syncBefore)
   })
 
+  it('treats a missing managed file exactly like an empty file without changing file existence', async () => {
+    const root = testDirectory(`env-lane-vault-missing-as-empty`)
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    const missingFile = path.join(root, '.env.missing')
+    const emptyFile = path.join(root, '.env.empty')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(missingFile, 'A=1\n')
+    writeFileSync(emptyFile, 'B=2\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        envFiles: ['.env.missing', '.env.empty'],
+        outputDir: '.vault',
+        outputFile: 'store.dat',
+      }),
+    )
+    await encryptEnvFiles(configPath, keyPath)
+    rmSync(missingFile)
+    writeFileSync(emptyFile, '')
+
+    const result = await encryptEnvFiles(configPath, keyPath)
+
+    expect(result).toMatchObject({
+      deleteRecordsWritten: 2,
+      missingFilesSkipped: 0,
+      missingFilesTreatedAsEmpty: 1,
+    })
+    expect(existsSync(missingFile)).toBe(false)
+    expect(existsSync(emptyFile)).toBe(true)
+    expect(readFileSync(emptyFile, 'utf8')).toBe('')
+    const records = readFileSync(path.join(root, '.vault/store.dat'), 'utf8')
+      .trim()
+      .split(/\r?\n/)
+      .slice(-2)
+      .map((line) => JSON.parse(decryptRecord(deriveVaultKey(keyPath), line)))
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ f: '.env.missing', k: 'A', op: 'delete' }),
+        expect.objectContaining({ f: '.env.empty', k: 'B', op: 'delete' }),
+      ]),
+    )
+    await expect(buildRestorePlan(configPath, keyPath)).resolves.toMatchObject({
+      summary: { identical: 2, conflict: 0 },
+    })
+  })
+
+  it('can explicitly skip a missing managed file', async () => {
+    const root = testDirectory(`env-lane-vault-skip-missing`)
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    const envFile = path.join(root, '.env')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(envFile, 'A=1\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    await encryptEnvFiles(configPath, keyPath)
+    rmSync(envFile)
+
+    const result = await encryptEnvFiles(configPath, keyPath, { missingFiles: 'skip' })
+
+    expect(result).toMatchObject({
+      deleteRecordsWritten: 0,
+      missingFilesSkipped: 1,
+      missingFilesTreatedAsEmpty: 0,
+    })
+    expect(storeLineCount(root)).toBe(1)
+    expect(existsSync(envFile)).toBe(false)
+  })
+
   it('shares dotenv effective-value semantics and preserves local inline comments', async () => {
     const root = testDirectory(`env-lane-vault-effective`)
     mkdirSync(root, { recursive: true })

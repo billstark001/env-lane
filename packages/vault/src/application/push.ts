@@ -3,7 +3,12 @@ import { loadEnvDocument } from '@env-lane/core/env-document'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
 import { deriveVaultKey, keyedDigest } from '../adapters/crypto.js'
 import { type AbsolutePath, resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
-import type { RestorePlanEntry, VaultConflictStrategy, VaultRecord } from '../domain/types.js'
+import type {
+  RestorePlanEntry,
+  VaultConflictStrategy,
+  VaultMissingFileStrategy,
+  VaultRecord,
+} from '../domain/types.js'
 import {
   appendRecordsAtomically,
   assertNoExcludedHistory,
@@ -33,6 +38,8 @@ export interface EncryptOptions {
   vaultConfigFile?: string
   autoRemapPaths?: boolean
   allowUnmanaged?: boolean
+  /** Treat a missing managed env file as empty by default, or explicitly skip it. */
+  missingFiles?: VaultMissingFileStrategy
   resolvedConfig?: VaultConfig
   selectEntry?: (entry: RestorePlanEntry) => boolean
   resolveConflict?: (
@@ -54,6 +61,7 @@ interface EncryptAccumulator {
   skippedUnchanged: number
   localOnlyEntriesSkipped: number
   missingFilesSkipped: number
+  missingFilesTreatedAsEmpty: number
   invalidLinesIgnored: number
   shadowedEntriesIgnored: number
   selectionSkipped: number
@@ -71,6 +79,7 @@ function createEncryptAccumulator(): EncryptAccumulator {
     skippedUnchanged: 0,
     localOnlyEntriesSkipped: 0,
     missingFilesSkipped: 0,
+    missingFilesTreatedAsEmpty: 0,
     invalidLinesIgnored: 0,
     shadowedEntriesIgnored: 0,
     selectionSkipped: 0,
@@ -212,10 +221,12 @@ async function processEnvFileForEncryption(
   options: EncryptOptions,
   accumulator: EncryptAccumulator,
 ): Promise<void> {
-  if (!existsSync(filePath)) {
+  const fileExists = existsSync(filePath)
+  if (!fileExists && options.missingFiles === 'skip') {
     accumulator.missingFilesSkipped++
     return
   }
+  if (!fileExists) accumulator.missingFilesTreatedAsEmpty++
   const envDoc = loadEnvDocument(filePath)
   const previous = state.get(filePath) ?? new Map<string, VaultRecord>()
   const current = new Map<string, string>()
@@ -298,6 +309,7 @@ async function encryptEnvFilesLocked(
     skippedUnchanged: accumulator.skippedUnchanged,
     localOnlyEntriesSkipped: accumulator.localOnlyEntriesSkipped,
     missingFilesSkipped: accumulator.missingFilesSkipped,
+    missingFilesTreatedAsEmpty: accumulator.missingFilesTreatedAsEmpty,
     invalidLinesIgnored: accumulator.invalidLinesIgnored,
     shadowedEntriesIgnored: accumulator.shadowedEntriesIgnored,
     selectionSkipped: accumulator.selectionSkipped,

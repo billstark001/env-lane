@@ -30,6 +30,7 @@ export type {
   RestorePlanEntry,
   RestorePlanFile,
   VaultConflictStrategy,
+  VaultMissingFileStrategy,
   VaultOperation,
   VaultRecord,
   VaultRestoreRedaction,

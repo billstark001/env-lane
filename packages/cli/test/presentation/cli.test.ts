@@ -501,6 +501,76 @@ describe('CLI context & commands', () => {
     expect(existsSync(path.join(workDir, '.sync/vault-sync-state.json'))).toBe(true)
   })
 
+  it('defaults missing Vault files to approved deletes and supports both opt-outs', async () => {
+    const root = testDirectory(`env-lane-cli-vault-missing-delete`)
+    const envFile = path.join(root, '.env')
+    mkdirSync(root, { recursive: true })
+    writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'vault-delete' }))
+    writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
+    writeFileSync(envFile, 'A=1\n')
+    writeFileSync(
+      path.join(root, 'vault.json'),
+      JSON.stringify({
+        envFiles: ['.env'],
+        outputDir: '.vault',
+        outputFile: 'store.dat',
+        disableUnsafeWarning: true,
+      }),
+    )
+    const program = new Command()
+    program.enablePositionalOptions()
+    const harness = testContext(program)
+    harness.ctx.addCommonOptions(program)
+    registerVaultCommands(program, harness.ctx)
+    const baseArgs = [
+      'node',
+      'cli',
+      'vault',
+      'encrypt',
+      'key.aes',
+      '--cwd',
+      root,
+      '--vault-config',
+      'vault.json',
+      '--sync-dir',
+      '.sync',
+      '--json',
+    ]
+    await program.parseAsync(baseArgs)
+    rmSync(envFile)
+
+    harness.clear()
+    await program.parseAsync([...baseArgs, '--dry-run'])
+    expect(JSON.parse(harness.stdout())).toMatchObject({
+      deleteRecordsWritten: 1,
+      missingFilesSkipped: 0,
+      missingFilesTreatedAsEmpty: 1,
+    })
+    expect(existsSync(envFile)).toBe(false)
+
+    harness.clear()
+    await program.parseAsync([...baseArgs, '--dry-run', '--missing-files', 'skip'])
+    expect(JSON.parse(harness.stdout())).toMatchObject({
+      deleteRecordsWritten: 0,
+      missingFilesSkipped: 1,
+      missingFilesTreatedAsEmpty: 0,
+    })
+
+    harness.clear()
+    await program.parseAsync([
+      ...baseArgs,
+      '--dry-run',
+      '--missing-files',
+      'delete',
+      '--no-approve-deletes',
+    ])
+    expect(JSON.parse(harness.stdout())).toMatchObject({
+      deleteRecordsWritten: 0,
+      selectionSkipped: 1,
+      missingFilesTreatedAsEmpty: 1,
+    })
+  })
+
   it.each([
     { label: 'with an explicit -- boundary', boundary: ['--'] },
     { label: 'from the child executable without --', boundary: [] },

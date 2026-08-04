@@ -343,7 +343,8 @@ async function chooseRestoreEntries(
     if (entry.action === 'identical') continue
     let decision = supplied.get(entry.entryId)
     if (!decision && options.selectEntry && !options.selectEntry(entry)) decision = 'skip'
-    if (!decision && entry.action === 'delete' && !options.approveDeletes) decision = 'skip'
+    if (!decision && entry.action === 'delete' && options.approveDeletes === false)
+      decision = 'skip'
     if (!decision && entry.action === 'conflict') {
       const conflictDecision = await resolveConflict(
         options.conflictStrategy,
@@ -615,6 +616,7 @@ export interface VaultSelectionOptions {
   include?: string
   exclude?: string
   only?: string
+  /** Delete entries are selected by default; set false to skip them. */
   approveDeletes?: boolean
 }
 
@@ -655,7 +657,7 @@ export function matchesVaultPushSelection(
 ): boolean {
   if (!matchesVaultSelection(entry, options)) return false
   const deletes = entry.action === 'delete' || entry.vaultAction === 'delete'
-  return !deletes || Boolean(options.approveDeletes)
+  return !deletes || options.approveDeletes !== false
 }
 
 export function selectRestorePlan(plan: RestorePlan, options: VaultSelectionOptions): RestorePlan {
@@ -712,7 +714,7 @@ export function buildDefaultRestoreDecisions(
           if (entry.action === 'conflict') {
             if (strategy === 'take-vault') decision = 'apply-vault'
             else if (strategy === 'keep-local') decision = 'keep-local'
-          } else if (entry.action !== 'delete' || options.approveDeletes) {
+          } else if (entry.action !== 'delete' || options.approveDeletes !== false) {
             decision = 'apply-vault'
           }
         }

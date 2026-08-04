@@ -3,6 +3,7 @@ import type { Command } from 'commander'
 import { parseVaultFailCondition } from '../application/restore.js'
 import type {
   VaultConflictStrategy,
+  VaultMissingFileStrategy,
   VaultRestoreRedaction,
   VaultRestoreReveal,
 } from '../domain/types.js'
@@ -24,6 +25,17 @@ export function parseVaultConflictStrategy(
   throw new EnvLaneError(
     'VAULT_INVALID_CONFLICT_STRATEGY',
     '--conflicts must be one of: abort, keep-local, take-vault',
+  )
+}
+
+export function parseVaultMissingFileStrategy(
+  value: string | undefined,
+): VaultMissingFileStrategy | undefined {
+  if (value === undefined) return undefined
+  if (value === 'delete' || value === 'skip') return value
+  throw new EnvLaneError(
+    'VAULT_INVALID_MISSING_FILE_STRATEGY',
+    '--missing-files must be one of: delete, skip',
   )
 }
 
@@ -68,7 +80,8 @@ export function addSelectionOptions(command: Command): Command {
     .option('--include <glob>', 'select entries matching a file:key glob')
     .option('--exclude <glob>', 'exclude entries matching a file:key glob')
     .option('--only <actions>', 'select comma-separated actions: add,modify,delete,conflict')
-    .option('--approve-deletes', 'allow delete entries to be selected by default')
+    .option('--approve-deletes', 'select delete entries (default)', true)
+    .option('--no-approve-deletes', 'skip delete entries unless explicitly selected in a plan')
 }
 
 export function addFailOnOption(command: Command): Command {
