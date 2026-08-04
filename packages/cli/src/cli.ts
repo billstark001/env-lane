@@ -16,7 +16,12 @@ program
   .version(packageJson.version)
 program.enablePositionalOptions()
 program.exitOverride()
-program.configureOutput({ writeErr: () => undefined })
+let commanderErrorOutput = ''
+program.configureOutput({
+  writeErr: (value) => {
+    commanderErrorOutput += value
+  },
+})
 
 const ctx = createCliContext(program)
 ctx.addCommonOptions(program)
@@ -90,6 +95,9 @@ try {
   await withEnvLaneContext({ logger: ctx.logger }, () => program.parseAsync())
 } catch (error) {
   if (error instanceof CommanderError && error.exitCode === 0) {
+    process.exitCode = 0
+  } else if (error instanceof CommanderError && error.code === 'commander.help') {
+    process.stdout.write(commanderErrorOutput)
     process.exitCode = 0
   } else {
     const renderedError =
