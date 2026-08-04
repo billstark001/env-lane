@@ -608,6 +608,49 @@ describe('@env-lane/core', () => {
     expect(existsSync(envFile)).toBe(false)
   })
 
+  it('checks sort drift without changing or creating files', async () => {
+    const root = testDirectory(`env-lane-sort-check`)
+    mkdirSync(root, { recursive: true })
+    const envFile = path.join(root, '.env')
+    const missingEnvFile = path.join(root, '.env.missing')
+    const templateFile = path.join(root, '.env.example')
+    writeFileSync(envFile, 'B=2\nA=1\n')
+    writeFileSync(templateFile, 'A=\nB=\n')
+
+    const drift = await sortEnvFile(envFile, templateFile, { check: true })
+    expect(drift).toMatchObject({ applied: false, changed: true })
+    expect(readFileSync(envFile, 'utf8')).toBe('B=2\nA=1\n')
+
+    const missing = await sortEnvFile(missingEnvFile, templateFile, { check: true })
+    expect(missing).toMatchObject({ applied: false, changed: true })
+    expect(existsSync(missingEnvFile)).toBe(false)
+
+    await sortEnvFile(envFile, templateFile)
+    await expect(sortEnvFile(envFile, templateFile, { check: true })).resolves.toMatchObject({
+      applied: false,
+      changed: false,
+    })
+  })
+
+  it('reports aggregate config sort drift in check mode without writing', async () => {
+    const root = testDirectory(`env-lane-sort-config-check`)
+    mkdirSync(root, { recursive: true })
+    const configFile = path.join(root, 'env-lane.config.json')
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        dotenv: { order: ['.env'] },
+        sort: { custom: { baseDir: '.', file: '.env', template: '.env.example' } },
+      }),
+    )
+    writeFileSync(path.join(root, '.env'), 'B=2\nA=1\n')
+    writeFileSync(path.join(root, '.env.example'), 'A=\nB=\n')
+
+    const result = await sortEnvFilesFromConfig(configFile, 'custom', 'all', { check: true })
+    expect(result).toMatchObject({ applied: false, changed: true, count: 1 })
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('B=2\nA=1\n')
+  })
+
   it('deduplicates jobs to avoid sorting the same file multiple times', async () => {
     const root = testDirectory(`env-lane-sort-dedup`)
     mkdirSync(root, { recursive: true })

@@ -24,7 +24,8 @@ import {
 } from '@env-lane/vault';
 
 await encryptEnvFiles(undefined, 'key.aes', {
-  vaultConfigFile: 'env-lane.vault.ts'
+  vaultConfigFile: 'env-lane.vault.ts',
+  dryRun: true
 });
 
 const plan = await buildRestorePlan(undefined, 'key.aes', {
@@ -66,6 +67,7 @@ Install `env-lane` alongside this package:
 
 ~~~bash
 env-lane vault encrypt key.aes
+env-lane vault encrypt key.aes --dry-run --json
 env-lane vault plan key.aes --output restore-plan.json --json
 env-lane vault apply key.aes --plan restore-plan.json --yes --non-interactive
 env-lane vault prune key.aes --keep-recent 3 --dry-run
@@ -83,7 +85,8 @@ details deprecated on the same schedule.
 
 ## Safety model
 
-- Schema v1 records store dotenv effective values; versionless/v0 records remain readable.
+- Schema v1 records store dotenv effective values and portable config-relative file paths;
+  versionless/v0 records remain readable.
 - `exclude` is a fail-closed local-only boundary; sanitize old matching history before continuing.
 - Optional `syncDir` uses keyed fingerprints for three-way conflict detection.
 - Restore plans bind digest, complete entry set, and explicit decisions before apply.

@@ -35,6 +35,7 @@ export interface CliOptionValues extends Record<string, unknown> {
   policy?: string
   target?: string
   dryRun?: boolean
+  check?: boolean
   preserveBom?: boolean
   eol?: 'auto' | 'lf' | 'crlf'
 }

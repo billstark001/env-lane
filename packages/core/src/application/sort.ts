@@ -88,11 +88,13 @@ interface SortRenderOptions {
 interface SortFileOptions extends SortRenderOptions {
   cwd?: string
   create?: boolean
+  check?: boolean
 }
 
 interface SortConfigOptions {
   cwd?: string
   create?: boolean
+  check?: boolean
   preserveBOM?: boolean
   eol?: 'auto' | 'lf' | 'crlf'
 }
@@ -503,6 +505,7 @@ async function sortEnvFileResolved(
   if (!create && !existsSync(envFilePath)) {
     return {
       applied: false,
+      changed: false,
       filePath: envFilePath,
       templateFilePath,
       operations: [],
@@ -518,6 +521,17 @@ async function sortEnvFileResolved(
   if (!plan.changed) {
     return {
       applied: false,
+      changed: false,
+      filePath: plan.filePath,
+      templateFilePath: plan.templateFilePath,
+      operations: plan.operations,
+      ...plan.summary,
+    }
+  }
+  if (options?.check) {
+    return {
+      applied: false,
+      changed: true,
       filePath: plan.filePath,
       templateFilePath: plan.templateFilePath,
       operations: plan.operations,
@@ -527,6 +541,7 @@ async function sortEnvFileResolved(
   writeEnvDocumentContent(plan.filePath, plan.nextContent)
   return {
     applied: true,
+    changed: true,
     filePath: plan.filePath,
     templateFilePath: plan.templateFilePath,
     operations: plan.operations,
@@ -545,6 +560,7 @@ export async function sortEnvFile(
     resolveFromDirectory(invocationCwd, templateFilePath),
     {
       create: options?.create,
+      check: options?.check,
       preserveBOM: options?.preserveBOM,
       eol: options?.eol,
       unlistedVariablesComment: options?.unlistedVariablesComment,
@@ -646,6 +662,7 @@ export async function sortEnvFilesFromConfig(
       seenFiles.add(file)
       const mergedOptions = {
         create: options?.create ?? target.create,
+        check: options?.check,
         preserveBOM: options?.preserveBOM ?? config.dotenv.preserveBOM,
         eol: options?.eol ?? config.dotenv.eol,
         unlistedVariablesComment: target.unlistedVariablesComment ?? '',
@@ -653,5 +670,10 @@ export async function sortEnvFilesFromConfig(
       results.push(await sortEnvFileResolved(file, templateFilePath, mergedOptions))
     }
   }
-  return { applied: results.some((result) => result.applied), count: results.length, results }
+  return {
+    applied: results.some((result) => result.applied),
+    changed: results.some((result) => result.changed),
+    count: results.length,
+    results,
+  }
 }

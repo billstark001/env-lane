@@ -157,6 +157,10 @@ Persisted Vault record and sync-state compatibility is separate from API compati
 reader for an old schema requires an explicit migration tool or procedure; it must not be folded
 silently into a later breaking export cleanup.
 
+Schema v1 record paths are portable, config-relative strings in storage and absolute paths only in
+memory. The storage adapter owns both transformations. Application code must never persist its
+runtime absolute path directly, and readers must reject absolute or platform-specific v1 paths.
+
 ## Testing boundaries
 
 Tests should cover three levels where relevant:

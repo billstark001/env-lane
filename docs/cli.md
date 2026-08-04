@@ -74,11 +74,13 @@ env-lane sort
 env-lane sort api
 env-lane sort api production
 env-lane sort api production --config env-lane.config.ts
+env-lane sort api production --check
 ~~~
 
 The config path is an option, not a positional argument. `key` defaults to `all`, and
 `envSuffix` defaults to `all`. Both commands support `--eol <auto|lf|crlf>` and
-`--no-preserve-bom`.
+`--no-preserve-bom`. Both also support `--check`, which reports drift without creating or changing
+files and exits with status 1 when any selected file would change.
 
 For `sort-file`, relative env and template arguments are resolved from `--cwd`. For `sort`,
 default config discovery starts from `--cwd`, and an explicit relative `--config` path is also
@@ -107,6 +109,10 @@ pnpm add -D @env-lane/vault
 Selection options on encrypt, plan, and decrypt include `--file`, `--key`, `--include`,
 `--exclude`, `--only`, and `--approve-deletes`. Conflict policy is one of `abort`,
 `keep-local`, or `take-vault`.
+
+`vault encrypt --dry-run` returns the same selected changes and record counts without creating or
+modifying the encrypted store, sync state, or output directories. Combine it with `--json` for CI
+or tooling and `--fail-on change` when drift should fail the command.
 
 For unattended restore, make every policy explicit:
 

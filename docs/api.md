@@ -28,6 +28,8 @@ The stable root contains:
   `runEnvCheck`, `runEnvSync`.
 - Execution and sorting: `runWithInjectedEnv`, `sortEnvFile`,
   `sortEnvFilesFromConfig`.
+
+Sorting options accept `check: true` to calculate and return drift without writing files.
 - Diagnostics and errors: `EnvLaneError`, `errorCode`, `withEnvLaneContext`, and the
   diagnostic formatting API.
 - Redaction and public configuration/result types.
@@ -52,6 +54,8 @@ The stable root contains Vault configuration and automation use cases:
 - `pruneVaultHistory`, `sanitizeVaultHistory`.
 - Restore, conflict, record, selection, and result types.
 - `VAULT_UNSAFE_WARNING` and explicit `warnUnsafeVault()`.
+
+`encryptEnvFiles` accepts `dryRun: true` for a no-write preview of selected records and changes.
 
 The optional Commander adapter has a stable dedicated entry:
 

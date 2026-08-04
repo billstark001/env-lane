@@ -9,6 +9,7 @@ import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
 import { decryptRecord, deriveVaultKey, encryptRecord, stableHash } from '../adapters/crypto.js'
 import { withFileLock } from '../adapters/file-lock.js'
 import { resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
+import { encodeVaultRecordPath, resolveVaultRecordPath } from '../adapters/record-path.js'
 import type { VaultRecord } from '../domain/types.js'
 
 export interface StoreReadResult {
@@ -128,7 +129,7 @@ function remapManagedStoreFilePath(
     : { filePath: resolvedFilePath, aliased: false }
 }
 
-function validateStoreRecord(decoded: unknown, order: number): VaultRecord {
+function validateStoreRecord(decoded: unknown, order: number, config: VaultConfig): VaultRecord {
   if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
     throw new Error('Store record must be a JSON object.')
   }
@@ -156,7 +157,7 @@ function validateStoreRecord(decoded: unknown, order: number): VaultRecord {
   }
   return {
     version,
-    f: path.resolve(raw.f),
+    f: version === 1 ? resolveVaultRecordPath(config.baseDir, raw.f) : path.resolve(raw.f),
     k: raw.k,
     t: timestamp,
     op,
@@ -194,7 +195,7 @@ function readStoreRecordLines(
   let aliasedRecords = 0
   lines.forEach((line, order) => {
     try {
-      const parsedRecord = validateStoreRecord(JSON.parse(decryptRecord(key, line)), order)
+      const parsedRecord = validateStoreRecord(JSON.parse(decryptRecord(key, line)), order, config)
       const remapped = remapManagedStoreFilePath(parsedRecord.f, config)
       if (remapped.aliased) aliasedRecords++
       records.push({
@@ -248,9 +249,10 @@ export function readStore(
   return { ...store, state }
 }
 
-function serializeRecord(key: Buffer, record: VaultRecord): string {
+function serializeRecord(config: VaultConfig, key: Buffer, record: VaultRecord): string {
   const { version, f, k, t, op, v } = record
-  return encryptRecord(key, JSON.stringify({ version, f, k, t, op, v }))
+  const storedFilePath = version === 1 ? encodeVaultRecordPath(config.baseDir, f) : f
+  return encryptRecord(key, JSON.stringify({ version, f: storedFilePath, k, t, op, v }))
 }
 
 export async function appendRecordsAtomically(
@@ -264,7 +266,7 @@ export async function appendRecordsAtomically(
     const prefix = existing.length === 0 || existing.endsWith('\n') ? existing : `${existing}\n`
     writeFileContentAtomically(
       config.storePath,
-      `${prefix}${records.map((record) => serializeRecord(key, record)).join('\n')}\n`,
+      `${prefix}${records.map((record) => serializeRecord(config, key, record)).join('\n')}\n`,
     )
   })
 }

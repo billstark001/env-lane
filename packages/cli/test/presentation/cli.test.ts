@@ -474,6 +474,26 @@ describe('CLI context & commands', () => {
       'custom-vault.json',
       '--sync-dir',
       '.sync',
+      '--dry-run',
+      '--json',
+    ])
+    expect(JSON.parse(harness.stdout())).toMatchObject({ dryRun: true, applied: false })
+    expect(existsSync(path.join(workDir, '.vault'))).toBe(false)
+    expect(existsSync(path.join(workDir, '.sync'))).toBe(false)
+
+    harness.clear()
+    await program.parseAsync([
+      'node',
+      'cli',
+      'vault',
+      'encrypt',
+      'key.aes',
+      '--cwd',
+      workDir,
+      '--vault-config',
+      'custom-vault.json',
+      '--sync-dir',
+      '.sync',
       '--json',
     ])
     expect(JSON.parse(harness.stdout()).storePath).toMatch(/\/\.vault\/store\.dat$/)
@@ -658,35 +678,61 @@ describe('CLI context & commands', () => {
     const { ctx } = harness
     registerSortCommands(program, ctx)
 
-    // Sort single file
-    await program.parseAsync([
-      'node',
-      'cli',
-      'sort-file',
-      'apps/api/.env',
-      'apps/api/.env.example',
-      '--cwd',
-      root,
-      '--format',
-      'json',
-    ])
-    const sortFileResult = JSON.parse(harness.stdout())
-    expect(sortFileResult.applied).toBe(true)
+    const previousExitCode = process.exitCode
+    process.exitCode = undefined
+    const unsortedContent = readFileSync(path.join(root, 'apps/api/.env'), 'utf8')
 
-    // Sort from config
-    harness.clear()
-    await program.parseAsync([
-      'node',
-      'cli',
-      'sort',
-      'api',
-      'all',
-      '--cwd',
-      root,
-      '--format',
-      'json',
-    ])
-    const sortResult = JSON.parse(harness.stdout())
-    expect(sortResult.count).toBeGreaterThan(0)
+    try {
+      await program.parseAsync([
+        'node',
+        'cli',
+        'sort-file',
+        'apps/api/.env',
+        'apps/api/.env.example',
+        '--cwd',
+        root,
+        '--check',
+        '--format',
+        'json',
+      ])
+      expect(JSON.parse(harness.stdout())).toMatchObject({ applied: false, changed: true })
+      expect(readFileSync(path.join(root, 'apps/api/.env'), 'utf8')).toBe(unsortedContent)
+      expect(process.exitCode).toBe(1)
+
+      process.exitCode = undefined
+      harness.clear()
+      // Sort single file
+      await program.parseAsync([
+        'node',
+        'cli',
+        'sort-file',
+        'apps/api/.env',
+        'apps/api/.env.example',
+        '--cwd',
+        root,
+        '--format',
+        'json',
+      ])
+      const sortFileResult = JSON.parse(harness.stdout())
+      expect(sortFileResult.applied).toBe(true)
+
+      // Sort from config
+      harness.clear()
+      await program.parseAsync([
+        'node',
+        'cli',
+        'sort',
+        'api',
+        'all',
+        '--cwd',
+        root,
+        '--format',
+        'json',
+      ])
+      const sortResult = JSON.parse(harness.stdout())
+      expect(sortResult.count).toBeGreaterThan(0)
+    } finally {
+      process.exitCode = previousExitCode
+    }
   })
 })

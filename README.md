@@ -101,6 +101,7 @@ const resolved = await resolveInjectedEnv({ target: 'api', build: 'production' }
 await runEnvCheck('deploy', { build: 'production' });
 await runEnvSync('webFromApi', { build: 'production', dryRun: true });
 await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production');
+await sortEnvFilesFromConfig('env-lane.config.ts', 'api', 'production', { check: true });
 await runWithInjectedEnv({
   target: 'api',
   build: 'production',
@@ -126,6 +127,7 @@ production secrets.
 
 ~~~bash
 env-lane vault encrypt key.aes
+env-lane vault encrypt key.aes --dry-run --json
 env-lane vault plan key.aes --output restore-plan.json --json
 env-lane vault apply key.aes --plan restore-plan.json --yes --non-interactive
 ~~~

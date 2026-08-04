@@ -13,6 +13,7 @@ import type { VaultCliContext } from './types.js'
 
 export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext): void {
   addFailOnOption(addSelectionOptions(ctx.addCommonOptions(vault.command('encrypt <keyFile>'))))
+    .option('--dry-run', 'preview Vault records without writing the store or sync state')
     .option('--sync-dir <dir>', 'directory containing explicit keyed-fingerprint sync state')
     .option('--vault-config <file>', 'vault configuration file')
     .option('--no-auto-remap', 'disable automatic remapping of workspace paths')
@@ -25,6 +26,7 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
       const resolvedConfig = await emitUnsafeWarning(allOpts)
       const result = await encryptEnvFiles(allOpts.config, keyFile, {
         cwd: allOpts.cwd,
+        dryRun: allOpts.dryRun,
         syncDir: allOpts.syncDir,
         vaultConfigFile: allOpts.vaultConfig,
         conflictStrategy: parseVaultConflictStrategy(allOpts.conflicts),
@@ -35,7 +37,9 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
       ctx.formatAndLog(result, {
         format,
         text: (res) => {
-          ctx.output(`Encrypted records to ${res.storePath}`)
+          ctx.output(
+            `${allOpts.dryRun ? 'Would encrypt records to' : 'Encrypted records to'} ${res.storePath}`,
+          )
           ctx.output(`  Set: ${res.setRecordsWritten}`)
           ctx.output(`  Delete: ${res.deleteRecordsWritten}`)
           ctx.output(`  Skipped unchanged: ${res.skippedUnchanged}`)

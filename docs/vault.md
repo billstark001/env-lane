@@ -48,9 +48,14 @@ same warning can call `warnUnsafeVault()` explicitly.
 
 ## Store format
 
-Schema v1 records store dotenv effective values. Versionless and version 0 records use the earlier
-raw right-hand-side representation and are converted through the shared env document model when
-read. New records always use version 1.
+Schema v1 records store dotenv effective values and a config-relative file path using `/` as the
+portable separator. A store created in a macOS checkout therefore resolves against the Vault
+config directory when read from a Windows checkout, without leaking or remapping the original
+developer's absolute path. `autoRemapPaths` applies only to legacy absolute paths.
+
+Versionless and version 0 records use the earlier raw right-hand-side representation and absolute
+paths; they are converted through the shared env document model and may be remapped when read. New
+records always use version 1.
 
 The record format is append-oriented so prior values may remain in history. Pruning or sanitizing a
 local store cannot recall copies already held elsewhere; rotate secrets after unwanted disclosure.
@@ -59,12 +64,18 @@ local store cannot recall copies already held elsewhere; rotate secrets after un
 
 ~~~bash
 env-lane vault encrypt key.aes
+env-lane vault encrypt key.aes --dry-run --json
 env-lane vault plan key.aes --json
 ~~~
 
 `encrypt` treats local dotenv files as its source. `plan` compares the current store with local
 files and returns only redacted previews. Stable keyed entry identifiers and a plan digest bind the
 plan to the current store and local state.
+
+`encrypt --dry-run` performs selection, conflict detection, and change calculation but does not
+take a write lock or create/update the store, sync state, or output directories. Its result reports
+the records that a real encrypt would append. Conflict decisions remain explicit, exactly as for a
+real encrypt.
 
 Create an editable approval document:
 
@@ -181,7 +192,8 @@ import {
 } from '@env-lane/vault';
 
 await encryptEnvFiles(undefined, 'key.aes', {
-  vaultConfigFile: 'env-lane.vault.ts'
+  vaultConfigFile: 'env-lane.vault.ts',
+  dryRun: true
 });
 
 const plan = await buildRestorePlan(undefined, 'key.aes', {

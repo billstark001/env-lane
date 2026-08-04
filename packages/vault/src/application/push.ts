@@ -26,6 +26,7 @@ import {
 
 export interface EncryptOptions {
   cwd?: string
+  dryRun?: boolean
   ignoreCorruptRecords?: boolean
   syncDir?: string
   conflictStrategy?: VaultConflictStrategy
@@ -284,9 +285,13 @@ async function encryptEnvFilesLocked(
       accumulator,
     )
   }
-  await appendRecordsAtomically(config, key, accumulator.pendingRecords)
-  if (syncContext) await saveSyncContext(syncContext)
+  if (!options.dryRun) {
+    await appendRecordsAtomically(config, key, accumulator.pendingRecords)
+    if (syncContext) await saveSyncContext(syncContext)
+  }
   return {
+    applied: !options.dryRun && accumulator.pendingRecords.length > 0,
+    dryRun: options.dryRun ?? false,
     storePath: config.storePath,
     setRecordsWritten: accumulator.setRecordsWritten,
     deleteRecordsWritten: accumulator.deleteRecordsWritten,
@@ -320,5 +325,6 @@ export async function encryptEnvFiles(
     (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
   const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
   const syncDir = options.syncDir ? resolveFromDirectory(invocationCwd, options.syncDir) : undefined
+  if (options.dryRun) return encryptEnvFilesLocked(config, key, syncDir, options)
   return withVaultOperationLock(config, () => encryptEnvFilesLocked(config, key, syncDir, options))
 }

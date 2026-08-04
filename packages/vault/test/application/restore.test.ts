@@ -64,7 +64,7 @@ describe('@env-lane/vault restore', () => {
     )
   })
 
-  it('supports dry-run confirmation and remaps previous checkout paths', async () => {
+  it('restores version 1 records in another checkout without absolute-path remapping', async () => {
     const oldRoot = testDirectory(`env-lane-vault-old`)
     const newRoot = testDirectory(`env-lane-vault-new`)
     mkdirSync(path.join(oldRoot, 'nested'), { recursive: true })
@@ -92,10 +92,11 @@ describe('@env-lane/vault restore', () => {
       path.join(newRoot, 'vault.json'),
       path.join(newRoot, 'key.aes'),
       {
+        autoRemapPaths: false,
         dryRun: true,
       },
     )
-    expect(dryRun.aliasedRecords).toBe(1)
+    expect(dryRun.aliasedRecords).toBe(0)
     expect(dryRun.filesWritten).toBe(0)
     expect(readFileSync(path.join(newRoot, 'nested/.env'), 'utf8')).toBe('A=changed\n')
 
@@ -301,7 +302,7 @@ describe('@env-lane/vault restore', () => {
       })
       expect(existsSync(otherFile)).toBe(true)
 
-      // Decrypt with autoRemapPaths: false (should NOT restore to rootNew/.env)
+      // Version 1 paths are config-relative, so they do not depend on legacy remapping.
       try {
         existsSync(otherFile) && require('node:fs').unlinkSync(otherFile)
       } catch {}
@@ -310,7 +311,7 @@ describe('@env-lane/vault restore', () => {
         autoApprove: true,
         autoRemapPaths: false,
       })
-      expect(existsSync(otherFile)).toBe(false)
+      expect(existsSync(otherFile)).toBe(true)
     })
   })
 
