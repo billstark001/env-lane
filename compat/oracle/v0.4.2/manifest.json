@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "version": "0.4.2",
+  "gitCommit": "bdd0e9f4881b433063629e3caed04cd102444e44",
+  "gitTag": "v0.4.2",
+  "artifact": "env-lane-v0.4.2-oracle.tar.gz",
+  "runtimeLock": "runtime-package-lock.json",
+  "sha256": "4b7276eb473cfded9dd62fa84d0c163515da239043cec409161dd901e6086bd2",
+  "entrypoint": "runtime/node_modules/env-lane/dist/cli.js",
+  "moduleEntrypoints": {
+    "@env-lane/core": "runtime/node_modules/@env-lane/core/dist/index.js",
+    "@env-lane/core/env-document": "runtime/node_modules/@env-lane/core/dist/env-document.js",
+    "@env-lane/vault": "runtime/node_modules/@env-lane/vault/dist/index.js",
+    "@env-lane/vault/cli": "runtime/node_modules/@env-lane/vault/dist/cli/index.js"
+  },
+  "node": [
+    "22.x",
+    "24.x"
+  ],
+  "pnpm": "11.x",
+  "capturedWith": {
+    "node": "24.18.0",
+    "pnpm": "11.24.0",
+    "npm": "12.0.1",
+    "platform": "darwin-arm64"
+  },
+  "contents": [
+    "env-lane@0.4.2 packed npm artifact",
+    "@env-lane/core@0.4.2 packed npm artifact",
+    "@env-lane/vault@0.4.2 packed npm artifact",
+    "package-lock and flattened transitive production dependencies",
+    "zero symbolic links or workspace source links"
+  ]
+}

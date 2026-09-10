@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "dependencies": {
+    "@env-lane/core": "file:../packs/env-lane-core-0.4.2.tgz",
+    "@env-lane/vault": "file:../packs/env-lane-vault-0.4.2.tgz",
+    "env-lane": "file:../packs/env-lane-0.4.2.tgz"
+  }
+}
