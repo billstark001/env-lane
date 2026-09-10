@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    { "id": "empty", "value": "", "formatted": "" },
+    { "id": "plain", "value": "plain", "formatted": "plain" },
+    { "id": "spaces", "value": " with spaces ", "formatted": "\" with spaces \"" },
+    { "id": "hash", "value": "hash # literal", "formatted": "\"hash # literal\"" },
+    { "id": "newline", "value": "line\nvalue", "formatted": "\"line\\nvalue\"" },
+    { "id": "carriage-return", "value": "left\rright", "formatted": "\"left\\rright\"" },
+    { "id": "nul", "value": "nul\u0000value", "formatted": "nul\u0000value" },
+    { "id": "all-quotes-plus-hash", "value": "all ' \" ` # quotes", "error": "UNREPRESENTABLE_ENV_VALUE" }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "boundaries": [
+    {
+      "name": "invalid UTF-8",
+      "legacy": "Node readFileSync(..., 'utf8') replaces invalid bytes with U+FFFD before parsing",
+      "classification": "supported-compatibility",
+      "rustRequirement": "decode lossily in the compatibility document loader"
+    },
+    {
+      "name": "NUL in value",
+      "legacy": "preserved by dotenv 17.4.2 and env-document",
+      "classification": "supported-compatibility",
+      "rustRequirement": "preserve in API values; process injection remains OS-dependent"
+    },
+    {
+      "name": "non-BMP Unicode",
+      "legacy": "preserved as Unicode scalar content",
+      "classification": "supported-core"
+    },
+    {
+      "name": "Windows process environment key casing",
+      "legacy": "inherits Node/Windows case-insensitive process.env behavior",
+      "classification": "platform-adapter",
+      "rustRequirement": "native process adapter must use Windows environment semantics; dotenv document keys remain case-sensitive"
+    }
+  ],
+  "unclassified": []
+}

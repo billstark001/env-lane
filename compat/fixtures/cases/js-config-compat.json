@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "js-config-compat",
+  "area": "config-compat",
+  "owner": "node-compat",
+  "topology": "moment-landing",
+  "environment": {
+    "unset": [
+      "LANE"
+    ]
+  },
+  "normalization": {
+    "root": true,
+    "pathSeparators": true
+  },
+  "steps": [
+    {
+      "kind": "api",
+      "operation": "core.load-config",
+      "input": {},
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"rootDir\": \"$ROOT\",\n  \"selector\": {\n    \"envKey\": \"LANE\",\n    \"defaultBuild\": \"local\",\n    \"builds\": [\n      \"local\",\n      \"production\"\n    ],\n    \"buildValidation\": \"error\",\n    \"forbidInDotenv\": true\n  },\n  \"workspace\": {\n    \"packageGlobs\": [\n      \"server\"\n    ],\n    \"aliases\": {\n      \"landing\": \"synthetic-landing\",\n      \"api\": \"synthetic-landing-server\"\n    },\n    \"defaultTarget\": \"landing\",\n    \"includeRoot\": true\n  },\n  \"dotenv\": {\n    \"order\": [\n      \".env\",\n      \".env.{build}\"\n    ],\n    \"localBuildName\": \"local\",\n    \"localOverrideFile\": \".env\",\n    \"requireOverride\": false,\n    \"includeProcessEnv\": false,\n    \"preserveBOM\": true,\n    \"eol\": \"auto\"\n  },\n  \"vault\": {\n    \"enabled\": false,\n    \"disableUnsafeWarning\": false,\n    \"configFile\": \"env-lane.vault\"\n  },\n  \"output\": {\n    \"format\": \"text\",\n    \"prefix\": true\n  }\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "packages",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.ts",
+        "--json"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "[\n  {\n    \"name\": \"synthetic-landing\",\n    \"dir\": \"$ROOT\",\n    \"relativeDir\": \".\",\n    \"aliases\": [\n      \"root\",\n      \".\",\n      \"synthetic-landing\",\n      \"landing\"\n    ],\n    \"isRoot\": true\n  },\n  {\n    \"name\": \"synthetic-landing-server\",\n    \"dir\": \"$ROOT/server\",\n    \"relativeDir\": \"server\",\n    \"aliases\": [\n      \"synthetic-landing-server\",\n      \"server\",\n      \"api\"\n    ],\n    \"isRoot\": false\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.resolve",
+      "input": {
+        "configFile": "env-lane.config.ts",
+        "target": "landing",
+        "build": "production"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"rootDir\": \"$ROOT\",\n  \"target\": {\n    \"name\": \"synthetic-landing\",\n    \"dir\": \"$ROOT\",\n    \"relativeDir\": \".\",\n    \"aliases\": [\n      \"root\",\n      \".\",\n      \"synthetic-landing\",\n      \"landing\"\n    ],\n    \"isRoot\": true\n  },\n  \"build\": \"production\",\n  \"selectorKey\": \"LANE\",\n  \"files\": [\n    {\n      \"kind\": \"base\",\n      \"path\": \"$ROOT/.env\",\n      \"relativePath\": \".env\",\n      \"exists\": true,\n      \"required\": false,\n      \"order\": 0\n    },\n    {\n      \"kind\": \"override\",\n      \"path\": \"$ROOT/.env.production\",\n      \"relativePath\": \".env.production\",\n      \"exists\": true,\n      \"required\": false,\n      \"order\": 1\n    }\n  ],\n  \"values\": {\n    \"PUBLIC_ORIGIN\": \"https://www.example.invalid\",\n    \"SHARED\": \"production-root\",\n    \"SECRET_TOKEN\": \"synthetic-secret-value\",\n    \"LANE\": \"production\"\n  },\n  \"sources\": {\n    \"PUBLIC_ORIGIN\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/.env.production\",\n      \"relativeFile\": \".env.production\",\n      \"line\": 1\n    },\n    \"SHARED\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/.env.production\",\n      \"relativeFile\": \".env.production\",\n      \"line\": 2\n    },\n    \"SECRET_TOKEN\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/.env\",\n      \"relativeFile\": \".env\",\n      \"line\": 3\n    },\n    \"LANE\": {\n      \"source\": \"selector\",\n      \"shellOverride\": false\n    }\n  }\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "vault.load-config",
+      "input": {
+        "configFile": "env-lane.config.ts",
+        "vaultConfigFile": "env-lane.vault.ts"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"baseDir\": \"$ROOT\",\n  \"envFiles\": [\n    \"$ROOT/.env\",\n    \"$ROOT/.env.production\",\n    \"$ROOT/server/.env\",\n    \"$ROOT/server/.env.production\"\n  ],\n  \"outputDir\": \"$ROOT/.env-lane-vault\",\n  \"outputFile\": \"store.dat\",\n  \"storePath\": \"$ROOT/.env-lane-vault/store.dat\",\n  \"trackDeletions\": true,\n  \"autoRemapPaths\": true,\n  \"allowUnmanaged\": false,\n  \"restore\": {\n    \"redaction\": \"partial\",\n    \"reveal\": {\n      \"start\": 3,\n      \"end\": 2\n    },\n    \"promptLoop\": false\n  },\n  \"exclude\": [],\n  \"disableUnsafeWarning\": true\n}\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "expectedFiles": {}
+}

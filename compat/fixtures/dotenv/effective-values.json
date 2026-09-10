@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "dotenvVersion": "17.4.2",
+  "cases": [
+    {
+      "id": "empty-file",
+      "content": "",
+      "values": {},
+      "lineNumbers": {},
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 0 }
+    },
+    {
+      "id": "blank-and-whitespace-lines",
+      "content": "  \n\t\n",
+      "values": {},
+      "lineNumbers": {},
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": true, "lineCount": 2 }
+    },
+    {
+      "id": "bom-crlf-and-final-newline",
+      "content": "\ufeffBOM_KEY=value\r\nSECOND=two\r\n",
+      "values": { "BOM_KEY": "value", "SECOND": "two" },
+      "lineNumbers": { "BOM_KEY": 1, "SECOND": 2 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": true, "eol": "\r\n", "hasFinalNewline": true, "lineCount": 2 }
+    },
+    {
+      "id": "mixed-newlines-first-crlf-policy",
+      "content": "A=one\nB=two\r\nC=three",
+      "values": { "A": "one", "B": "two", "C": "three" },
+      "lineNumbers": { "A": 1, "B": 2, "C": 3 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\r\n", "hasFinalNewline": false, "lineCount": 3 }
+    },
+    {
+      "id": "keys-separators-and-export",
+      "content": "KEY=value\nSPACED = padded\nCOLON: needs-space\nCOLON_NO_SPACE:ignored\nexport dotted.key: dotted-value\nDASH-KEY=ok\nUNDER_SCORE=ok",
+      "values": {
+        "KEY": "value",
+        "SPACED": "padded",
+        "COLON": "needs-space",
+        "dotted.key": "dotted-value",
+        "DASH-KEY": "ok",
+        "UNDER_SCORE": "ok"
+      },
+      "lineNumbers": {
+        "KEY": 1,
+        "SPACED": 2,
+        "COLON": 3,
+        "dotted.key": 5,
+        "DASH-KEY": 6,
+        "UNDER_SCORE": 7
+      },
+      "invalidLineCount": 1,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 7 }
+    },
+    {
+      "id": "empty-space-and-unquoted-values",
+      "content": "EMPTY=\nONLY_SPACE=   \nUNQUOTED=  value with spaces  \nHASH=value # comment",
+      "values": {
+        "EMPTY": "",
+        "ONLY_SPACE": "",
+        "UNQUOTED": "value with spaces",
+        "HASH": "value"
+      },
+      "lineNumbers": { "EMPTY": 1, "ONLY_SPACE": 2, "UNQUOTED": 3, "HASH": 4 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 4 }
+    },
+    {
+      "id": "quoted-values-comments-and-escapes",
+      "content": "SINGLE=' value # preserved '\nDOUBLE=\"line\\nvalue # preserved\" # suffix\nBACK=`value # preserved` # suffix\nESCAPED=\"quote \\\" and # value\" # suffix\nREAL_CR=\"left\\rright\"",
+      "values": {
+        "SINGLE": " value # preserved ",
+        "DOUBLE": "line\nvalue # preserved",
+        "BACK": "value # preserved",
+        "ESCAPED": "quote \\\" and # value",
+        "REAL_CR": "left\rright"
+      },
+      "lineNumbers": { "SINGLE": 1, "DOUBLE": 2, "BACK": 3, "ESCAPED": 4, "REAL_CR": 5 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 5 }
+    },
+    {
+      "id": "odd-even-backslash-closing-quotes",
+      "content": "ODD=\"value\\\"#inside\" # outside\nEVEN=\"value\\\\\" # outside",
+      "values": { "ODD": "value\\\"#inside", "EVEN": "value\\\\" },
+      "lineNumbers": { "ODD": 1, "EVEN": 2 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 2 }
+    },
+    {
+      "id": "multiline-and-duplicates-last-wins",
+      "content": "DUP=first\nMULTI=\"line one\nline two\"\nDUP=last",
+      "values": { "DUP": "last", "MULTI": "line one\nline two" },
+      "lineNumbers": { "DUP": 4, "MULTI": 2 },
+      "occurrences": { "DUP": 2, "MULTI": 1 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 1,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 4 }
+    },
+    {
+      "id": "comments-invalid-and-continuation",
+      "content": "# ordinary\n# COMMENTED = dormant # suffix\nINVALID LINE\nMULTI='first\nsecond'\nAFTER=ok",
+      "values": { "MULTI": "first\nsecond", "AFTER": "ok" },
+      "lineNumbers": { "MULTI": 4, "AFTER": 6 },
+      "invalidLineCount": 1,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 6 }
+    },
+    {
+      "id": "unicode-nul-and-non-bmp",
+      "content": "UNICODE=日本語-🦀\nNUL=nul\u0000value",
+      "values": { "UNICODE": "日本語-🦀", "NUL": "nul\u0000value" },
+      "lineNumbers": { "UNICODE": 1, "NUL": 2 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": false, "lineCount": 2 }
+    },
+    {
+      "id": "invalid-utf8-node-replacement",
+      "base64": "QkFEPf9vawo=",
+      "values": { "BAD": "�ok" },
+      "lineNumbers": { "BAD": 1 },
+      "invalidLineCount": 0,
+      "shadowedEntryCount": 0,
+      "document": { "hasBom": false, "eol": "\n", "hasFinalNewline": true, "lineCount": 1 }
+    }
+  ]
+}

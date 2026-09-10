@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "id": "sort-sync-side-effects",
+  "area": "core-api",
+  "owner": "rust-core",
+  "topology": "moment-project",
+  "environment": {
+    "unset": [
+      "LANE"
+    ]
+  },
+  "normalization": {
+    "root": true,
+    "pathSeparators": true
+  },
+  "steps": [
+    {
+      "kind": "api",
+      "operation": "core.sort-file",
+      "input": {
+        "file": "apps/api/.env",
+        "template": "apps/api/.env.example",
+        "check": true
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"applied\": false,\n  \"changed\": true,\n  \"filePath\": \"$ROOT/apps/api/.env\",\n  \"templateFilePath\": \"$ROOT/apps/api/.env.example\",\n  \"operations\": [\n    {\n      \"action\": \"move\",\n      \"key\": \"DATABASE_URL\"\n    },\n    {\n      \"action\": \"append-extra\",\n      \"key\": \"UNSORTED\"\n    }\n  ],\n  \"movedCount\": 1,\n  \"insertedCommentedCount\": 0,\n  \"appendedExtraCount\": 1,\n  \"appendedDuplicateCount\": 0,\n  \"groupedDuplicateCount\": 0\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "sort-file",
+        "apps/api/.env",
+        "apps/api/.env.example",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "Sorted apps/api/.env\n  Moved: 1\n  Inserted commented: 0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "sort",
+        "api",
+        "all",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--check",
+        "--json"
+      ],
+      "expected": {
+        "status": 1,
+        "stdout": "{\n  \"applied\": false,\n  \"changed\": true,\n  \"count\": 4,\n  \"results\": [\n    {\n      \"applied\": false,\n      \"changed\": false,\n      \"filePath\": \"$ROOT/apps/api/.env\",\n      \"templateFilePath\": \"$ROOT/apps/api/.env.example\",\n      \"operations\": [\n        {\n          \"action\": \"append-extra\",\n          \"key\": \"UNSORTED\"\n        }\n      ],\n      \"movedCount\": 0,\n      \"insertedCommentedCount\": 0,\n      \"appendedExtraCount\": 1,\n      \"appendedDuplicateCount\": 0,\n      \"groupedDuplicateCount\": 0\n    },\n    {\n      \"applied\": false,\n      \"changed\": false,\n      \"filePath\": \"$ROOT/apps/api/.env.local\",\n      \"templateFilePath\": \"$ROOT/apps/api/.env.example\",\n      \"operations\": [],\n      \"movedCount\": 0,\n      \"insertedCommentedCount\": 0,\n      \"appendedExtraCount\": 0,\n      \"appendedDuplicateCount\": 0,\n      \"groupedDuplicateCount\": 0\n    },\n    {\n      \"applied\": false,\n      \"changed\": true,\n      \"filePath\": \"$ROOT/apps/api/.env.development\",\n      \"templateFilePath\": \"$ROOT/apps/api/.env.example\",\n      \"operations\": [\n        {\n          \"action\": \"insert-commented\",\n          \"key\": \"SHARED\"\n        }\n      ],\n      \"movedCount\": 0,\n      \"insertedCommentedCount\": 1,\n      \"appendedExtraCount\": 0,\n      \"appendedDuplicateCount\": 0,\n      \"groupedDuplicateCount\": 0\n    },\n    {\n      \"applied\": false,\n      \"changed\": true,\n      \"filePath\": \"$ROOT/apps/api/.env.production\",\n      \"templateFilePath\": \"$ROOT/apps/api/.env.example\",\n      \"operations\": [\n        {\n          \"action\": \"insert-commented\",\n          \"key\": \"SHARED\"\n        }\n      ],\n      \"movedCount\": 0,\n      \"insertedCommentedCount\": 1,\n      \"appendedExtraCount\": 0,\n      \"appendedDuplicateCount\": 0,\n      \"groupedDuplicateCount\": 0\n    }\n  ]\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.sync",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "name": "web-to-worker",
+        "build": "local",
+        "dryRun": false
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"sync\": \"web-to-worker\",\n  \"build\": \"local\",\n  \"targetFile\": \"$ROOT/apps/worker/.env.local\",\n  \"changed\": true,\n  \"dryRun\": false,\n  \"mappings\": [\n    {\n      \"from\": \"PUBLIC_API_URL\",\n      \"to\": \"API_URL\",\n      \"value\": \"https://api.example.invalid/local/path\",\n      \"skipped\": false\n    }\n  ],\n  \"write\": {\n    \"changed\": true,\n    \"filePath\": \"$ROOT/apps/worker/.env.local\",\n    \"writtenKeys\": [\n      \"API_URL\"\n    ],\n    \"removedDuplicateKeys\": [],\n    \"restoredCommentedKeys\": []\n  }\n}\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "observeFiles": [
+    "apps/api/.env",
+    "apps/worker/.env.local"
+  ],
+  "expectedFiles": {
+    "apps/api/.env": "DATABASE_URL=postgres://base.example.invalid/app\nSHARED=api-base\nUNSORTED=value\n",
+    "apps/worker/.env.local": "WORKER_CONCURRENCY=1\n\nAPI_URL=https://api.example.invalid/local/path\n"
+  }
+}

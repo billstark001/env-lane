@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "id": "process-contract",
+  "area": "cli",
+  "owner": "native-cli",
+  "topology": "moment-landing",
+  "environment": {
+    "unset": [
+      "LANE"
+    ]
+  },
+  "normalization": {
+    "root": true,
+    "pathSeparators": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "argv": [
+        "run",
+        "landing",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--quiet",
+        "--",
+        "node",
+        "child-argv.mjs",
+        "space value",
+        "amp&ersand",
+        "dollar$sign",
+        "semi;colon",
+        "quote\"value"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "space value|amp&ersand|dollar$sign|semi;colon|quote\"value",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "run",
+        "landing",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--quiet",
+        "--",
+        "node",
+        "child-exit.mjs"
+      ],
+      "expected": {
+        "status": 7,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "run",
+        "landing",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--quiet",
+        "--",
+        "node",
+        "child-signal.mjs"
+      ],
+      "expected": {
+        "status": 1,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "run",
+        "api",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--run-cwd",
+        "root",
+        "--quiet",
+        "--",
+        "node",
+        "child-cwd.mjs"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "$ROOT",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "run",
+        "api",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--run-cwd",
+        "server",
+        "--quiet",
+        "--",
+        "node",
+        "../child-cwd.mjs"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "$ROOT/server",
+        "stderr": ""
+      }
+    }
+  ],
+  "expectedFiles": {}
+}

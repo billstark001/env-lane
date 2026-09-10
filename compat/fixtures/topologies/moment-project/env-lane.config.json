@@ -1,0 +1,60 @@
+{
+  "selector": {
+    "envKey": "LANE",
+    "defaultBuild": "local",
+    "builds": ["local", "development", "production"],
+    "buildValidation": "error",
+    "forbidInDotenv": true
+  },
+  "workspace": {
+    "packageGlobs": ["apps/*", "packages/*"],
+    "aliases": {
+      "backend": "@synthetic/api",
+      "frontend": "@synthetic/web",
+      "jobs": "apps/worker",
+      "database": "@synthetic/db"
+    },
+    "defaultTarget": "@synthetic/api",
+    "includeRoot": false
+  },
+  "dotenv": {
+    "order": [".env", ".env.{build}"],
+    "localBuildName": "local",
+    "localOverrideFile": ".env.local",
+    "includeProcessEnv": false
+  },
+  "output": { "format": "text", "prefix": true },
+  "vault": {
+    "enabled": true,
+    "disableUnsafeWarning": true,
+    "configFile": "env-lane.vault.json"
+  },
+  "sort": {
+    "api": {
+      "baseDir": "apps/api",
+      "file": ".env",
+      "template": ".env.example"
+    }
+  },
+  "checks": {
+    "deploy": {
+      "sources": {
+        "api": { "target": "backend", "includeProcessEnv": false },
+        "web": { "target": "frontend", "includeProcessEnv": false }
+      },
+      "rules": [
+        { "type": "required", "source": "api", "key": "DATABASE_URL" },
+        { "type": "required", "source": "web", "key": "PUBLIC_API_URL" }
+      ]
+    }
+  },
+  "sync": {
+    "web-to-worker": {
+      "from": { "target": "frontend", "includeProcessEnv": false },
+      "to": { "target": "jobs" },
+      "mappings": [
+        { "from": "PUBLIC_API_URL", "to": "API_URL", "transform": "url-base" }
+      ]
+    }
+  }
+}

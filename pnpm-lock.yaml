@@ -40,6 +40,18 @@ importers:
         specifier: workspace:*
         version: link:../vault
 
+  packages/compat-test:
+    dependencies:
+      '@env-lane/core':
+        specifier: workspace:*
+        version: link:../core
+      '@env-lane/vault':
+        specifier: workspace:*
+        version: link:../vault
+      dotenv:
+        specifier: 17.4.2
+        version: 17.4.2
+
   packages/core:
     dependencies:
       c12:

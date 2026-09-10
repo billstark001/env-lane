@@ -1,0 +1,15 @@
+{
+  "name": "@env-lane/compat-test",
+  "version": "0.4.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@env-lane/core": "workspace:*",
+    "@env-lane/vault": "workspace:*",
+    "dotenv": "17.4.2"
+  }
+}
