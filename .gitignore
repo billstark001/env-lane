@@ -3,6 +3,8 @@ coverage
 dist
 .env*
 !.env.example
+!compat/fixtures/**/.env*
 *.tsbuildinfo
 .DS_Store
 .pnpm-store
+.rewrite/

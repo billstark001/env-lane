@@ -1,0 +1,4 @@
+compat/oracle/**/*.tar.gz binary
+compat/oracle/**/*.json text eol=lf
+compat/fixtures/** text eol=lf
+compat/contracts/*.json text eol=lf
