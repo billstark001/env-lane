@@ -1,0 +1,27 @@
+[package]
+name = "env-lane-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tempfile = "3"
+pathdiff = "0.2"
+walkdir = "2.5"
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+yaml_serde.workspace = true
+picomatch-rs = "=0.1.0"
+fancy-regex = "0.14"
+url = "2.5"
+base64 = "0.22"
+
+[dev-dependencies]
+proptest.workspace = true
+base64.workspace = true
+
+[lints]
+workspace = true

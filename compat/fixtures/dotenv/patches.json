@@ -5,43 +5,168 @@
       "id": "update-last-remove-duplicate-restore-and-multiline",
       "initial": "# heading\nDUP=first\nDUP=second # keep\n# RESTORE = old # note\nMULTI=\"line one\nline two\"\nTAIL=value\n",
       "patches": [
-        { "op": "set", "key": "DUP", "value": "updated" },
-        { "op": "set", "key": "RESTORE", "value": "active" },
-        { "op": "delete", "key": "MULTI" }
+        {
+          "op": "set",
+          "key": "DUP",
+          "value": "updated"
+        },
+        {
+          "op": "set",
+          "key": "RESTORE",
+          "value": "active"
+        },
+        {
+          "op": "delete",
+          "key": "MULTI"
+        }
       ],
-      "options": { "update": "last", "matchCommented": true, "removeDuplicateEntries": true },
+      "options": {
+        "update": "last",
+        "matchCommented": true,
+        "removeDuplicateEntries": true
+      },
       "expected": "# heading\nDUP=updated # keep\nRESTORE = active # note\nTAIL=value\n"
     },
     {
       "id": "append-sorted-with-blank-line",
       "initial": "EXISTING=value\n",
       "patches": [
-        { "op": "set", "key": "ZED", "value": "last" },
-        { "op": "set", "key": "ALPHA", "value": "first" }
+        {
+          "op": "set",
+          "key": "ZED",
+          "value": "last"
+        },
+        {
+          "op": "set",
+          "key": "ALPHA",
+          "value": "first"
+        }
       ],
-      "options": { "sortAdditions": true, "blankLineBeforeAdditions": true },
-      "expected": "EXISTING=value\n\nALPHA=first\nZED=last\n"
+      "options": {
+        "sortAdditions": true,
+        "blankLineBeforeAdditions": true
+      },
+      "expected": "EXISTING=value\n\nALPHA=first\nZED=last\n",
+      "nativePatches": [
+        {
+          "op": "set",
+          "key": "ALPHA",
+          "value": "first"
+        },
+        {
+          "op": "set",
+          "key": "ZED",
+          "value": "last"
+        }
+      ]
     },
     {
       "id": "delete-all-occurrences",
       "initial": "KEEP=yes\nREMOVE=one\nREMOVE=two\n",
-      "patches": [{ "op": "delete", "key": "REMOVE" }],
-      "options": { "update": "all" },
+      "patches": [
+        {
+          "op": "delete",
+          "key": "REMOVE"
+        }
+      ],
+      "options": {
+        "update": "all"
+      },
       "expected": "KEEP=yes\n"
     },
     {
       "id": "preserve-bom-and-convert-crlf",
-      "initial": "\ufeffA=one\n",
-      "patches": [{ "op": "set", "key": "A", "value": "two" }],
-      "options": { "preserveBOM": true, "eol": "crlf" },
-      "expected": "\ufeffA=two\r\n"
+      "initial": "﻿A=one\n",
+      "patches": [
+        {
+          "op": "set",
+          "key": "A",
+          "value": "two"
+        }
+      ],
+      "options": {
+        "preserveBOM": true,
+        "eol": "crlf"
+      },
+      "expected": "﻿A=two\r\n"
     },
     {
       "id": "remove-bom-and-no-final-newline",
-      "initial": "\ufeffA=one",
-      "patches": [{ "op": "set", "key": "A", "value": "two" }],
-      "options": { "preserveBOM": false, "eol": "lf" },
+      "initial": "﻿A=one",
+      "patches": [
+        {
+          "op": "set",
+          "key": "A",
+          "value": "two"
+        }
+      ],
+      "options": {
+        "preserveBOM": false,
+        "eol": "lf"
+      },
       "expected": "A=two"
+    },
+    {
+      "id": "outer-api-locale-addition-order",
+      "initial": "",
+      "patches": [
+        {
+          "op": "set",
+          "key": "A",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": "a",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": ".A",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": "_A",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": "-A",
+          "value": "value"
+        }
+      ],
+      "options": {
+        "sortAdditions": true
+      },
+      "nativePatches": [
+        {
+          "op": "set",
+          "key": "_A",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": "-A",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": ".A",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": "a",
+          "value": "value"
+        },
+        {
+          "op": "set",
+          "key": "A",
+          "value": "value"
+        }
+      ],
+      "expected": "_A=value\n-A=value\n.A=value\na=value\nA=value"
     }
   ]
 }
