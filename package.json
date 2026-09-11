@@ -25,7 +25,9 @@
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
-    "format": "biome check --write ."
+    "format": "biome check --write .",
+    "rust:check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && pnpm compat:rust",
+    "compat:rust": "node scripts/compat/rust-document.mjs && node scripts/compat/rust-document-fuzz.mjs && node scripts/compat/rust-config.mjs && node scripts/compat/rust-policy.mjs && node scripts/compat/rust-sort.mjs && node scripts/compat/rust-core-fixtures.mjs && node scripts/compat/rust-workspace.mjs && node scripts/compat/rust-process.mjs && node scripts/compat/rust-redaction.mjs && node scripts/compat/rust-cli.mjs && node scripts/compat/rust-cli-options.mjs && node scripts/compat/rust-vault-crypto.mjs && node scripts/compat/rust-vault-store.mjs && node scripts/compat/rust-vault-config.mjs && node scripts/compat/rust-vault-lock.mjs && node scripts/compat/rust-vault-sync.mjs && node scripts/compat/rust-vault-history.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

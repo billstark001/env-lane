@@ -85,3 +85,85 @@ jobs:
 
       - name: Test compatibility baseline
         run: pnpm test
+
+  rust:
+    name: Rust and native differential on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node for the frozen oracle
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Native tests and doctests
+        run: cargo test --workspace --locked
+
+      - name: Document differential against frozen Node artifact
+        run: node scripts/compat/rust-document.mjs
+
+      - name: Config differential against frozen Node artifact
+        run: node scripts/compat/rust-config.mjs
+
+      - name: Rust-generated document differential with shrinking
+        run: node scripts/compat/rust-document-fuzz.mjs
+
+      - name: Policy and sync result and filesystem differential
+        run: node scripts/compat/rust-policy.mjs
+
+      - name: Sort plans and configured file operations differential
+        run: node scripts/compat/rust-sort.mjs
+
+      - name: Shared frozen Core API case
+        run: node scripts/compat/rust-core-fixtures.mjs
+
+      - name: Workspace matching and traversal differential
+        run: node scripts/compat/rust-workspace.mjs
+
+      - name: Child execution and signal differential
+        run: node scripts/compat/rust-process.mjs
+
+      - name: Shared redaction differential
+        run: node scripts/compat/rust-redaction.mjs
+
+      - name: Native Core CLI frozen fixture subset
+        run: node scripts/compat/rust-cli.mjs
+
+      - name: Native CLI options and no-Node smoke
+        run: node scripts/compat/rust-cli-options.mjs
+
+      - name: Vault cryptographic interoperability
+        run: node scripts/compat/rust-vault-crypto.mjs
+
+      - name: Vault record store interoperability
+        run: node scripts/compat/rust-vault-store.mjs
+
+      - name: Vault canonical configuration differential
+        run: node scripts/compat/rust-vault-config.mjs
+
+      - name: Vault cross-process lock interoperability
+        run: node scripts/compat/rust-vault-lock.mjs
+
+      - name: Vault sync baseline and conflict differential
+        run: node scripts/compat/rust-vault-sync.mjs
+
+      - name: Vault history preview and apply differential
+        run: node scripts/compat/rust-vault-history.mjs
