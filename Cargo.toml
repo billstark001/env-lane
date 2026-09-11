@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/env-lane-core", "crates/env-lane-cli"]
+members = ["crates/env-lane-core", "crates/env-lane-cli", "crates/env-lane-vault"]
 resolver = "3"
 
 [workspace.package]
