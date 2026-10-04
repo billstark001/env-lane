@@ -123,6 +123,9 @@ jobs:
       - name: Config differential against frozen Node artifact
         run: node scripts/compat/rust-config.mjs
 
+      - name: Compile static JS and TypeScript config for no-Node native use
+        run: node scripts/compat/rust-config-cache.mjs
+
       - name: Rust-generated document differential with shrinking
         run: node scripts/compat/rust-document-fuzz.mjs
 
@@ -167,3 +170,18 @@ jobs:
 
       - name: Vault history preview and apply differential
         run: node scripts/compat/rust-vault-history.mjs
+
+      - name: Vault push dry-run and cross-decrypt differential
+        run: node scripts/compat/rust-vault-push.mjs
+
+      - name: Vault restore plan and apply differential
+        run: node scripts/compat/rust-vault-restore.mjs
+
+      - name: Native Vault CLI differential
+        run: node scripts/compat/rust-vault-cli.mjs
+
+      - name: Native Vault terminal selection
+        run: node scripts/compat/rust-vault-tty.mjs
+
+      - name: Native npm install entry and optional Vault peer
+        run: node scripts/compat/rust-native-install.mjs
