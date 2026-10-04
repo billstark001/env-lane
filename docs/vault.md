@@ -1,5 +1,18 @@
 # Development Vault
 
+## Rust workflow status
+
+The Rust crate and standalone CLI implement encrypt, plan, decrypt, apply, sanitize, and prune.
+The native implementation reads legacy schema v0/v1 records, writes schema v1 records, and keeps
+sync baselines, approval digests, locks, and atomic writes compatible with the frozen 0.4.2
+implementation. The Node API's standard operations call the Rust binding. Interactive native
+decrypt selection uses redacted previews and requires a final confirmation before writing.
+
+Cross-language push/restore and CLI differential fixtures cover the implemented workflows. The
+npm bin on this branch installs the standalone native CLI; the Commander adapter remains for
+programmatic use and compatibility tests. Preserve backups and verify a restore plan before
+applying it in a real workspace.
+
 `@env-lane/vault` provides reversible encrypted dotenv record storage for development workflows.
 It is intentionally not a production secret manager.
 
@@ -49,6 +62,9 @@ export default defineVaultConfig({
 Paths declared inside the Vault config are resolved relative to that config file. The main env-lane
 config may point to a different file through `vault.configFile`. An explicit relative
 `--vault-config <file>` takes precedence and is resolved from `--cwd`.
+The store and managed dotenv paths must identify distinct files, including when symbolic links
+point to the same target. Managed dotenv paths must also be distinct from one another.
+`loadVaultConfig()` validates these resolved path identities before returning a config.
 
 Vault CLI commands emit the unsafe-development warning unless `disableUnsafeWarning` is enabled
 in the main or Vault config. Library operations are silent. Programmatic callers that want the
@@ -93,13 +109,14 @@ restore: {
 - `full` replaces every eligible value with `<redacted>` and remains the safe default; the
   eight-character lower bound described below still applies.
 - `partial` preserves non-sensitive URL structure while hiding URL credentials, credential query
-  parameters, JWT/PASETO values, and secret-like or opaque high-entropy path/query components.
+  and fragment parameters, JWT/PASETO values, and secret-like or opaque high-entropy path/query components.
   Public-key PEM values, wallet addresses, and ordinary provider endpoints remain visible.
 - `none` includes plaintext current and Vault values in terminal/JSON output and approval files.
   Treat those outputs as secrets and do not commit or share them.
 - `reveal` optionally keeps a configured number of leading/trailing characters inside each
   redaction marker. It defaults to `false`. Values too short to retain a hidden middle always fall
-  back to plain `<redacted>`.
+  back to plain `<redacted>`. Counts use UTF-16 units; a limit that cuts through a surrogate pair
+  leaves out the entire character.
 - `promptLoop` controls whether Up/Down navigation wraps at the ends of the manual selection list;
   it defaults to `false`.
 
@@ -130,6 +147,9 @@ postgres://user:password@db.example.com:5432/moment
 
 https://example.com/callback?token=abc&mode=test
 → https://example.com/callback?token=abc&mode=test
+
+https://example.com/callback#access_token=synthetic-secret
+→ https://example.com/callback#access_token=<redacted>
 
 https://rpc.provider.com/v2/secret-project-id
 → https://rpc.provider.com/v2/<redacted>
@@ -186,7 +206,7 @@ Encrypt, plan, and decrypt support:
 - `--key <glob>`: match an env key.
 - `--include <glob>`: match a `file:key` pair.
 - `--exclude <glob>`: exclude a `file:key` pair.
-- `--only add,modify,delete,conflict`: select action kinds.
+- `--only add,modify,delete,identical,conflict`: select action kinds. `identical` is useful for plan views; it never writes a value.
 - `--approve-deletes`: select delete entries; this is the default.
 - `--no-approve-deletes`: skip delete entries by default.
 

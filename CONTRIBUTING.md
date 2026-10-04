@@ -4,6 +4,7 @@
 
 - Node.js 22 or newer
 - pnpm matching the workspace lockfile
+- Rust toolchain from `rust-toolchain.toml`
 
 ~~~bash
 pnpm install
@@ -18,10 +19,17 @@ pnpm test
 pnpm test:watch
 pnpm build
 pnpm check
+pnpm rust:check
 ~~~
 
 `pnpm check` is the release gate. It runs lint, type checking, all tests, a clean package build,
 published-entry checks, and built CLI child-process tests.
+
+`pnpm rust:check` adds rustfmt, Clippy, Cargo tests, and frozen 0.4.2 differential tests. The
+standalone CLI is `cargo run --locked -p env-lane-cli -- <arguments>`. The Node binding is built
+with `pnpm --filter @env-lane/native build`. Keep `.rewrite/` implementation notes current even
+though that directory is ignored by Git. See [native migration](docs/native-migration.md) for
+the remaining release gates.
 
 Use `pnpm dev -- <arguments>` to run the local CLI through TypeScript:
 
@@ -95,9 +103,10 @@ Keep unrelated user changes out of a commit. Review staged content with
 3. Run `pnpm check`.
 4. Run `pnpm pack:dry-run` and inspect package contents.
 5. Run `pnpm release:dry-run`.
-6. Run `pnpm release:verify -- --tag v<version>` from a clean release commit.
-7. Create and push the matching annotated `v<version>` tag. The release workflow validates that
-   the tag, package versions, changelog, clean tree, and checked-out commit agree before publishing.
+6. Create the matching annotated `v<version>` tag on the clean release commit.
+7. Run `pnpm release:verify -- --tag v<version>`; it checks that the tag points at `HEAD`.
+8. Push the tag. The release workflow validates that the tag, package versions, changelog,
+   clean tree, and checked-out commit agree before publishing.
 
 The npm environment must configure each package's Trusted Publisher for
 `.github/workflows/release.yml`. The workflow uses OIDC and does not require a long-lived npm token.

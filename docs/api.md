@@ -1,5 +1,18 @@
 # API and compatibility
 
+## Rust binding on the rewrite branch
+
+Stable Core and Vault application calls now use `@env-lane/native` through thin ESM/CommonJS
+facades. The binding accepts JSON requests, returns value and diagnostic envelopes, and maps Rust
+error codes to `EnvLaneError`. The facades continue to provide c12 configuration loading,
+AsyncLocalStorage diagnostic context, public types, and the optional Commander Vault adapter.
+Deprecated exports remain in the package entries during the 0.4.x compatibility window.
+
+Vault restore callbacks resolve decisions in JavaScript, then send explicit decisions to the Rust
+apply operation. Vault encrypt callbacks receive native candidates and a frozen dotenv snapshot;
+JavaScript collects their decisions under the operation lock, and Rust applies them. See
+[native migration status](native-migration.md).
+
 Version 0.4.0 establishes explicit package boundaries before a later intentionally breaking cleanup.
 New code should depend only on the stable entries below.
 

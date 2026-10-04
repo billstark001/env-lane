@@ -1,5 +1,10 @@
 # @env-lane/vault
 
+The standard encrypt, restore, prune, and sanitize operations on `rewrite/rust-native` call
+the Rust Node-API binding. Restore callbacks supply explicit decisions to native apply; encrypt
+callbacks use native candidates and frozen dotenv snapshots before native apply. The durable
+store format remains compatible with 0.4.2. See [native migration](../../docs/native-migration.md).
+
 Development-only reversible encrypted dotenv record storage for `env-lane`.
 
 ~~~bash

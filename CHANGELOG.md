@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### In progress on `rewrite/rust-native`
+
+- Added native Core and Vault crates, a standalone CLI, a Node-API application binding, and an
+  external JS/TS configuration cache compiler with a dynamic runner.
+- Routed stable Core and Vault application calls through the binding, retaining package names,
+  ESM/CommonJS entries, diagnostic context, and deprecated exports.
+- Added native platform build, npm/GitHub publication workflow, standalone checksums, and an npm install-time direct binary
+  entry. Encrypt callbacks now use native preview and apply with a frozen dotenv snapshot.
+  Publication, clean package-manager installation checks, and
+  downstream canaries remain release gates.
+- Tightened Vault path and approval validation, lock cleanup, empty-plan filter handling,
+  and CLI `--fail-on` decisions; fixed nested Git workspace discovery and Windows batch
+  command argument handling in the native CLI.
+- Expanded native and cross-language regression coverage for those boundaries, including
+  config symlinks, skipped approval decisions, invalid prune ranges, and Windows relative PATH.
+
 ## [0.4.2] - 2026-08-04
 
 ### Changed

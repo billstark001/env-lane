@@ -1,8 +1,41 @@
 # Configuration reference
 
-Env-lane loads `env-lane.config.ts`, JavaScript ESM/CJS, or JSON through its config loader.
+## Native configuration and executable compatibility
+
+The Rust CLI reads `env-lane.config.json`, `.yaml`, or `.yml` directly. Vault accepts the same
+native extensions for `env-lane.vault`. Native configuration needs no Node runtime. For existing
+executable configuration (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`, JSONC, JSON5, or TOML), use
+the separate `@env-lane/config-compat` package:
+
+~~~bash
+pnpm add -D @env-lane/config-compat
+env-lane-config compile --kind main --cwd .
+env-lane-config compile --kind vault --cwd .
+~~~
+
+Compilation uses the existing c12 loader and writes a versioned JSON envelope under
+`.env-lane-cache/`. It records the original source directory and hashes local imports. Static
+configurations are reused while those hashes remain valid; the Rust reader checks the hashes
+before use. Keep `.env-lane-cache/` out of Git because it includes local absolute paths and the
+resolved configuration object. Dynamic configuration output is also written there on each runner
+invocation, so avoid putting secret values directly into configuration. A missing or stale envelope
+produces `CONFIG_COMPILATION_REQUIRED` or
+`VAULT_CONFIG_COMPILATION_REQUIRED`.
+
+For a configuration that reads live environment values or other dynamic inputs, invoke
+`env-lane-config run <env-lane arguments>`. The runner evaluates it for each invocation and passes
+the fresh envelope to the native executable. This path starts Node and has different startup cost
+from direct native execution. The Rust executable itself never evaluates JavaScript.
+The runner reads `--cwd`, `--config`, and `--vault-config` only from env-lane's arguments; flags
+after the child command in `run <target> <child command>` belong to that child. Use `--` to mark
+the child boundary explicitly when needed.
+
+The Node API still loads `env-lane.config.ts`, JavaScript ESM/CJS, or JSON through c12. The native
+CLI reads JSON/YAML directly and requires the compatibility compiler for executable formats.
 Use `--config <file>` or the API `configFile` option for a non-default name. Relative paths are
-resolved from `--cwd`; default config discovery still searches the discovered project root.
+resolved from `--cwd`; default config discovery searches the discovered project root. A `.git`
+directory or worktree file can mark that root even when it has no `package.json`. A nested Git
+repository does not inherit a `pnpm-workspace.yaml` from an unrelated parent repository.
 
 ~~~ts
 import { defineConfig } from '@env-lane/core';

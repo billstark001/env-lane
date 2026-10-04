@@ -1,24 +1,34 @@
 # env-lane
 
-Workspace-aware dotenv injection for TypeScript and Node.js projects.
+Workspace-aware dotenv injection for TypeScript and Node.js projects, with a Rust CLI and
+Node-API backed library implementation on the rewrite branch.
 
 `env-lane` makes environment selection explicit across single-package projects and pnpm
 workspaces. It resolves a target, loads dotenv files in a predictable order, injects a build
 selector such as `ENV_BUILD`, and can inspect, validate, synchronize, sort, or run commands with
 the resulting environment.
 
-The workspace publishes:
+The workspace contains these packages (the native additions on this branch are not published yet):
 
 - `env-lane`: CLI plus a stable convenience facade for the `@env-lane/core` root API.
 - `@env-lane/core`: configuration, workspace, dotenv, policy, redaction, and sorting APIs.
 - `@env-lane/vault`: optional development-only reversible encrypted dotenv record storage.
+- `@env-lane/native`: Rust Node-API binding and platform binary distribution (rewrite branch).
+- `@env-lane/config-compat`: external JS/TS configuration compiler and dynamic runner.
 
-Node.js 22 or newer is required.
+Node.js 22 or newer is required for npm installation, configuration compilation, and the JS API.
+The standalone Rust binary does not need Node.js.
+
+The Rust executable can run Core, Sort, and Vault commands without Node.js when configuration is
+JSON/YAML or has a valid compiled cache. The npm package installs a platform executable at
+`env-lane`; JavaScript API calls enter Rust through `@env-lane/native`. The native release
+pipeline is present on this branch but has not published new packages. See
+[migration and verification status](docs/native-migration.md).
 
 ## Install
 
 ~~~bash
-pnpm add -D env-lane
+pnpm add -D env-lane --allow-build=env-lane
 ~~~
 
 For direct library use:
@@ -30,35 +40,36 @@ pnpm add -D @env-lane/core
 Install Vault only when its library or CLI commands are needed:
 
 ~~~bash
-pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
+pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2 --allow-build=env-lane
 ~~~
 
 ## Quick start
 
-Create `env-lane.config.ts` in the repository root:
+Create `env-lane.config.json` in the repository root:
 
-~~~ts
-import { defineConfig } from 'env-lane';
-
-export default defineConfig({
-  selector: {
-    envKey: 'ENV_BUILD',
-    defaultBuild: 'local',
-    builds: ['staging', 'production']
+~~~json
+{
+  "selector": {
+    "envKey": "ENV_BUILD",
+    "defaultBuild": "local",
+    "builds": ["staging", "production"]
   },
-  workspace: {
-    aliases: {
-      api: 'apps/api',
-      web: 'apps/web'
+  "workspace": {
+    "aliases": {
+      "api": "apps/api",
+      "web": "apps/web"
     }
   },
-  dotenv: {
-    order: ['.env', '.env.{build}'],
-    localBuildName: 'local',
-    localOverrideFile: '.env.local'
+  "dotenv": {
+    "order": [".env", ".env.{build}"],
+    "localBuildName": "local",
+    "localOverrideFile": ".env.local"
   }
-});
+}
 ~~~
+
+Existing JS/TS configurations can be compiled with `@env-lane/config-compat`; see the
+[configuration reference](docs/config.md). `defineConfig` remains available to JS/TS consumers.
 
 The default order loads `.env`, then `.env.local` for the local build or
 `.env.<build>` for other builds. Later dotenv files override earlier files; `process.env`
@@ -164,6 +175,7 @@ boundaries.
 - [Vault guide](docs/vault.md)
 - [API and 0.4 compatibility](docs/api.md)
 - [Architecture and invariants](docs/architecture.md)
+- [Native migration and verification](docs/native-migration.md)
 - [Contributing and releasing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 

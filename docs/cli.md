@@ -1,9 +1,28 @@
 # CLI reference
 
+## Native executable on the rewrite branch
+
+`cargo run --locked -p env-lane-cli -- <command>` exercises the standalone Rust CLI. It implements
+the Core commands below and `vault encrypt|plan|decrypt|apply|sanitize|prune`. JSON/YAML
+configuration runs without Node. For executable JS/TS configuration, compile a cache first or use
+`env-lane-config run <command>` for dynamic configuration; see [configuration](config.md).
+
+Vault `decrypt` offers a terminal selection list when `--yes` is omitted. Arrow keys move, Space
+toggles a row, `a` selects all, `i` inverts, Enter proceeds to confirmation, and Esc or `q`
+cancels. `--prompt-loop` and `--no-prompt-loop` control wrapping. Use `--yes` with an explicit
+`--conflicts keep-local|take-vault` policy for non-interactive restores. The native CLI writes
+prompts and diagnostics to stderr and structured results to stdout.
+
+The npm `env-lane` package installs the platform binary at its bin path. Installation uses Node
+to select the binary; invoking the command executes Rust directly. The installer records the
+optional `@env-lane/vault` peer state, preserving `VAULT_NOT_INSTALLED` and
+`VAULT_VERSION_UNSUPPORTED` for Vault commands. The old Commander presentation remains in source
+and compatibility tests while clean package-manager installations are validated.
+
 Install the executable package:
 
 ~~~bash
-pnpm add -D env-lane
+pnpm add -D env-lane --allow-build=env-lane
 ~~~
 
 ## Global options

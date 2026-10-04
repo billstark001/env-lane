@@ -1,5 +1,12 @@
 # @env-lane/core
 
+Stable application calls on `rewrite/rust-native` use the Rust Node-API binding from
+`@env-lane/native`. Configuration evaluation, diagnostic context, public TypeScript types,
+the env-document feature facade, and deprecated 0.4.x exports remain in JavaScript. Document
+parsing, formatting, and patch planning now run in Rust; the facade preserves the public `Map`
+shapes and file write behavior. See
+[native migration](../../docs/native-migration.md).
+
 Core APIs for `env-lane`: config loading, pnpm workspace discovery, dotenv resolution, policies,
 redaction, command execution, shared env-document editing, and env-file sorting.
 

@@ -1,8 +1,18 @@
 # Architecture
 
-Env-lane uses coarse-grained layers to make dependency direction visible without turning every
-function into a separate file. The 0.4.0 restructuring intentionally kept roughly the previous
-implementation and test file count.
+## Rust rewrite boundary
+
+`env-lane-core` owns native config, workspace, dotenv, policy, sort, and process preparation.
+`env-lane-vault` owns crypto, records, synchronization, restore, selection, and history.
+`env-lane-cli` owns argv, streams, prompts, and child process execution. `env-lane-node` exposes
+application operations to `@env-lane/core` and `@env-lane/vault` through Node-API.
+`@env-lane/config-compat` alone evaluates executable JS/TS configuration and writes the validated
+cache envelope; Rust only reads the envelope. The 0.4.2 oracle and shared fixtures remain in
+`compat/` for differential checks.
+
+The TypeScript packages keep configuration, callbacks, and presentation at the Node boundary;
+the Rust crates own the corresponding file-oriented operations. The layers below show the
+remaining TypeScript responsibilities.
 
 ## Package ownership
 
@@ -22,7 +32,7 @@ Core and dynamically load the optional Vault CLI entry.
 ~~~text
 packages/core/src/
   domain/       types, errors, variants, redaction
-  application/  dotenv resolution, checks, policies, run, sort, workspace, env document
+  application/  native operation facades, callback-free helpers, deprecated sort planner
   adapters/     config/path loading, file writes, child execution, diagnostic context
   index.ts      curated public root
   env-document.ts  stable feature facade
@@ -33,8 +43,8 @@ packages/core/src/
 ~~~text
 packages/vault/src/
   domain/       persisted and restore-plan types
-  application/  push, restore, storage/history, sync state
-  adapters/     config/path loading, portable record paths, crypto, file locking
+  application/  native operation facades, selection/approval, callback locks
+  adapters/     config/path loading, deprecated crypto exports, file locking
   cli/          Commander registration, prompts, rendering, warnings
   index.ts      curated automation root
 ~~~
@@ -155,9 +165,10 @@ operation lock -> store/sync-state file lock
 
 Lower layers must never acquire the operation lock after taking a file lock.
 
-No-write previews do not acquire the operation lock and must not create parent directories, store
-files, or sync state. Their reads may observe either side of a concurrent atomic replacement, so a
-preview is advisory and a later write-capable operation re-reads state under its operation lock.
+No-write previews must not create parent directories, store files, or sync state. Restore plan
+construction takes the operation lock while reading a consistent store and sync snapshot; other
+previews may read either side of a concurrent atomic replacement. Every preview remains advisory:
+a later write-capable operation re-reads state under its operation lock.
 
 Atomic rename is not a multi-file database transaction. Store, sync-state, and dotenv files are
 individually crash-safe, but a process or machine failure between files may require a fresh plan and
@@ -169,7 +180,7 @@ reader for an old schema requires an explicit migration tool or procedure; it mu
 silently into a later breaking export cleanup.
 
 Schema v1 record paths are portable, config-relative strings in storage and absolute paths only in
-memory. The storage adapter owns both transformations. Application code must never persist its
+memory. The Rust Vault store owns both transformations. Application code must never persist its
 runtime absolute path directly, and readers must reject absolute or platform-specific v1 paths.
 
 ## Testing boundaries
