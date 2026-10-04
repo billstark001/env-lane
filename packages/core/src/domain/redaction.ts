@@ -118,6 +118,7 @@ const CREDENTIAL_QUERY_KEY_RE =
 const INLINE_KV_RE =
   /(?:^|[\s,{])["']?([A-Za-z][A-Za-z0-9_.-]{1,80})["']?\s*[:=]\s*["']?([^"',}\]\s;]{8,})["']?/g
 
+/** Classify a key after allow/deny overrides and known public-key exceptions. */
 export function isSecretLikeKey(key: string, options: RedactOptions = {}): boolean {
   const opts = resolveOptions(options)
   const rawKey = key.trim()
@@ -154,6 +155,7 @@ export function isSecretLikeKey(key: string, options: RedactOptions = {}): boole
   return tokens.some((token) => SENSITIVE_KEY_TOKENS.has(token))
 }
 
+/** Detect credential formats, URL parameters, assignments, and opaque values. */
 export function isSecretLikeValue(value: string, options: RedactOptions = {}): boolean {
   const opts = resolveOptions(options)
   const trimmed = value.trim()
@@ -204,6 +206,7 @@ export function isPaseto(value: string): boolean {
   return testRegExp(PASETO_RE, value.trim())
 }
 
+/** Apply the short-value floor before classifying a key/value pair. */
 export function shouldRedact(
   key: string,
   value: string,
@@ -216,6 +219,7 @@ export function shouldRedact(
   return isSecretLikeKey(key, opts) || (opts.detectValues && isSecretLikeValue(value, opts))
 }
 
+/** Replace a secret-looking value with the configured marker unless explicitly revealed. */
 export function redactValue(key: string, value: string, showSecrets?: boolean): string
 export function redactValue(key: string, value: string, options?: RedactOptions): string
 export function redactValue(
@@ -230,6 +234,7 @@ export function redactValue(
   return shouldRedact(key, value, opts) ? opts.redactionText : value
 }
 
+/** Redact each own string value while preserving its original key. */
 export function redactRecord(
   values: Record<string, string>,
   showSecrets?: boolean,
@@ -250,9 +255,7 @@ export function redactRecord(
   )
 }
 
-/**
- * Optional for logs, etc.
- */
+/** Copy enumerable fields for display; cycles become `[Circular]`, shared references are copied. */
 export function redactObject<T>(value: T, options: boolean | RedactOptions = false): T {
   const opts = resolveOptions(options)
   const seen = new WeakSet<object>()
@@ -268,26 +271,28 @@ export function redactObject<T>(value: T, options: boolean | RedactOptions = fal
       return input
     }
 
-    if (seen.has(input)) {
-      return '[Circular]'
-    }
-
-    seen.add(input)
-
     if (key && isSecretLikeKey(key, opts)) {
       return opts.redactionText
     }
 
-    if (Array.isArray(input)) {
-      return input.map((item) => visit(item, key))
-    }
+    if (seen.has(input)) return '[Circular]'
+    seen.add(input)
 
-    return Object.fromEntries(
-      Object.entries(input).map(([childKey, childValue]) => [
-        childKey,
-        visit(childValue, childKey),
-      ]),
-    )
+    try {
+      if (Array.isArray(input)) {
+        return input.map((item) => visit(item, key))
+      }
+
+      return Object.fromEntries(
+        Object.entries(input).map(([childKey, childValue]) => [
+          childKey,
+          visit(childValue, childKey),
+        ]),
+      )
+    } finally {
+      // Track only ancestors. Two fields may safely refer to the same object.
+      seen.delete(input)
+    }
   }
 
   return visit(value) as T
@@ -326,21 +331,28 @@ function hasCredentialsInUrl(value: string): boolean {
       return true
     }
 
-    for (const [name, paramValue] of url.searchParams.entries()) {
-      if (testRegExp(CREDENTIAL_QUERY_KEY_RE, name) && paramValue.trim().length >= 8) {
-        return true
-      }
-    }
-
-    return false
+    return hasCredentialParameter(url.searchParams) || hasCredentialParameter(fragmentParams(url))
   } catch {
     return (
       /:\/\/[^/@\s]+:[^/@\s]+@/.test(value) ||
-      /[?&](?:_?token|access_?token|id_?token|refresh_?token|api_?key|key|secret|password|passwd|pwd|signature|sig|client_secret)=[^&\s]{8,}/i.test(
+      /[?#&](?:_?token|access_?token|id_?token|refresh_?token|api_?key|key|secret|password|passwd|pwd|signature|sig|client_secret)=[^&#\s]{8,}/i.test(
         value,
       )
     )
   }
+}
+
+function fragmentParams(url: URL): URLSearchParams {
+  const fragment = url.hash.slice(1)
+  const query = fragment.includes('?') ? fragment.slice(fragment.indexOf('?') + 1) : fragment
+  return new URLSearchParams(query)
+}
+
+function hasCredentialParameter(params: URLSearchParams): boolean {
+  for (const [name, value] of params) {
+    if (testRegExp(CREDENTIAL_QUERY_KEY_RE, name) && value.trim().length >= 8) return true
+  }
+  return false
 }
 
 function hasHighEntropyUrlComponent(value: string): boolean | undefined {
@@ -349,6 +361,7 @@ function hasHighEntropyUrlComponent(value: string): boolean | undefined {
     const components = [
       ...url.pathname.split('/').filter(Boolean),
       ...[...url.searchParams.values()].filter(Boolean),
+      ...[...fragmentParams(url).values()].filter(Boolean),
     ]
     return components.some((component) =>
       isHighEntropyString(component, {
@@ -381,6 +394,7 @@ function hasInlineSecretAssignment(value: string, options: ResolvedRedactOptions
   return false
 }
 
+/** Check entropy after excluding common public identifiers and hashes. */
 export function isHighEntropyString(value: string, options: RedactOptions = {}): boolean {
   const resolved = resolveOptions(options)
   const trimmed = value.trim()

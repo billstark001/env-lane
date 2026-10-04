@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import {
   accessSync,
@@ -16,6 +17,9 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const rootDir = path.resolve(import.meta.dirname, '..')
+const contract = JSON.parse(
+  readFileSync(path.join(rootDir, 'compat/contracts/v0.4.2.json'), 'utf8'),
+)
 const packages = ['core', 'vault', 'cli']
 const packageEntries = {
   core: ['index', 'env-document'],
@@ -44,63 +48,68 @@ for (const packageName of packages) {
   }
 }
 
-for (const format of ['esm', 'cjs']) {
-  assertExports(`@env-lane/core (${format})`, builtModules.get(`core:index:${format}`), [
-    'DEFAULT_MIN_REDACTION_LENGTH',
-    'checkDotenvSelector',
-    'defineConfig',
-    'isHighEntropyString',
-    'isJwt',
-    'isPaseto',
-    'listEnvFiles',
-    'listWorkspacePackages',
-    'resolveInjectedEnv',
-    'runEnvCheck',
-    'runEnvSync',
-    'runWithInjectedEnv',
-    'sortEnvFile',
-    'sortEnvFilesFromConfig',
-    'withEnvLaneContext',
-  ])
-  assertExports(
-    `@env-lane/core/env-document (${format})`,
-    builtModules.get(`core:env-document:${format}`),
-    [
-      // biome-ignore lint/security/noSecrets: Public API symbol name, not a credential.
-      'applyEnvDocumentPatches',
-      'formatEnvValue',
-      'loadEnvDocument',
-      'parseEnvDocument',
-      'parseEnvLine',
-    ],
-  )
-  assertExports(`@env-lane/vault (${format})`, builtModules.get(`vault:index:${format}`), [
-    'applyRestorePlan',
-    'buildRestorePlan',
-    'defineVaultConfig',
-    'decryptEnvFiles',
-    'encryptEnvFiles',
-    'loadVaultConfig',
-    'pruneVaultHistory',
-    'sanitizeVaultHistory',
-  ])
-  assertExports(`@env-lane/vault/cli (${format})`, builtModules.get(`vault:cli/index:${format}`), [
-    'VAULT_CLI_API_VERSION',
-    'registerVaultCommands',
-  ])
-  assertExports(`env-lane facade (${format})`, builtModules.get(`cli:index:${format}`), [
-    'defineConfig',
-    'resolveInjectedEnv',
-    'runEnvCheck',
-    'sortEnvFile',
-  ])
+const contractEntries = {
+  'env-lane': 'cli:index',
+  '@env-lane/core': 'core:index',
+  '@env-lane/core/env-document': 'core:env-document',
+  '@env-lane/vault': 'vault:index',
+  '@env-lane/vault/cli': 'vault:cli/index',
+}
+for (const [name, entry] of Object.entries(contractEntries)) {
+  const manifest = contract.entrypoints[name]
+  const expected =
+    manifest.runtimeExports ?? contract.entrypoints[manifest.runtimeExportsSameAs].runtimeExports
+  for (const format of ['esm', 'cjs']) {
+    assert.deepEqual(
+      Object.keys(builtModules.get(`${entry}:${format}`)).sort(),
+      [...expected].sort(),
+      `${name} (${format}) must match the frozen 0.4.2 runtime exports`,
+    )
+  }
+}
 
-  if ('resolveInjectedEnv' in builtModules.get(`core:env-document:${format}`)) {
-    throw new Error('@env-lane/core/env-document must not expose high-level Core use cases.')
+const declarationEntries = {
+  'env-lane': 'packages/cli/dist/index.js',
+  '@env-lane/core': 'packages/core/dist/index.js',
+  '@env-lane/core/env-document': 'packages/core/dist/env-document.js',
+  '@env-lane/vault': 'packages/vault/dist/index.js',
+  '@env-lane/vault/cli': 'packages/vault/dist/cli/index.js',
+}
+const typeProbeDir = mkdtempSync(path.join(rootDir, '.env-lane-type-probe-'))
+try {
+  const probe = Object.entries(declarationEntries)
+    .map(([name, relative], index) => {
+      const manifest = contract.entrypoints[name]
+      const types =
+        manifest.typeExports ?? contract.entrypoints[manifest.typeExportsSameAs].typeExports
+      const aliases = types.map((type) => `${type} as T${index}_${type}`)
+      return `import type { ${aliases.join(', ')} } from '../${relative}'\ntype Contract${index} = [${types.map((type) => `T${index}_${type}`).join(', ')}]`
+    })
+    .join('\n')
+  const probePath = path.join(typeProbeDir, 'contract-types.ts')
+  writeFileSync(probePath, `${probe}\n`)
+  const result = spawnSync(
+    path.join(rootDir, 'node_modules/.bin/tsc'),
+    [
+      '--noEmit',
+      '--module',
+      'NodeNext',
+      '--moduleResolution',
+      'NodeNext',
+      '--target',
+      'ES2022',
+      '--skipLibCheck',
+      probePath,
+    ],
+    { cwd: rootDir, encoding: 'utf8' },
+  )
+  if (result.status !== 0) {
+    throw new Error(
+      `Current declaration exports differ from 0.4.2:\n${result.stdout}${result.stderr}`,
+    )
   }
-  if ('encryptEnvFiles' in builtModules.get(`vault:cli/index:${format}`)) {
-    throw new Error('@env-lane/vault/cli must not expose Vault automation use cases.')
-  }
+} finally {
+  rmSync(typeProbeDir, { recursive: true, force: true })
 }
 
 const corePackageRequire = createRequire(path.join(rootDir, 'packages', 'core', 'package.json'))
@@ -119,8 +128,8 @@ assertExports(
 const cliPackageJson = JSON.parse(
   readFileSync(path.join(rootDir, 'packages', 'cli', 'package.json'), 'utf8'),
 )
-if (cliPackageJson.peerDependencies?.['@env-lane/vault'] !== '^0.4.2') {
-  throw new Error('Published env-lane must require the compatible @env-lane/vault ^0.4.2 peer.')
+if (cliPackageJson.peerDependencies?.['@env-lane/vault'] !== `^${cliPackageJson.version}`) {
+  throw new Error('Published env-lane must require the matching @env-lane/vault peer version.')
 }
 
 const cliPath = path.join(rootDir, 'packages', 'cli', 'dist', 'cli.js')

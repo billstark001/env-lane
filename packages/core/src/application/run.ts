@@ -33,6 +33,7 @@ function resolveChildCwd(
   return resolveFromDirectory(invocationCwd, selection.path)
 }
 
+/** Run a child with resolved dotenv values, using the target directory by default. */
 export async function runWithInjectedEnv(options: {
   cwd?: string
   configFile?: string

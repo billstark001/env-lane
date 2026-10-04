@@ -1,6 +1,6 @@
 // Stable configuration and use-case API.
 // biome-ignore assist/source/organizeImports: Public exports are grouped by stability and migration status.
-export { type CheckResult, checkDotenvSelector } from './application/check.js'
+export { type CheckResult, checkDotenvSelector } from './application/native-check.js'
 export { listEnvFiles, resolveInjectedEnv } from './application/dotenv.js'
 export {
   type EnvCheckFinding,
@@ -8,11 +8,10 @@ export {
   type EnvSyncResult,
   defineEnvCheck,
   defineEnvSync,
-  runEnvCheck,
-  runEnvSync,
 } from './application/policy.js'
+export { runEnvCheck, runEnvSync } from './application/native-policy.js'
 export { runWithInjectedEnv } from './application/run.js'
-export { sortEnvFile, sortEnvFilesFromConfig } from './application/sort.js'
+export { sortEnvFile, sortEnvFilesFromConfig } from './application/native-sort.js'
 export { listWorkspacePackages, resolveTargetPackage } from './application/workspace.js'
 export { defineConfig, loadEnvLaneConfig } from './adapters/config.js'
 export {

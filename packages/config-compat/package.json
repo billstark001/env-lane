@@ -1,0 +1,35 @@
+{
+  "name": "@env-lane/config-compat",
+  "version": "0.4.2",
+  "type": "module",
+  "description": "Compile JavaScript and TypeScript env-lane config for the native CLI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billstark001/env-lane.git",
+    "directory": "packages/config-compat"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "bin": {
+    "env-lane-config": "./src/cli.mjs"
+  },
+  "scripts": {
+    "build": "node --check src/cache.mjs && node --check src/cli.mjs && node --check src/runner-arguments.mjs",
+    "prepack": "pnpm run build",
+    "typecheck": "node --check src/cache.mjs && node --check src/cli.mjs && node --check src/runner-arguments.mjs",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@env-lane/native": "workspace:*",
+    "c12": "^3.3.4",
+    "find-up": "^8.0.0"
+  }
+}

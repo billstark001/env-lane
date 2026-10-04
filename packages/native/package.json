@@ -1,0 +1,48 @@
+{
+  "name": "@env-lane/native",
+  "version": "0.4.2",
+  "description": "Native Node-API binding for env-lane",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billstark001/env-lane.git",
+    "directory": "packages/native"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "bin.cjs",
+    "*.node",
+    "README.md",
+    "LICENSE"
+  ],
+  "napi": {
+    "binaryName": "env-lane-native",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --output-dir .",
+    "typecheck": "node --check index.js"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0"
+  }
+}

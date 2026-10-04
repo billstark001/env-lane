@@ -9,4 +9,10 @@ dist
 .pnpm-store
 .rewrite/
 /target/
+*.node
+/crates/env-lane-node/index.js
+/crates/env-lane-node/index.d.ts
+/packages/native/npm/
+/native-artifacts/
+/release-files/
 .env-lane-cache/

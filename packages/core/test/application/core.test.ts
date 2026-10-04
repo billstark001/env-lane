@@ -24,7 +24,9 @@ import {
   isSecretLikeKey,
   isSecretLikeValue,
   listEnvFiles,
+  listEnvFilesForTarget,
   listWorkspacePackages,
+  listWorkspacePackagesForConfig,
   loadEnvLaneConfig,
   normalizeEnvFileVariant,
   parseEnvDocument,
@@ -34,6 +36,7 @@ import {
   redactValue,
   resolveInjectedEnv,
   resolveTargetPackage,
+  resolveTargetPackageFromList,
   runEnvCheck,
   runEnvSync,
   setEnvDocumentValues,
@@ -60,6 +63,38 @@ function testDirectory(prefix: string): string {
 afterEach(() => {
   for (const root of testDirectories) rmSync(root, { recursive: true, force: true })
   testDirectories.clear()
+})
+
+it('discovers a Git directory root without a package manifest', async () => {
+  const outer = testDirectory('env-lane-git-root')
+  const root = path.join(outer, 'repo')
+  const nested = path.join(root, 'nested', 'work')
+  writeFileSync(path.join(outer, 'package.json'), '{}')
+  mkdirSync(root)
+  mkdirSync(path.join(root, '.git'))
+  mkdirSync(nested, { recursive: true })
+  writeFileSync(path.join(root, 'env-lane.config.json'), '{"selector":{"envKey":"FROM_ROOT"}}')
+  const config = await loadEnvLaneConfig({ cwd: nested })
+  expect(config.rootDir).toBe(root)
+  expect(config.selector.envKey).toBe('FROM_ROOT')
+})
+
+it('keeps a nested Git repository separate from an outer pnpm workspace', async () => {
+  const outer = testDirectory('env-lane-nested-git-root')
+  const root = path.join(outer, 'repo')
+  const nested = path.join(root, 'nested', 'work')
+  writeFileSync(path.join(outer, 'pnpm-workspace.yaml'), 'packages: [apps/*]\n')
+  mkdirSync(path.join(root, '.git'), { recursive: true })
+  mkdirSync(nested, { recursive: true })
+  writeFileSync(path.join(root, 'package.json'), '{}')
+  writeFileSync(path.join(root, 'env-lane.config.json'), '{"selector":{"envKey":"INNER"}}')
+  expect((await loadEnvLaneConfig({ cwd: nested })).rootDir).toBe(root)
+
+  rmSync(path.join(root, '.git'), { recursive: true })
+  writeFileSync(path.join(root, '.git'), 'gitdir: elsewhere\n')
+  expect((await loadEnvLaneConfig({ cwd: nested })).rootDir).toBe(root)
+  writeFileSync(path.join(nested, 'package.json'), '{}')
+  expect((await loadEnvLaneConfig({ cwd: nested })).rootDir).toBe(nested)
 })
 
 function fixture(): string {
@@ -262,6 +297,22 @@ describe('@env-lane/core', () => {
     const root = fixture()
     const packages = await listWorkspacePackages({ cwd: root })
     expect(packages.some((pkg) => pkg.name === '@acme/api')).toBe(true)
+    const config = await loadEnvLaneConfig({ cwd: root })
+    expect(await listWorkspacePackagesForConfig(config)).toEqual(packages)
+    const api = packages.find((pkg) => pkg.name === '@acme/api')!
+    expect(listEnvFilesForTarget(config, api, { build: 'production' })).toEqual(
+      await listEnvFiles({ cwd: root, target: 'api', build: 'production' }),
+    )
+    expect(listEnvFilesForTarget(config, api, {}, 'production')).toEqual(
+      await listEnvFiles({ cwd: root, target: 'api', build: 'production' }),
+    )
+    expect(resolveTargetPackageFromList('api', config, packages).name).toBe('@acme/api')
+    expect(resolveTargetPackageFromList(undefined, config, packages, { cwd: root }).isRoot).toBe(
+      true,
+    )
+    expect(() => resolveTargetPackageFromList(undefined, config, packages)).toThrow(
+      /Missing target/,
+    )
     await expect(resolveTargetPackage('api', { cwd: root })).resolves.toMatchObject({
       name: '@acme/api',
     })
@@ -309,6 +360,14 @@ describe('@env-lane/core', () => {
     expect(resolved.values.A).toBe('2')
     expect(resolved.values.B).toBe('3')
     expect(resolved.values.ENV_BUILD).toBe('production')
+    const guarded = await resolveInjectedEnv({
+      cwd: root,
+      target: 'api',
+      build: 'production',
+      includeProcessEnv: false,
+      packages: 'not a public option',
+    } as Parameters<typeof resolveInjectedEnv>[0])
+    expect(guarded.values.A).toBe('2')
   })
 
   it('validates configured selector builds when strict mode is enabled', async () => {
@@ -1159,6 +1218,9 @@ describe('@env-lane/core', () => {
 
     it('honors redaction options across records, values, arrays, and circular objects', () => {
       expect(shouldRedact('safe', 'https://user:password@example.test')).toBe(true)
+      expect(shouldRedact('safe', 'https://x.test/#access_token=12345678')).toBe(true)
+      expect(shouldRedact('safe', 'https://x.test/#/route?token=12345678')).toBe(true)
+      expect(shouldRedact('safe', 'https://x.test/#section=12345678')).toBe(false)
       expect(
         shouldRedact('safe', 'https://user:password@example.test', { detectValues: false }),
       ).toBe(false)
@@ -1177,6 +1239,11 @@ describe('@env-lane/core', () => {
       const circular: { safe: string; self?: unknown } = { safe: 'visible' }
       circular.self = circular
       expect(redactObject(circular)).toEqual({ safe: 'visible', self: '[Circular]' })
+      const repeated = { safe: 'visible' }
+      expect(redactObject({ first: repeated, second: repeated })).toEqual({
+        first: { safe: 'visible' },
+        second: { safe: 'visible' },
+      })
       expect(redactObject({ PASSWORD: 'secret-value' }, true)).toEqual({
         PASSWORD: 'secret-value',
       })

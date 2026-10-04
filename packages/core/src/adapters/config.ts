@@ -152,6 +152,30 @@ export async function findWorkspaceRoot(cwd?: string): Promise<AbsolutePath> {
     cwd: invocationCwd,
     type: 'file',
   })
+  const [gitDirectory, gitFile] = await Promise.all([
+    findUp('.git', { cwd: invocationCwd, type: 'directory' }),
+    findUp('.git', { cwd: invocationCwd, type: 'file' }),
+  ])
+  const gitMarker = [gitDirectory, gitFile]
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => right.length - left.length)[0]
+  let gitRoot: AbsolutePath | undefined
+  if (gitMarker) {
+    assertAbsolutePath(gitMarker, 'Git marker')
+    gitRoot = absoluteDirname(gitMarker)
+  }
+  if (gitRoot) {
+    const relative = marker ? path.relative(path.dirname(marker), gitRoot) : undefined
+    if (
+      !marker ||
+      (relative !== undefined &&
+        relative !== '..' &&
+        !relative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relative))
+    ) {
+      return gitRoot
+    }
+  }
   if (!marker) return invocationCwd
   assertAbsolutePath(marker, 'Workspace marker')
   if (path.basename(marker) === '.git') return absoluteDirname(marker)
@@ -160,7 +184,14 @@ export async function findWorkspaceRoot(cwd?: string): Promise<AbsolutePath> {
     const pnpm = await findUp('pnpm-workspace.yaml', { cwd: markerDir, type: 'file' })
     if (!pnpm) return markerDir
     assertAbsolutePath(pnpm, 'pnpm workspace file')
-    return absoluteDirname(pnpm)
+    const pnpmDir = absoluteDirname(pnpm)
+    if (gitRoot) {
+      const relative = path.relative(gitRoot, pnpmDir)
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        return markerDir
+      }
+    }
+    return pnpmDir
   }
   return absoluteDirname(marker)
 }
