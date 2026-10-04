@@ -79,7 +79,10 @@ export function addSelectionOptions(command: Command): Command {
     .option('--key <glob>', 'select entries whose key matches this glob')
     .option('--include <glob>', 'select entries matching a file:key glob')
     .option('--exclude <glob>', 'exclude entries matching a file:key glob')
-    .option('--only <actions>', 'select comma-separated actions: add,modify,delete,conflict')
+    .option(
+      '--only <actions>',
+      'select comma-separated actions: add,modify,delete,identical,conflict',
+    )
     .option('--approve-deletes', 'select delete entries (default)', true)
     .option('--no-approve-deletes', 'skip delete entries unless explicitly selected in a plan')
 }

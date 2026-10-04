@@ -1,209 +1,26 @@
+/// <reference path="../picomatch.d.ts" />
+
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { EnvLaneError, writeFileContentAtomically } from '@env-lane/core'
-import { applyEnvDocumentPatches, loadEnvDocument } from '@env-lane/core/env-document'
 import picomatch from 'picomatch'
 import { z } from 'zod'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
-import { deriveVaultKey, keyedDigest, stableHash } from '../adapters/crypto.js'
-import { type AbsolutePath, resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
-import { restoreCurrentPreview, restoreValuePreview } from '../domain/restore-preview.js'
+import { callNativeVault } from '../adapters/native.js'
+import { resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
 import type {
   RestoreAction,
   RestoreDecision,
   RestoreDecisionChoice,
   RestorePlan,
   RestorePlanEntry,
-  RestorePlanFile,
   VaultConflictStrategy,
-  VaultRecord,
   VaultRestoreRedaction,
   VaultRestoreReveal,
 } from '../domain/types.js'
-import {
-  assertNoExcludedHistory,
-  desiredRecordsForFile,
-  portable,
-  readStore,
-  type StoreReadResult,
-  withVaultOperationLock,
-} from './storage.js'
-import {
-  loadSyncContext,
-  recordValueFingerprint,
-  resolveConflict,
-  restoreConflictCheck,
-  type SyncContext,
-  saveSyncContext,
-  scrubExcludedSyncEntries,
-  updateSyncEntry,
-} from './sync.js'
-
-interface InternalRestorePlanEntry extends RestorePlanEntry {
-  currentValues: string[]
-  nextValue?: string
-}
-
-interface InternalRestorePlanFile extends Omit<RestorePlanFile, 'entries'> {
-  entries: InternalRestorePlanEntry[]
-}
-
-interface InternalRestorePlan extends Omit<RestorePlan, 'files'> {
-  files: InternalRestorePlanFile[]
-}
-
-function publicRestorePlan(plan: InternalRestorePlan): RestorePlan {
-  return {
-    ...plan,
-    files: plan.files.map((file) => ({
-      ...file,
-      entries: file.entries.map(
-        ({ currentValues: _currentValues, nextValue: _nextValue, ...entry }) => entry,
-      ),
-    })),
-  }
-}
-
-function buildRestorePlanFromState(
-  config: VaultConfig,
-  store: StoreReadResult,
-  vaultKey: Buffer,
-  syncContext?: SyncContext,
-): InternalRestorePlan {
-  const files: InternalRestorePlanFile[] = []
-  const summary: RestorePlan['summary'] = {
-    add: 0,
-    modify: 0,
-    delete: 0,
-    identical: 0,
-    conflict: 0,
-    filesWithChanges: 0,
-  }
-  const managedFiles = new Set(config.envFiles)
-  const unmanagedStoreFiles = [...store.state.keys()].filter(
-    (filePath) => !managedFiles.has(filePath),
-  )
-  const targetFiles = config.allowUnmanaged
-    ? [...new Set([...config.envFiles, ...unmanagedStoreFiles])]
-    : config.envFiles
-
-  for (const filePath of targetFiles) {
-    const desired = desiredRecordsForFile(config, filePath, store.state)
-    const envDoc = loadEnvDocument(filePath)
-    const entries: InternalRestorePlanEntry[] = []
-    for (const record of desired.values()) {
-      const occurrences = envDoc.occurrencesMap.get(record.k) ?? []
-      const currentValues = occurrences.map((item) => item.effectiveValue)
-      let vaultAction: Exclude<RestoreAction, 'conflict'>
-      if (record.op === 'delete') vaultAction = occurrences.length === 0 ? 'identical' : 'delete'
-      else if (occurrences.length === 0) vaultAction = 'add'
-      else vaultAction = currentValues.every((value) => value === record.v) ? 'identical' : 'modify'
-      const conflict =
-        vaultAction === 'identical'
-          ? { conflict: false }
-          : restoreConflictCheck(config, syncContext, filePath, record.k, envDoc, record)
-      const action: RestoreAction = conflict.conflict ? 'conflict' : vaultAction
-      summary[action]++
-      const entryId = keyedDigest(
-        vaultKey,
-        JSON.stringify({
-          filePath: portable(path.relative(config.baseDir, filePath)),
-          key: record.k,
-          action,
-          vaultAction,
-          timestamp: record.t,
-          record: recordValueFingerprint(vaultKey, record),
-          local: keyedDigest(vaultKey, JSON.stringify(currentValues)),
-        }),
-      )
-      entries.push({
-        entryId,
-        filePath,
-        key: record.k,
-        action,
-        currentValues,
-        occurrenceCount: occurrences.length,
-        nextValue: record.op === 'set' ? record.v : undefined,
-        conflict: conflict.conflict,
-        vaultAction,
-        conflictReason: conflict.reason,
-        preview: {
-          current: restoreCurrentPreview(
-            record.k,
-            currentValues,
-            config.restore.redaction,
-            config.restore.reveal,
-          ),
-          vault:
-            record.op === 'delete'
-              ? '<delete>'
-              : restoreValuePreview(
-                  record.k,
-                  record.v ?? '',
-                  config.restore.redaction,
-                  config.restore.reveal,
-                ),
-        },
-      })
-    }
-    entries.sort((left, right) => left.key.localeCompare(right.key))
-    const changed = entries.some((entry) => entry.action !== 'identical')
-    if (changed) summary.filesWithChanges++
-    files.push({ filePath, entries, changed })
-  }
-
-  const storeDigest = stableHash(store.records.map((item) => item.encryptedLine).join('\n'))
-  const planDigest = keyedDigest(
-    vaultKey,
-    JSON.stringify({
-      storeDigest,
-      files: files.map((file) => file.entries.map((entry) => entry.entryId)),
-      unmanagedStoreFiles,
-    }),
-  )
-  return {
-    version: 1,
-    createdAt: Date.now(),
-    planDigest,
-    storeDigest,
-    storePath: config.storePath,
-    files,
-    summary,
-    failedRecords: store.failedRecords,
-    parsedRecords: store.parsedRecords,
-    rawRecords: store.rawRecords,
-    aliasedRecords: store.aliasedRecords,
-    unmanagedStoreFiles,
-  }
-}
-
-function applyRestoreFile(
-  config: VaultConfig,
-  filePath: string,
-  state: Map<string, Map<string, VaultRecord>>,
-  selectedEntryIds: Set<string>,
-  entries: InternalRestorePlanEntry[],
-): boolean {
-  const desired = desiredRecordsForFile(config, filePath, state)
-  const selectedKeys = new Set(
-    entries.filter((entry) => selectedEntryIds.has(entry.entryId)).map((entry) => entry.key),
-  )
-  return applyEnvDocumentPatches(
-    filePath,
-    [...desired.entries()]
-      .filter(([key]) => selectedKeys.has(key))
-      .map(([key, record]) =>
-        record.op === 'set'
-          ? { op: 'set' as const, key, value: record.v ?? '' }
-          : { op: 'delete' as const, key },
-      ),
-    {
-      update: 'all',
-      matchCommented: false,
-      sortAdditions: true,
-    },
-  ).changed
-}
+import { selectEntryWithCallback } from './selection.js'
+import { portable, withVaultOperationLock } from './storage.js'
+import { resolveConflict } from './sync.js'
 
 interface BuildRestorePlanOptions {
   cwd?: string
@@ -217,19 +34,25 @@ interface BuildRestorePlanOptions {
   resolvedConfig?: VaultConfig
 }
 
-function buildRestorePlanLocked(
+function nativeBuildRestorePlan(
   config: VaultConfig,
-  key: Buffer,
-  syncDir: AbsolutePath | undefined,
+  keyFilePath: string,
+  invocationCwd: string,
   options: BuildRestorePlanOptions,
+  externalLock = false,
 ): RestorePlan {
-  const syncContext = loadSyncContext(syncDir, key)
-  scrubExcludedSyncEntries(config, syncContext)
-  const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
-  assertNoExcludedHistory(config, store.records, store.failedRecords)
-  return publicRestorePlan(buildRestorePlanFromState(config, store, key, syncContext))
+  // Only the callback path passes true while holding withVaultOperationLock.
+  return callNativeVault<RestorePlan>('vault.buildRestorePlan', {
+    cwd: invocationCwd,
+    keyFile: keyFilePath,
+    config,
+    ignoreCorruptRecords: options.ignoreCorruptRecords,
+    syncDir: options.syncDir,
+    skipOperationLock: externalLock,
+  })
 }
 
+/** Read Vault and local files into a redacted, no-write restore plan. */
 export async function buildRestorePlan(
   configPath: string | undefined,
   keyFilePath: string,
@@ -239,13 +62,10 @@ export async function buildRestorePlan(
   const config =
     options.resolvedConfig ??
     (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
-  const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
-  const syncDir = options.syncDir ? resolveFromDirectory(invocationCwd, options.syncDir) : undefined
-  return withVaultOperationLock(config, async () =>
-    buildRestorePlanLocked(config, key, syncDir, options),
-  )
+  return nativeBuildRestorePlan(config, keyFilePath, invocationCwd, options)
 }
 
+/** Build a fresh plan, then apply it unless `dryRun` is set. */
 export async function decryptEnvFiles(
   configPath: string | undefined,
   keyFilePath: string,
@@ -300,7 +120,7 @@ function decisionMap(decisions: RestoreDecision[] | undefined): Map<string, Rest
 }
 
 async function chooseRestoreEntries(
-  plan: InternalRestorePlan,
+  plan: RestorePlan,
   options: {
     decisions?: RestoreDecision[]
     approveDeletes?: boolean
@@ -342,7 +162,8 @@ async function chooseRestoreEntries(
   for (const entry of plan.files.flatMap((file) => file.entries)) {
     if (entry.action === 'identical') continue
     let decision = supplied.get(entry.entryId)
-    if (!decision && options.selectEntry && !options.selectEntry(entry)) decision = 'skip'
+    if (!decision && options.selectEntry && !selectEntryWithCallback(options.selectEntry, entry))
+      decision = 'skip'
     if (!decision && entry.action === 'delete' && options.approveDeletes === false)
       decision = 'skip'
     if (!decision && entry.action === 'conflict') {
@@ -360,7 +181,7 @@ async function chooseRestoreEntries(
   return { selected, resolved }
 }
 
-function assertFreshRestorePlan(submitted: RestorePlan, current: InternalRestorePlan): void {
+function assertFreshRestorePlan(submitted: RestorePlan, current: RestorePlan): void {
   const submittedEntryIds = submitted.files.flatMap((file) =>
     file.entries.map((entry) => entry.entryId),
   )
@@ -413,94 +234,29 @@ interface ApplyRestoreOptions {
   ) => Promise<'keep-local' | 'take-vault'> | 'keep-local' | 'take-vault'
 }
 
-async function applyRestorePlanLocked(
-  config: VaultConfig,
-  key: Buffer,
-  syncDir: AbsolutePath | undefined,
-  submittedPlan: RestorePlan,
-  options: ApplyRestoreOptions,
-) {
-  const syncContext = loadSyncContext(syncDir, key)
-  scrubExcludedSyncEntries(config, syncContext)
-  const store = readStore(config, key, { ignoreCorruptRecords: options.ignoreCorruptRecords })
-  assertNoExcludedHistory(config, store.records, store.failedRecords)
-  const plan = buildRestorePlanFromState(config, store, key, syncContext)
-  assertFreshRestorePlan(submittedPlan, plan)
-  const { selected, resolved } = await chooseRestoreEntries(plan, options)
-  if (selected.size > 0 && !options.autoApprove) {
-    throw new EnvLaneError(
-      'VAULT_CONFIRMATION_REQUIRED',
-      'Applying the Vault plan requires explicit approval.',
-      { hint: 'Pass autoApprove: true in the API or --yes in the CLI.' },
-    )
-  }
-  const results: Array<{
+/** Result of applying a previously built Vault restore plan. */
+interface ApplyRestoreResult extends RestorePlan {
+  applied: boolean
+  filesWritten: number
+  results: Array<{
     filePath: string
     keys: number
     changed: boolean
     entries: RestorePlanEntry[]
-  }> = []
-  let filesWritten = 0
-  for (const file of plan.files) {
-    const fileHasEffectiveChanges = file.entries.some((entry) => selected.has(entry.entryId))
-    if (!fileHasEffectiveChanges) {
-      results.push({
-        filePath: file.filePath,
-        keys: file.entries.filter((entry) => entry.action !== 'delete').length,
-        changed: false,
-        entries: publicRestorePlan({ ...plan, files: [file] }).files[0].entries,
-      })
-      continue
-    }
-    const changed = applyRestoreFile(config, file.filePath, store.state, selected, file.entries)
-    if (changed) {
-      filesWritten++
-    }
-    results.push({
-      filePath: file.filePath,
-      keys: file.entries.filter((entry) => entry.action !== 'delete').length,
-      changed,
-      entries: publicRestorePlan({ ...plan, files: [file] }).files[0].entries,
-    })
-  }
-  if (syncContext) {
-    for (const file of plan.files) {
-      for (const entry of file.entries) {
-        if (entry.action === 'identical' || selected.has(entry.entryId)) {
-          const record = store.state.get(file.filePath)?.get(entry.key)
-          if (record) updateSyncEntry(config, syncContext, record)
-        }
-      }
-    }
-    await saveSyncContext(syncContext)
-  }
-  const conflictEntries = new Set(
-    plan.files.flatMap((file) =>
-      file.entries.filter((entry) => entry.action === 'conflict').map((entry) => entry.entryId),
-    ),
-  )
-  const conflictsKeptLocal = resolved.filter(
-    (item) => item.decision === 'keep-local' && conflictEntries.has(item.entryId),
-  ).length
-  const conflictsTookVault = resolved.filter(
-    (item) => item.decision === 'apply-vault' && conflictEntries.has(item.entryId),
-  ).length
-  const publicPlan = publicRestorePlan(plan)
-  return {
-    ...publicPlan,
-    applied: filesWritten > 0,
-    filesWritten,
-    results,
-    decisions: resolved,
-    appliedEntries: selected.size,
-    skippedEntries: resolved.length - selected.size,
-    conflictsKeptLocal,
-    conflictsTookVault,
-    syncStatePath: syncContext?.statePath,
-    syncStateMigratedFromVersion0: syncContext?.migratedFromVersion0 ?? false,
-  }
+  }>
+  decisions: RestoreDecision[]
+  appliedEntries: number
+  skippedEntries: number
+  conflictsKeptLocal: number
+  conflictsTookVault: number
+  syncStatePath?: string
+  syncStateMigratedFromVersion0: boolean
 }
 
+/**
+ * Apply a submitted plan only after native code verifies its digest and current
+ * inputs. JavaScript callbacks run before native apply under one operation lock.
+ */
 export async function applyRestorePlan(
   configPath: string | undefined,
   keyFilePath: string,
@@ -511,11 +267,34 @@ export async function applyRestorePlan(
   const config =
     options.resolvedConfig ??
     (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
-  const key = deriveVaultKey(resolveFromDirectory(invocationCwd, keyFilePath))
-  const syncDir = options.syncDir ? resolveFromDirectory(invocationCwd, options.syncDir) : undefined
-  return withVaultOperationLock(config, () =>
-    applyRestorePlanLocked(config, key, syncDir, submittedPlan, options),
-  )
+  const request = {
+    cwd: invocationCwd,
+    keyFile: keyFilePath,
+    config,
+    plan: submittedPlan,
+    syncDir: options.syncDir,
+    ignoreCorruptRecords: options.ignoreCorruptRecords,
+    autoApprove: options.autoApprove,
+    approveDeletes: options.approveDeletes,
+    conflictStrategy: options.conflictStrategy,
+  }
+  let decisions = options.decisions
+  if (options.selectEntry || options.resolveConflict) {
+    return withVaultOperationLock(config, async () => {
+      const current = nativeBuildRestorePlan(config, keyFilePath, invocationCwd, options, true)
+      assertFreshRestorePlan(submittedPlan, current)
+      decisions = (await chooseRestoreEntries(current, options)).resolved
+      return callNativeVault<ApplyRestoreResult>('vault.applyRestorePlan', {
+        ...request,
+        decisions,
+        skipOperationLock: true,
+      })
+    })
+  }
+  return callNativeVault<ApplyRestoreResult>('vault.applyRestorePlan', {
+    ...request,
+    decisions,
+  })
 }
 
 const restoreActionSchema = z.enum(['add', 'modify', 'delete', 'identical', 'conflict'])
@@ -571,6 +350,7 @@ export interface ApprovalDocument {
   decisions: RestoreDecision[]
 }
 
+/** Persist only the plan identity and explicit decisions for later review. */
 export function createApprovalDocument(
   plan: RestorePlan,
   options: VaultSelectionOptions,
@@ -578,6 +358,7 @@ export function createApprovalDocument(
   return { plan, decisions: buildDefaultRestoreDecisions(plan, options) }
 }
 
+/** Validate an approval file before it is used to apply a plan. */
 export function readApprovalDocument(filePath: string): ApprovalDocument {
   try {
     const resolvedFilePath = resolveFromDirectory(resolveInvocationCwd(), filePath)
@@ -621,7 +402,7 @@ export interface VaultSelectionOptions {
 }
 
 function parseOnly(value: string | undefined): Set<RestoreAction> | undefined {
-  if (!value) return undefined
+  if (value === undefined) return undefined
   const actions = value.split(',').map((item) => item.trim())
   const allowed: RestoreAction[] = ['add', 'modify', 'delete', 'identical', 'conflict']
   if (actions.some((action) => !allowed.includes(action as RestoreAction))) {
@@ -630,38 +411,70 @@ function parseOnly(value: string | undefined): Set<RestoreAction> | undefined {
   return new Set(actions as RestoreAction[])
 }
 
-function matchesGlob(value: string, pattern: string): boolean {
-  const direct = picomatch(pattern, { dot: true })
-  if (direct(value)) return true
-  return !path.isAbsolute(pattern) && picomatch(`**/${pattern}`, { dot: true })(value)
+function globMatcher(pattern: string): (value: string) => boolean {
+  const direct = selectionGlob(pattern)
+  const nested = path.isAbsolute(pattern) ? undefined : selectionGlob(`**/${pattern}`)
+  return (value) => direct(value) || Boolean(nested?.(value))
+}
+
+function selectionGlob(pattern: string): (value: string) => boolean {
+  if (!pattern) {
+    throw new EnvLaneError('VAULT_INVALID_FILTER', 'Vault pattern must be a non-empty string.')
+  }
+  try {
+    return picomatch(pattern, { dot: true })
+  } catch (error) {
+    throw new EnvLaneError('VAULT_INVALID_FILTER', `Invalid Vault pattern: ${pattern}`, {
+      cause: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+/** Compile a selection once when checking every entry in a plan. */
+export function createVaultSelectionMatcher(options: VaultSelectionOptions) {
+  const only = parseOnly(options.only)
+  const fileMatches = options.file === undefined ? undefined : globMatcher(options.file)
+  const keyMatches = options.key === undefined ? undefined : selectionGlob(options.key)
+  const included = options.include === undefined ? undefined : globMatcher(options.include)
+  const excluded = options.exclude === undefined ? undefined : globMatcher(options.exclude)
+  return (entry: RestorePlanEntry): boolean => {
+    const file = portable(entry.filePath)
+    const pair = `${file}:${entry.key}`
+    if (only && !only.has(entry.action)) return false
+    if (fileMatches && !fileMatches(file)) return false
+    if (keyMatches && !keyMatches(entry.key)) return false
+    if (included && !included(pair)) return false
+    if (excluded?.(pair)) return false
+    return true
+  }
 }
 
 export function matchesVaultSelection(
   entry: RestorePlanEntry,
   options: VaultSelectionOptions,
 ): boolean {
-  const file = portable(entry.filePath)
-  const pair = `${file}:${entry.key}`
-  const only = parseOnly(options.only)
-  if (only && !only.has(entry.action)) return false
-  if (options.file && !matchesGlob(file, options.file)) return false
-  if (options.key && !picomatch(options.key, { dot: true })(entry.key)) return false
-  if (options.include && !matchesGlob(pair, options.include)) return false
-  if (options.exclude && matchesGlob(pair, options.exclude)) return false
-  return true
+  return createVaultSelectionMatcher(options)(entry)
 }
 
 export function matchesVaultPushSelection(
   entry: RestorePlanEntry,
   options: VaultSelectionOptions,
 ): boolean {
-  if (!matchesVaultSelection(entry, options)) return false
-  const deletes = entry.action === 'delete' || entry.vaultAction === 'delete'
-  return !deletes || options.approveDeletes !== false
+  return createVaultPushSelectionMatcher(options)(entry)
+}
+
+/** Prepare the push filter once before invoking it for every candidate. */
+export function createVaultPushSelectionMatcher(options: VaultSelectionOptions) {
+  const selected = createVaultSelectionMatcher(options)
+  return (entry: RestorePlanEntry): boolean => {
+    if (!selected(entry)) return false
+    const deletes = entry.action === 'delete' || entry.vaultAction === 'delete'
+    return !deletes || options.approveDeletes !== false
+  }
 }
 
 export function selectRestorePlan(plan: RestorePlan, options: VaultSelectionOptions): RestorePlan {
-  return filterRestorePlan(plan, (entry) => matchesVaultSelection(entry, options))
+  return filterRestorePlan(plan, createVaultSelectionMatcher(options))
 }
 
 export function selectRestorePlanByDecisions(
@@ -705,12 +518,13 @@ export function buildDefaultRestoreDecisions(
   options: VaultSelectionOptions,
   strategy: VaultConflictStrategy = 'abort',
 ): RestoreDecision[] {
+  const selected = createVaultSelectionMatcher(options)
   return plan.files.flatMap((file) =>
     file.entries
       .filter((entry) => entry.action !== 'identical')
       .map((entry) => {
         let decision: RestoreDecision['decision'] = 'skip'
-        if (matchesVaultSelection(entry, options)) {
+        if (selected(entry)) {
           if (entry.action === 'conflict') {
             if (strategy === 'take-vault') decision = 'apply-vault'
             else if (strategy === 'keep-local') decision = 'keep-local'
@@ -729,13 +543,12 @@ export function hasUnresolvedSelectedConflict(
   options: VaultSelectionOptions,
 ): boolean {
   const decisionMap = new Map(decisions.map((item) => [item.entryId, item.decision]))
+  const selected = createVaultSelectionMatcher(options)
   return plan.files
     .flatMap((file) => file.entries)
     .some(
       (entry) =>
-        entry.action === 'conflict' &&
-        matchesVaultSelection(entry, options) &&
-        decisionMap.get(entry.entryId) === 'skip',
+        entry.action === 'conflict' && selected(entry) && decisionMap.get(entry.entryId) === 'skip',
     )
 }
 

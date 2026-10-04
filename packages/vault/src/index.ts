@@ -20,7 +20,7 @@ export {
   selectRestorePlanByDecisions,
   writeApprovalDocument,
 } from './application/restore.js'
-export { pruneVaultHistory, sanitizeVaultHistory } from './application/storage.js'
+export { pruneVaultHistory, sanitizeVaultHistory } from './application/native-history.js'
 export { type VaultConfig, defineVaultConfig, loadVaultConfig } from './adapters/config.js'
 export type {
   RestoreAction,

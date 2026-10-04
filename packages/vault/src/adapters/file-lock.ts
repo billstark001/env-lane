@@ -21,7 +21,9 @@ function isLockMetadata(value: unknown): value is LockMetadata {
   if (!value || typeof value !== 'object') return false
   const metadata = value as Partial<LockMetadata>
   return (
-    Number.isInteger(metadata.pid) &&
+    typeof metadata.pid === 'number' &&
+    Number.isSafeInteger(metadata.pid) &&
+    metadata.pid > 0 &&
     Number.isFinite(metadata.createdAt) &&
     typeof metadata.token === 'string' &&
     metadata.token.length > 0
@@ -53,7 +55,14 @@ export async function removeStaleLock(lockPath: string): Promise<void> {
     const metadata = await readLockMetadata(lockPath)
     if (metadata && processIsAlive(metadata.pid)) return
     const currentStat = await stat(lockPath)
-    if (currentStat.ino === lockStat.ino && currentStat.mtimeMs === lockStat.mtimeMs) {
+    const currentMetadata = await readLockMetadata(lockPath)
+    if (
+      currentStat.dev === lockStat.dev &&
+      currentStat.ino === lockStat.ino &&
+      currentStat.birthtimeMs === lockStat.birthtimeMs &&
+      currentStat.mtimeMs === lockStat.mtimeMs &&
+      currentMetadata?.token === metadata?.token
+    ) {
       await unlink(lockPath)
     }
   } catch {

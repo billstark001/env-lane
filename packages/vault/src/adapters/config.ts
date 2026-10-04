@@ -8,6 +8,7 @@ import {
 } from '@env-lane/core'
 import { z } from 'zod'
 import type { VaultRestoreRedaction, VaultRestoreReveal } from '../domain/types.js'
+import { callNativeVault } from './native.js'
 import {
   type AbsolutePath,
   absoluteDirname,
@@ -283,7 +284,7 @@ async function loadVaultConfigUnchecked(
       'The vault store file must not overlap with any env file.',
     )
   }
-  return {
+  const resolved: VaultConfig = {
     baseDir: baseDirOfConfig,
     envFiles,
     outputDir,
@@ -301,6 +302,8 @@ async function loadVaultConfigUnchecked(
     disableUnsafeWarning:
       parsed.disableUnsafeWarning ?? mainConfig.vault.disableUnsafeWarning ?? false,
   }
+  callNativeVault('vault.validateConfig', { config: resolved })
+  return resolved
 }
 
 export async function loadVaultConfig(

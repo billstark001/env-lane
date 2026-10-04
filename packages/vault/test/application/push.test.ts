@@ -1,13 +1,25 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { withVaultOperationLock } from '../../src/application/storage.js'
 import {
   buildRestorePlan,
   decryptEnvFiles,
   decryptRecord,
   deriveVaultKey,
+  type EncryptOptions,
   encryptEnvFiles,
+  keyedDigest,
+  loadVaultConfig,
 } from '../../src/index.js'
 
 const testDirectories = new Set<string>()
@@ -29,6 +41,141 @@ function storeLineCount(root: string): number {
 }
 
 describe('@env-lane/vault push', () => {
+  it('rejects a non-boolean selection callback before writing records', async () => {
+    const root = testDirectory('env-lane-vault-invalid-selection')
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    writeFileSync(configPath, JSON.stringify({ envFiles: ['.env'] }))
+    await expect(
+      encryptEnvFiles(configPath, keyPath, {
+        selectEntry: (() => 'yes') as never,
+      }),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_DECISION' })
+    expect(existsSync(path.join(root, '.env-lane-vault/store.dat'))).toBe(false)
+  })
+
+  it('rejects a mutated resolved config whose store overlaps a managed env file', async () => {
+    const root = testDirectory('env-lane-vault-overlap')
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    writeFileSync(configPath, JSON.stringify({ envFiles: ['.env'] }))
+    const config = await loadVaultConfig(configPath, { cwd: root })
+    const original = readFileSync(path.join(root, '.env'), 'utf8')
+    await expect(
+      encryptEnvFiles(configPath, keyPath, {
+        cwd: root,
+        resolvedConfig: { ...config, storePath: config.envFiles[0] },
+      }),
+    ).rejects.toMatchObject({ code: 'VAULT_STORE_OVERLAP' })
+    await expect(
+      encryptEnvFiles(configPath, keyPath, {
+        cwd: root,
+        resolvedConfig: { ...config, envFiles: [config.envFiles[0], config.envFiles[0]] },
+      }),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_CONFIG' })
+    await expect(
+      encryptEnvFiles(configPath, keyPath, {
+        cwd: root,
+        resolvedConfig: {
+          ...config,
+          restore: { ...config.restore, reveal: { start: 65, end: 0 } },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_CONFIG' })
+    await expect(
+      encryptEnvFiles(configPath, keyPath, {
+        cwd: root,
+        resolvedConfig: { ...config, storePath: path.join(root, 'unexpected.dat') },
+      }),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_CONFIG' })
+    expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe(original)
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects a store symlink to an env file before a push can overwrite it',
+    async () => {
+      const root = testDirectory('env-lane-vault-symlink-overlap')
+      const configPath = path.join(root, 'vault.json')
+      const keyPath = path.join(root, 'key.aes')
+      const envPath = path.join(root, '.env')
+      writeFileSync(keyPath, 'dev-only-key-material')
+      writeFileSync(envPath, 'A=keep\n')
+      writeFileSync(configPath, JSON.stringify({ envFiles: ['.env'], outputDir: '.vault' }))
+      mkdirSync(path.join(root, '.vault'))
+      symlinkSync('../.env', path.join(root, '.vault/store.dat'))
+
+      await expect(
+        encryptEnvFiles(configPath, keyPath, { cwd: root, ignoreCorruptRecords: true }),
+      ).rejects.toMatchObject({ code: 'VAULT_STORE_OVERLAP' })
+      expect(readFileSync(envPath, 'utf8')).toBe('A=keep\n')
+    },
+  )
+
+  it('does not accept an internal lock-bypass flag from public options', async () => {
+    const root = testDirectory('env-lane-vault-public-lock')
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(path.join(root, '.env'), 'A=1\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    const config = await loadVaultConfig(configPath, { cwd: root })
+    await withVaultOperationLock(config, async () => {
+      await expect(
+        encryptEnvFiles(configPath, keyPath, {
+          cwd: root,
+          skipOperationLock: true,
+        } as EncryptOptions),
+      ).rejects.toMatchObject({ code: 'VAULT_LOCK_TIMEOUT' })
+    })
+    expect(existsSync(config.storePath)).toBe(false)
+  }, 10_000)
+
+  it('keeps callback entry IDs and applies selected values from the original snapshot', async () => {
+    const root = testDirectory('env-lane-vault-callback-snapshot')
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    const envPath = path.join(root, '.env')
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(envPath, 'A=first\nB=skip\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    const observed: string[] = []
+    const result = await encryptEnvFiles(configPath, keyPath, {
+      selectEntry: (entry) => {
+        observed.push(entry.key)
+        if (entry.key === 'A') {
+          expect(entry.entryId).toBe(
+            keyedDigest(
+              deriveVaultKey(keyPath),
+              JSON.stringify({ direction: 'encrypt', filePath: envPath, key: 'A', value: 'first' }),
+            ),
+          )
+          writeFileSync(envPath, 'A=changed-after-preview\nB=skip\n')
+          return true
+        }
+        return false
+      },
+    })
+    expect(observed).toEqual(['A', 'B'])
+    expect(result).toMatchObject({ setRecordsWritten: 1, selectionSkipped: 1 })
+    const record = JSON.parse(
+      decryptRecord(
+        deriveVaultKey(keyPath),
+        readFileSync(path.join(root, '.vault/store.dat'), 'utf8').trim(),
+      ),
+    )
+    expect(record).toMatchObject({ k: 'A', v: 'first' })
+  })
+
   it('previews a first push without creating a store, sync state, or output directories', async () => {
     const root = testDirectory(`env-lane-vault-dry-run-new`)
     const configPath = path.join(root, 'vault.json')

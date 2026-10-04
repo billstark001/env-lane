@@ -73,6 +73,12 @@ describe('Vault selection and fail-on policies', () => {
     expect(matchesVaultSelection(modify, { exclude: '**:API_*' })).toBe(false)
     expect(matchesVaultSelection(modify, { only: 'add' })).toBe(false)
     expect(() => matchesVaultSelection(modify, { only: 'unknown' })).toThrow(/unknown action/)
+    expect(() => selectRestorePlan(plan([]), { only: '' })).toThrow(/unknown action/)
+    for (const field of ['file', 'key', 'include', 'exclude'] as const) {
+      expect(() => selectRestorePlan(plan([]), { [field]: '' })).toThrowError(
+        expect.objectContaining({ code: 'VAULT_INVALID_FILTER' }),
+      )
+    }
   })
 
   it('selects deletes by default and supports an explicit opt-out', () => {

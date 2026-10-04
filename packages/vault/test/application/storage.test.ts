@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
@@ -62,6 +63,11 @@ describe('@env-lane/vault storage', () => {
     expect(existsSync(lockPath)).toBe(true)
 
     writeFileSync(lockPath, JSON.stringify({ pid: 2_147_483_647, createdAt: 0, token: 'dead' }))
+    utimesSync(lockPath, staleTime, staleTime)
+    await removeStaleLock(lockPath)
+    expect(existsSync(lockPath)).toBe(false)
+
+    writeFileSync(lockPath, JSON.stringify({ pid: -1, createdAt: 0, token: 'invalid' }))
     utimesSync(lockPath, staleTime, staleTime)
     await removeStaleLock(lockPath)
     expect(existsSync(lockPath)).toBe(false)
@@ -193,6 +199,25 @@ describe('@env-lane/vault storage', () => {
       loadVaultConfig(configPath, { restoreReveal: { start: 65, end: 4 } }),
     ).rejects.toMatchObject({ code: 'VAULT_INVALID_CONFIG' })
   })
+
+  it.skipIf(process.platform === 'win32')(
+    'rejects store symlink overlap when loading a public Vault config',
+    async () => {
+      const root = testDirectory('env-lane-vault-config-symlink-overlap')
+      writeFileSync(path.join(root, '.env'), 'A=keep\n')
+      mkdirSync(path.join(root, '.vault'))
+      symlinkSync('../.env', path.join(root, '.vault/store.dat'))
+      const configPath = path.join(root, 'vault.json')
+      writeFileSync(
+        configPath,
+        JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+      )
+      await expect(loadVaultConfig(configPath)).rejects.toMatchObject({
+        code: 'VAULT_STORE_OVERLAP',
+      })
+      expect(readFileSync(path.join(root, '.env'), 'utf8')).toBe('A=keep\n')
+    },
+  )
 
   it('fails closed until excluded historical records are sanitized', async () => {
     const root = testDirectory(`env-lane-vault-exclude-delete`)

@@ -58,6 +58,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
+    "@env-lane/native": "workspace:*",
     "@env-lane/core": "workspace:*",
     "@inquirer/prompts": "^7.10.1",
     "c12": "^3.3.4",

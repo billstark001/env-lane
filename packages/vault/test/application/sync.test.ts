@@ -11,6 +11,8 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { resolveConflict } from '../../src/application/sync.js'
+import type { RestorePlanEntry } from '../../src/domain/types.js'
 import {
   buildRestorePlan,
   decryptEnvFiles,
@@ -38,6 +40,13 @@ function storeLineCount(root: string): number {
 }
 
 describe('@env-lane/vault sync', () => {
+  it('rejects invalid choices returned by a conflict callback', async () => {
+    const entry = { entryId: 'synthetic-entry', filePath: '.env', key: 'A' } as RestorePlanEntry
+    await expect(
+      resolveConflict('abort', entry, async () => 'invalid' as 'keep-local'),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_DECISION' })
+  })
+
   it('uses explicit sync state to detect restore and push conflicts', async () => {
     const root = testDirectory(`env-lane-vault-sync`)
     const syncDir = path.join(root, '.sync-state')
