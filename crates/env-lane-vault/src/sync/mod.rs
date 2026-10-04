@@ -60,8 +60,8 @@ impl Context {
         fingerprint(&self.sync_key, value)
     }
 
-    /// The caller supplies time once per operation, so all accepted entries share
-    /// a coherent timestamp and deterministic tests need no global clock override.
+    /// The caller supplies the sync time explicitly, so tests and other callers
+    /// do not need a process-global clock override.
     pub fn update(&mut self, base_dir: &Path, record: &Record, synced_at: f64) -> Result<()> {
         if !synced_at.is_finite()
             || synced_at < 0.0

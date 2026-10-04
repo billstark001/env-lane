@@ -86,6 +86,7 @@ fn stale_dead_owner_and_malformed_lock_are_recoverable() {
     child.wait().unwrap();
     for contents in [
         serde_json::json!({"pid":pid,"createdAt":0,"token":"synthetic-old-token"}).to_string(),
+        serde_json::json!({"pid":-1,"createdAt":0,"token":"invalid-pid"}).to_string(),
         "malformed metadata".into(),
     ] {
         fs::write(&path, contents).unwrap();

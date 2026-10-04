@@ -46,3 +46,83 @@ fn native_formats_preserve_origin_and_reject_invalid_reveal() {
         );
     }
 }
+
+#[test]
+fn extensionless_vault_config_prefers_native_json_over_executable_source() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(
+        root.join("env-lane.vault.ts"),
+        "throw new Error('must not run')",
+    )
+    .unwrap();
+    fs::write(root.join("env-lane.vault.json"), r#"{"envFiles":[".env"]}"#).unwrap();
+
+    let main = main_config::load(root, None).unwrap();
+    let loaded = config::load(&main, None).unwrap();
+    assert_eq!(loaded.env_files, [root.join(".env")]);
+}
+
+#[cfg(unix)]
+#[test]
+fn store_symlink_cannot_alias_a_managed_env_file() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(root.join(".env"), "A=keep\n").unwrap();
+    fs::write(root.join("vault.json"), r#"{"envFiles":[".env"]}"#).unwrap();
+    fs::create_dir(root.join(".env-lane-vault")).unwrap();
+    symlink("../.env", root.join(".env-lane-vault/store.dat")).unwrap();
+
+    let main = main_config::load(root, None).unwrap();
+    let error = config::load(&main, Some(Path::new("vault.json")))
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "VAULT_STORE_OVERLAP");
+    assert_eq!(fs::read_to_string(root.join(".env")).unwrap(), "A=keep\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_env_symlink_aliases_are_rejected() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(root.join(".env"), "A=keep\n").unwrap();
+    symlink(".env", root.join("alias.env")).unwrap();
+    fs::write(
+        root.join("vault.json"),
+        r#"{"envFiles":[".env","alias.env"]}"#,
+    )
+    .unwrap();
+
+    let main = main_config::load(root, None).unwrap();
+    let error = config::load(&main, Some(Path::new("vault.json")))
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "VAULT_INVALID_CONFIG");
+}
+
+#[cfg(unix)]
+#[test]
+fn dangling_env_symlink_cannot_become_the_store_after_creation() {
+    use std::os::unix::fs::symlink;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(root.join("vault.json"), r#"{"envFiles":[".env"]}"#).unwrap();
+    symlink(".env-lane-vault/store.dat", root.join(".env")).unwrap();
+
+    let main = main_config::load(root, None).unwrap();
+    let error = config::load(&main, Some(Path::new("vault.json")))
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "VAULT_STORE_OVERLAP");
+    assert!(!root.join(".env-lane-vault").exists());
+}

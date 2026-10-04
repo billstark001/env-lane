@@ -64,7 +64,7 @@ fn history_plans_preserve_latest_ties_corrupt_lines_and_unselected_groups() {
         plan.rewrite.apply().unwrap_err().code,
         "VAULT_STORE_CHANGED"
     );
-    assert!(history::sanitize(&path, base, &loaded, |_, _| true).is_err());
+    assert!(history::sanitize(&path, base, &loaded, |_, _| Ok(true)).is_err());
 }
 
 #[test]
@@ -122,7 +122,16 @@ fn cutoff_preserves_newest_by_default_and_sanitize_keeps_ciphertext_verbatim() {
             .removed_records,
         0
     );
-    let plan = history::sanitize(&path, base, &loaded, |_, key| key == "REMOVE").unwrap();
+    let failure = history::sanitize(&path, base, &loaded, |_, _| {
+        Err(env_lane_core::error::Error::new(
+            "VAULT_INVALID_FILTER",
+            "invalid exclusion pattern",
+        ))
+    })
+    .err()
+    .unwrap();
+    assert_eq!(failure.code, "VAULT_INVALID_FILTER");
+    let plan = history::sanitize(&path, base, &loaded, |_, key| Ok(key == "REMOVE")).unwrap();
     assert_eq!(plan.affected_entries, [".env:REMOVE"]);
     plan.rewrite.apply().unwrap();
     assert_eq!(store::read_lines(&path, false).unwrap(), lines[1..]);

@@ -9,6 +9,10 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
+// u64::MAX rounds up to 2^64 as f64. Use the exclusive bound before casting,
+// otherwise the boundary timestamp silently becomes a different integer.
+const U64_EXCLUSIVE_BOUND: f64 = 18_446_744_073_709_551_616.0;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Version {
     Legacy,
@@ -93,7 +97,7 @@ pub fn encode(record: &Record, base: &Path) -> Result<Zeroizing<String>> {
         "t".into(),
         if record.timestamp.fract() == 0.0
             && record.timestamp >= 0.0
-            && record.timestamp <= u64::MAX as f64
+            && record.timestamp < U64_EXCLUSIVE_BOUND
         {
             Value::from(record.timestamp as u64)
         } else {
@@ -167,14 +171,45 @@ fn timestamp(value: &Value) -> Option<f64> {
         Value::Null => Some(0.0),
         Value::Bool(value) => Some(if *value { 1.0 } else { 0.0 }),
         Value::String(value) if trim(value).is_empty() => Some(0.0),
-        Value::String(value) => trim(value).parse().ok(),
+        Value::String(value) => numeric_string(trim(value)),
         Value::Array(values) if values.is_empty() => Some(0.0),
+        // Number([x]) coerces through Array#toString. A single nested array
+        // repeats that coercion; multiple items produce a comma and are NaN.
         Value::Array(values) if values.len() == 1 => match &values[0] {
-            Value::String(_) | Value::Number(_) | Value::Null => timestamp(&values[0]),
+            Value::String(_) | Value::Number(_) | Value::Null | Value::Array(_) => {
+                timestamp(&values[0])
+            }
             _ => None,
         },
         _ => None,
     }
+}
+
+/// JavaScript's `Number(string)` accepts unsigned radix prefixes in legacy
+/// timestamps. Keep that coercion at the record boundary; new records write
+/// numeric timestamps.
+fn numeric_string(value: &str) -> Option<f64> {
+    let radix = [
+        ("0x", 16),
+        ("0X", 16),
+        ("0b", 2),
+        ("0B", 2),
+        ("0o", 8),
+        ("0O", 8),
+    ]
+    .into_iter()
+    .find_map(|(prefix, radix)| value.strip_prefix(prefix).map(|digits| (digits, radix)));
+    if let Some((digits, radix)) = radix {
+        if digits.is_empty() {
+            return None;
+        }
+        return digits.chars().try_fold(0.0, |number, digit| {
+            digit
+                .to_digit(radix)
+                .map(|value| number * f64::from(radix) + f64::from(value))
+        });
+    }
+    value.parse().ok()
 }
 fn invalid(message: &str) -> Error {
     Error::new("VAULT_INVALID_RECORD", message)

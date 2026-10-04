@@ -119,3 +119,21 @@ fn portable_record_paths_reject_platform_specific_paths_but_preserve_relative_pa
     .unwrap();
     assert!(matches!(deleted.change, Change::Delete));
 }
+
+#[test]
+fn record_encoding_does_not_saturate_a_timestamp_at_two_to_the_sixty_fourth() {
+    let temporary = tempfile::tempdir().unwrap();
+    let base = temporary.path();
+    let mut record = record::decode(
+        r#"{"version":1,"f":".env","k":"A","t":0,"op":"delete"}"#,
+        base,
+        base,
+        0,
+    )
+    .unwrap();
+    record.timestamp = 18_446_744_073_709_551_616.0;
+    let encoded = record::encode(&record, base).unwrap();
+    let wire: Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(wire["t"].as_f64(), Some(record.timestamp));
+    assert_eq!(wire["t"].as_u64(), None);
+}

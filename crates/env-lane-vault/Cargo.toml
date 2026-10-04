@@ -21,6 +21,10 @@ zeroize = { version = "1.8", features = ["derive"] }
 getrandom = "0.3"
 hex = "0.4"
 same-file = "1"
+picomatch-rs = "=0.1.0"
+fancy-regex = "0.14"
+url = "2.5"
+percent-encoding = "2"
 
 [lints]
 workspace = true

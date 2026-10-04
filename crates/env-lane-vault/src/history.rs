@@ -1,5 +1,6 @@
 //! Pure history rewrite planning. Selection uses authenticated records; surviving
-//! ciphertext is copied verbatim, including unreadable lines allowed by callers.
+//! decoded line text is copied unchanged, including unreadable records allowed by
+//! callers. Store loading follows the frozen UTF-8 replacement policy.
 use crate::store::{Store, persistence};
 use env_lane_core::{
     error::{Error, Result},
@@ -8,7 +9,7 @@ use env_lane_core::{
 use indexmap::IndexMap;
 use serde::Serialize;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -97,7 +98,7 @@ pub fn prune(path: &Path, store: &Store, options: &PruneOptions<'_>) -> Result<P
             .or_default()
             .push(line);
     }
-    let mut removed = BTreeSet::new();
+    let mut removed = HashSet::new();
     for records in groups.values_mut() {
         records.sort_by(|left, right| {
             right
@@ -136,7 +137,7 @@ pub fn sanitize(
     path: &Path,
     base: &Path,
     store: &Store,
-    mut excluded: impl FnMut(&Path, &str) -> bool,
+    mut excluded: impl FnMut(&Path, &str) -> Result<bool>,
 ) -> Result<SanitizePlan> {
     if store.failed_records != 0 {
         return Err(Error::new(
@@ -144,10 +145,10 @@ pub fn sanitize(
             "Cannot sanitize unreadable Vault history.",
         ));
     }
-    let mut removed = BTreeSet::new();
+    let mut removed = HashSet::new();
     let mut affected = BTreeSet::new();
     for line in &store.records {
-        if excluded(&line.group_file_path, &line.record.key) {
+        if excluded(&line.group_file_path, &line.record.key)? {
             removed.insert(line.line_index);
             affected.insert(format!(
                 "{}:{}",
@@ -162,7 +163,7 @@ pub fn sanitize(
     })
 }
 
-fn plan(path: &Path, store: &Store, removed: &BTreeSet<usize>) -> RewritePlan {
+fn plan(path: &Path, store: &Store, removed: &HashSet<usize>) -> RewritePlan {
     let next_lines: Vec<_> = store
         .raw_lines
         .iter()

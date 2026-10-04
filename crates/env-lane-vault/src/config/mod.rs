@@ -1,7 +1,7 @@
 //! Native config discovery and path ownership; no executable config evaluation.
 mod schema;
 use env_lane_core::{
-    config::{LoadedConfig, read_native_config},
+    config::{LoadedConfig, read_config},
     error::{Error, Result},
     paths::resolve_path,
     text::trim,
@@ -10,6 +10,11 @@ use indexmap::IndexSet;
 pub use schema::{Config, Exclude, Redaction, Restore, Reveal, SortTarget};
 use schema::{RawConfig, invalid};
 use std::path::{Path, PathBuf};
+
+const NATIVE_EXTENSIONS: &[&str] = &["json", "yaml", "yml"];
+const EXTERNAL_EXTENSIONS: &[&str] = &[
+    "ts", "js", "mjs", "cjs", "mts", "cts", "jsonc", "json5", "toml",
+];
 
 pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
     let requested = match explicit {
@@ -20,11 +25,15 @@ pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
         ),
     };
     let file = discover(&requested)?;
-    let raw = read_native_config(&file).map_err(|error| {
-        Error::new(
-            "VAULT_CONFIG_LOAD_FAILED",
-            format!("Failed to load Vault config: {}", error.message),
-        )
+    let raw = read_config(&file, &main.project_root, "vault").map_err(|error| {
+        if error.code == "VAULT_CONFIG_COMPILATION_REQUIRED" {
+            error
+        } else {
+            Error::new(
+                "VAULT_CONFIG_LOAD_FAILED",
+                format!("Failed to load Vault config: {}", error.message),
+            )
+        }
     })?;
     let raw: RawConfig = serde_json::from_value(raw).map_err(|error| invalid(error.to_string()))?;
     raw.validate()?;
@@ -36,12 +45,6 @@ pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
         .iter()
         .map(|file| resolve_path(&base_dir, Path::new(file)))
         .collect();
-    if env_files.contains(&store_path) {
-        return Err(Error::new(
-            "VAULT_STORE_OVERLAP",
-            "The vault store file must not overlap with any env file.",
-        ));
-    }
     let exclude = raw
         .exclude
         .into_iter()
@@ -58,7 +61,7 @@ pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
                 .collect(),
         })
         .collect();
-    Ok(Config {
+    let config = Config {
         base_dir,
         env_files: env_files.into_iter().collect(),
         output_dir,
@@ -73,29 +76,23 @@ pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
         disable_unsafe_warning: raw
             .disable_unsafe_warning
             .unwrap_or(main.config.vault.disable_unsafe_warning),
-    })
+    };
+    config.validate_resolved()?;
+    Ok(config)
 }
 
 fn discover(requested: &Path) -> Result<PathBuf> {
     if requested.is_file() {
         return Ok(requested.to_owned());
     }
-    if requested.extension().is_none() {
-        for extension in ["json", "yaml", "yml"] {
-            let candidate = requested.with_extension(extension);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-        if ["ts", "js", "mjs", "cjs", "mts", "cts"]
-            .iter()
-            .any(|extension| requested.with_extension(extension).is_file())
-        {
-            return Err(Error::new(
-                "VAULT_CONFIG_COMPILATION_REQUIRED",
-                "Executable Vault config requires the external configuration compiler or migration to JSON/YAML.",
-            ));
-        }
+    let extension = requested.extension().and_then(|value| value.to_str());
+    let supported = NATIVE_EXTENSIONS.iter().chain(EXTERNAL_EXTENSIONS);
+    if extension.is_none_or(|value| !supported.clone().any(|known| *known == value))
+        && let Some(candidate) = supported
+            .map(|extension| PathBuf::from(format!("{}.{extension}", requested.display())))
+            .find(|candidate| candidate.is_file())
+    {
+        return Ok(candidate);
     }
     Err(Error::new(
         "VAULT_CONFIG_NOT_FOUND",

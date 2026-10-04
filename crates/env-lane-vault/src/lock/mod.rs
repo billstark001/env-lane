@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Metadata {
     pid: i64,
@@ -122,7 +122,8 @@ pub fn remove_stale(path: &Path, stale_after: Duration) {
     let Ok(identity) = Handle::from_path(path) else {
         return;
     };
-    if let Some(metadata) = read_metadata(path)
+    let owner = read_metadata(path);
+    if let Some(metadata) = &owner
         && !process::is_dead(metadata.pid)
     {
         return;
@@ -133,14 +134,15 @@ pub fn remove_stale(path: &Path, stale_after: Duration) {
         .ok()
         .and_then(|metadata| metadata.modified().ok())
         == Some(modified);
-    if unchanged_time {
+    if unchanged_time && read_metadata(path) == owner {
         remove_owned(path, &identity);
     }
 }
 
 fn read_metadata(path: &Path) -> Option<Metadata> {
     let metadata: Metadata = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-    (metadata.created_at.is_finite() && !metadata.token.is_empty()).then_some(metadata)
+    (metadata.pid > 0 && metadata.created_at.is_finite() && !metadata.token.is_empty())
+        .then_some(metadata)
 }
 fn remove_owned(path: &Path, identity: &Handle) {
     if Handle::from_path(path).is_ok_and(|current| current == *identity) {
