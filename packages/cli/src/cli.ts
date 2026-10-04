@@ -39,9 +39,10 @@ function registerUnavailableVaultCommand(error: EnvLaneError): void {
 }
 
 function unsupportedVaultVersionError(): EnvLaneError {
+  const requiredVersion = packageJson.peerDependencies['@env-lane/vault']
   return new EnvLaneError(
     'VAULT_VERSION_UNSUPPORTED',
-    `env-lane ${packageJson.version} requires @env-lane/vault ^0.4.2. Install matching versions with: pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2`,
+    `env-lane ${packageJson.version} requires @env-lane/vault ${requiredVersion}. Install matching versions with: pnpm add -D env-lane@^${packageJson.version} @env-lane/vault@${requiredVersion}`,
   )
 }
 

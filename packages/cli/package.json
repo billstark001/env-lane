@@ -29,7 +29,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "env-lane": "./dist/cli.js"
+    "env-lane": "./dist/env-lane"
   },
   "exports": {
     ".": {
@@ -40,6 +40,7 @@
   },
   "files": [
     "dist",
+    "scripts/install-native.cjs",
     "README.md",
     "LICENSE"
   ],
@@ -48,14 +49,16 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && tsup src/cli.ts --format esm --clean false",
+    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && tsup src/cli.ts --format esm --clean false && node scripts/prepare-native-bin.mjs",
     "dev": "tsx src/cli.ts",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
+    "postinstall": "node scripts/install-native.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check ."
   },
   "dependencies": {
+    "@env-lane/native": "workspace:*",
     "@env-lane/core": "workspace:*",
     "commander": "^15.0.0"
   },
