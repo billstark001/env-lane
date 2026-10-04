@@ -3,7 +3,12 @@ use env_lane_core::{
     error::{Error, Result},
     run::PreparedRun,
 };
-use std::process::{Command, Stdio};
+#[cfg(windows)]
+use std::path::PathBuf;
+use std::{
+    ffi::OsStr,
+    process::{Command, Stdio},
+};
 
 #[cfg(unix)]
 mod signals;
@@ -16,6 +21,17 @@ pub fn execute(prepared: &PreparedRun) -> Result<i32> {
     let mut command = command(prepared);
     let mut child = match command.spawn() {
         Ok(child) => child,
+        #[cfg(windows)]
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let Some(batch) = windows_batch_fallback(prepared) else {
+                return Ok(1);
+            };
+            let mut retry = command_for(prepared, batch.as_os_str());
+            match retry.spawn() {
+                Ok(child) => child,
+                Err(_) => return Ok(1),
+            }
+        }
         // `run` reports execution failure through its exit status. It does not
         // append parent diagnostics to streams owned by the requested command.
         Err(_) => return Ok(1),
@@ -28,14 +44,12 @@ pub fn execute(prepared: &PreparedRun) -> Result<i32> {
 }
 
 fn command(prepared: &PreparedRun) -> Command {
-    #[cfg(not(windows))]
-    let mut command = {
-        let mut command = Command::new(&prepared.program);
-        command.args(&prepared.arguments);
-        command
-    };
-    #[cfg(windows)]
-    let mut command = windows_command(prepared);
+    command_for(prepared, &prepared.program)
+}
+
+fn command_for(prepared: &PreparedRun, program: &OsStr) -> Command {
+    let mut command = Command::new(program);
+    command.args(&prepared.arguments);
     // Inheritance is intentional: disabling shell values during dotenv resolution
     // does not remove PATH or other inherited variables from the child process.
     command
@@ -48,18 +62,54 @@ fn command(prepared: &PreparedRun) -> Command {
 }
 
 #[cfg(windows)]
-fn windows_command(prepared: &PreparedRun) -> Command {
-    use std::{ffi::OsString, os::windows::process::CommandExt};
-    let mut line = OsString::from("\"");
-    line.push(&prepared.program);
-    for argument in &prepared.arguments {
-        line.push(" ");
-        line.push(argument);
+fn windows_batch_fallback(prepared: &PreparedRun) -> Option<PathBuf> {
+    let program = PathBuf::from(&prepared.program);
+    if program.extension().is_some() {
+        return None;
     }
-    line.push("\"");
-    let mut command = Command::new(std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()));
-    command.args(["/d", "/s", "/c"]).raw_arg(line);
-    command
+    let mut directories = vec![prepared.cwd.clone()];
+    if program.components().count() == 1 {
+        let path = prepared
+            .environment
+            .values
+            .iter()
+            .rev()
+            .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+            .map(|(_, value)| std::ffi::OsString::from(value))
+            .or_else(|| std::env::var_os("PATH"));
+        directories.extend(path.as_deref().into_iter().flat_map(std::env::split_paths));
+    }
+    let extensions = prepared
+        .environment
+        .values
+        .iter()
+        .rev()
+        .find(|(key, _)| key.eq_ignore_ascii_case("PATHEXT"))
+        .map(|(_, value)| value.clone())
+        .or_else(|| std::env::var("PATHEXT").ok())
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into());
+    for directory in directories {
+        // Windows resolves relative PATH entries from the child's working
+        // directory, while is_file() observes this process's working directory.
+        let directory = if directory.is_absolute() {
+            directory
+        } else {
+            prepared.cwd.join(directory)
+        };
+        let base = directory.join(&program);
+        for extension in extensions.split(';') {
+            if !extension.eq_ignore_ascii_case(".cmd") && !extension.eq_ignore_ascii_case(".bat") {
+                continue;
+            }
+            let mut name = base.as_os_str().to_owned();
+            name.push(extension);
+            let candidate = PathBuf::from(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 fn process_error(error: std::io::Error) -> Error {

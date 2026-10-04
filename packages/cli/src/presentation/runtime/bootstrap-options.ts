@@ -58,14 +58,13 @@ export function readCliBootstrapOptions(args: readonly string[]): CliBootstrapOp
     const inlineConfig = optionValue(argument, '--config', '-c')
     const inlineCwd = optionValue(argument, '--cwd')
     const inlineFormat = optionValue(argument, '--format')
-    if (inlineConfig !== undefined && options.config === undefined) options.config = inlineConfig
-    else if (inlineCwd !== undefined && options.cwd === undefined) options.cwd = inlineCwd
-    else if (inlineFormat !== undefined && options.format === undefined)
-      options.format = inlineFormat
-    else if ((argument === '-c' || argument === '--config') && options.config === undefined) {
+    if (inlineConfig !== undefined) options.config = inlineConfig
+    else if (inlineCwd !== undefined) options.cwd = inlineCwd
+    else if (inlineFormat !== undefined) options.format = inlineFormat
+    else if (argument === '-c' || argument === '--config') {
       options.config = args[++index]
-    } else if (argument === '--cwd' && options.cwd === undefined) options.cwd = args[++index]
-    else if (argument === '--format' && options.format === undefined) options.format = args[++index]
+    } else if (argument === '--cwd') options.cwd = args[++index]
+    else if (argument === '--format') options.format = args[++index]
     else if (argument === '--json') options.json = true
     else if (argument === '--no-prefix') options.prefix = false
   }

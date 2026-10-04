@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { normalizeRoot, withOracle, workspace } from './rust-support.mjs'
@@ -105,26 +105,31 @@ await withOracle(async ({ temporary, runtime }) => {
       '@echo off\r\necho child-script:%1\r\nexit /b 9\r\n',
     )
     requests.push({ command: ['child-script.cmd', 'value'] })
-  }
-  if (process.platform !== 'win32')
-    requests.push(
-      { command: ['node', 'child-signal.mjs'] },
-      {
-        command: [
-          'node',
-          'child-argv.mjs',
-          'space value',
-          '',
-          'amp&ersand',
-          'dollar$sign',
-          'semi;colon',
-          'quote"value',
-          '--json',
-          '--',
-          '日本語',
-        ],
-      },
+    mkdirSync(path.join(root, 'tools'))
+    writeFileSync(
+      path.join(root, 'tools/child-path.cmd'),
+      '@echo off\r\necho child-path:%1\r\nexit /b 7\r\n',
     )
+    const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === 'PATH') ?? 'Path'
+    process.env[pathKey] = `tools${path.delimiter}${process.env[pathKey] ?? ''}`
+    requests.push({ command: ['child-path', 'relative'] })
+  }
+  if (process.platform !== 'win32') requests.push({ command: ['node', 'child-signal.mjs'] })
+  requests.push({
+    command: [
+      'node',
+      'child-argv.mjs',
+      'space value',
+      '',
+      'amp&ersand',
+      'dollar$sign',
+      'semi;colon',
+      'quote"value',
+      '--json',
+      '--',
+      '日本語',
+    ],
+  })
   for (const includeProcessEnv of [true, false]) {
     const config = JSON.parse(readFileSync(base.configFile, 'utf8'))
     config.dotenv = { ...config.dotenv, includeProcessEnv }

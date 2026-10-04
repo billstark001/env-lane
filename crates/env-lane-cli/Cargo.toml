@@ -8,8 +8,10 @@ license.workspace = true
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 env-lane-core = { path = "../env-lane-core" }
+env-lane-vault = { path = "../env-lane-vault" }
 serde_json.workspace = true
 serde.workspace = true
+crossterm = "0.29"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

@@ -3,6 +3,8 @@ mod check;
 mod inspect;
 mod sort;
 mod sync;
+mod vault;
+mod vault_prompt;
 use crate::{
     arguments::{Cli, Operation},
     output::Output,
@@ -20,6 +22,7 @@ pub fn execute(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<i32> {
     match &cli.command {
+        Operation::Vault { operation } => vault::execute(operation, cli, context, output),
         Operation::Packages
         | Operation::ResolveTarget { .. }
         | Operation::Files { .. }

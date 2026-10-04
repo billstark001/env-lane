@@ -13,7 +13,96 @@ use env_lane_core::{
     workspace,
 };
 
+fn peer_version_from_node_modules(executable: &std::path::Path) -> Option<String> {
+    for ancestor in executable.ancestors() {
+        let modules = if ancestor
+            .file_name()
+            .is_some_and(|name| name == "node_modules")
+        {
+            ancestor.to_path_buf()
+        } else {
+            ancestor.join("node_modules")
+        };
+        let manifest = modules.join("@env-lane/vault/package.json");
+        let Ok(bytes) = std::fs::read(manifest) else {
+            continue;
+        };
+        let Ok(document) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            continue;
+        };
+        if document.get("name").and_then(serde_json::Value::as_str) == Some("@env-lane/vault")
+            && let Some(version) = document.get("version").and_then(serde_json::Value::as_str)
+        {
+            return Some(version.to_owned());
+        }
+    }
+    None
+}
+
+fn verify_installed_vault_peer(cli: &Cli) -> Result<()> {
+    if !matches!(
+        cli.command,
+        env_lane_cli::arguments::Operation::Vault { .. }
+    ) {
+        return Ok(());
+    }
+    let executable = std::env::current_exe()
+        .map_err(|error| Error::new("VAULT_VERSION_UNSUPPORTED", error.to_string()))?;
+    let executable = executable.canonicalize().unwrap_or(executable);
+    let metadata = executable.with_file_name("env-lane-install.json");
+    let Ok(bytes) = std::fs::read(metadata) else {
+        return Ok(()); // Standalone binaries include Vault without an npm peer.
+    };
+    let document: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|error| Error::new("VAULT_VERSION_UNSUPPORTED", error.to_string()))?;
+    let has_node_modules = executable.ancestors().any(|ancestor| {
+        ancestor
+            .file_name()
+            .is_some_and(|name| name == "node_modules")
+    });
+    let live_version = peer_version_from_node_modules(&executable);
+    let version = if has_node_modules {
+        live_version.as_deref()
+    } else {
+        document
+            .get("vaultVersion")
+            .and_then(serde_json::Value::as_str)
+    };
+    let Some(version) = version else {
+        return Err(Error::new(
+            "VAULT_NOT_INSTALLED",
+            "Vault commands require the optional @env-lane/vault package. Install it with: pnpm add -D @env-lane/vault",
+        ));
+    };
+    let parts = |version: &str| -> Option<Vec<u64>> {
+        version
+            .split('.')
+            .map(|part| part.parse::<u64>().ok())
+            .collect()
+    };
+    let expected = parts(env!("CARGO_PKG_VERSION"));
+    let actual = parts(version);
+    if !matches!((expected, actual), (Some(ref expected), Some(ref actual))
+        if expected.len() == 3 && actual.len() == 3
+            && expected[0] == actual[0] && expected[1] == actual[1]
+            && actual[2] >= expected[2])
+    {
+        return Err(Error::new(
+            "VAULT_VERSION_UNSUPPORTED",
+            format!(
+                "env-lane {} requires @env-lane/vault ^{}. Install matching versions with: pnpm add -D env-lane@^{} @env-lane/vault@^{}",
+                env!("CARGO_PKG_VERSION"),
+                env!("CARGO_PKG_VERSION"),
+                env!("CARGO_PKG_VERSION"),
+                env!("CARGO_PKG_VERSION")
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn execute(cli: &Cli, output: &mut Output) -> Result<i32> {
+    verify_installed_vault_peer(cli)?;
     let current = std::env::current_dir()
         .map_err(|error| Error::new("CWD_READ_FAILED", error.to_string()))?;
     let cwd = cli
@@ -42,6 +131,7 @@ fn execute(cli: &Cli, output: &mut Output) -> Result<i32> {
     let packages = if matches!(
         cli.command,
         env_lane_cli::arguments::Operation::SortFile { .. }
+            | env_lane_cli::arguments::Operation::Vault { .. }
     ) {
         Vec::new()
     } else {

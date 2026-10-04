@@ -325,6 +325,19 @@ describe('CLI context & commands', () => {
       prefix: false,
     })
     expect(readCliBootstrapOptions(['run', '.', 'node', '--json'])).toEqual({})
+    expect(
+      readCliBootstrapOptions([
+        '--config',
+        'first.json',
+        '--config=last.json',
+        '--cwd',
+        '/first',
+        '--cwd=/last',
+        '--format',
+        'text',
+        '--format=json',
+      ]),
+    ).toEqual({ config: 'last.json', cwd: '/last', format: 'json' })
   })
 
   it('runs check command with validations and outputs', async () => {
