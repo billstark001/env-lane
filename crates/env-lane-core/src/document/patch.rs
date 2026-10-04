@@ -112,6 +112,7 @@ impl<'a> PatchEditor<'a> {
             .iter()
             .filter_map(|line| {
                 matching_entry(line, options.match_commented)
+                    .filter(|entry| desired.contains_key(entry.key.as_str()))
                     .map(|entry| (entry.key.clone(), line.line_number))
             })
             .collect();

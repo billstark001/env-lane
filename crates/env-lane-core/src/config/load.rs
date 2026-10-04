@@ -1,5 +1,5 @@
 //! Locate native configuration and resolve each path against its owning root.
-use super::{Config, invalid, parse_yaml};
+use super::{Config, cache, invalid, parse_yaml};
 use crate::{
     error::{Error, Result},
     paths::{find_root, resolve_path},
@@ -28,15 +28,16 @@ pub fn load(cwd: &Path, explicit: Option<&Path>) -> Result<LoadedConfig> {
     let invocation_cwd = resolve_path(&process_cwd, cwd);
     let project_root = find_root(&invocation_cwd);
     let config_file = match explicit {
-        Some(path) => Some(resolve_path(&invocation_cwd, path)),
+        Some(path) => Some(discover_explicit(&resolve_path(&invocation_cwd, path))),
         None => discover_config(&project_root)?,
     };
     let raw = match &config_file {
-        Some(path) => read_native_config(path)?,
+        Some(path) => read_config(path, &project_root, "main")?,
         None => serde_json::json!({}),
     };
-    let mut config = Config::from_value(raw.clone())?;
-    resolve_workspace_globs(&mut config, &raw, &project_root)?;
+    let has_explicit_globs = raw.pointer("/workspace/packageGlobs").is_some();
+    let mut config = Config::from_value(raw)?;
+    resolve_workspace_globs(&mut config, has_explicit_globs, &project_root)?;
     resolve_sort_directories(&mut config, &project_root);
     let config_dir = config_file
         .as_ref()
@@ -57,17 +58,34 @@ fn discover_config(project_root: &Path) -> Result<Option<PathBuf>> {
     if let Some(file) = find_config_with_extension(project_root, NATIVE_EXTENSIONS) {
         return Ok(Some(file));
     }
-    if find_config_with_extension(project_root, EXTERNAL_EXTENSIONS).is_some() {
-        return Err(compilation_required());
+    if let Some(file) = find_config_with_extension(project_root, EXTERNAL_EXTENSIONS) {
+        return Ok(Some(file));
     }
     Ok(None)
 }
 
 fn find_config_with_extension(root: &Path, extensions: &[&str]) -> Option<PathBuf> {
-    extensions
-        .iter()
-        .map(|extension| root.join(format!("env-lane.config.{extension}")))
+    extensions.iter().find_map(|extension| {
+        [
+            root.join(format!("env-lane.config.{extension}")),
+            root.join(format!(".config/env-lane.config.{extension}")),
+            root.join(format!(".config/env-lane.{extension}")),
+        ]
+        .into_iter()
         .find(|path| path.is_file())
+    })
+}
+
+fn discover_explicit(path: &Path) -> PathBuf {
+    if path.is_file() {
+        return path.to_owned();
+    }
+    NATIVE_EXTENSIONS
+        .iter()
+        .chain(EXTERNAL_EXTENSIONS)
+        .map(|extension| PathBuf::from(format!("{}.{extension}", path.display())))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| path.to_owned())
 }
 
 pub fn read_native_config(path: &Path) -> Result<Value> {
@@ -86,6 +104,20 @@ pub fn read_native_config(path: &Path) -> Result<Value> {
     }
 }
 
+pub fn read_config(path: &Path, root: &Path, kind: &str) -> Result<Value> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    if NATIVE_EXTENSIONS.contains(&extension) {
+        read_native_config(path)
+    } else if EXTERNAL_EXTENSIONS.contains(&extension) {
+        cache::load(root, path, kind)
+    } else {
+        Err(compilation_required())
+    }
+}
+
 fn compilation_required() -> Error {
     Error::new(
         "CONFIG_COMPILATION_REQUIRED",
@@ -93,9 +125,13 @@ fn compilation_required() -> Error {
     )
 }
 
-fn resolve_workspace_globs(config: &mut Config, raw: &Value, root: &Path) -> Result<()> {
+fn resolve_workspace_globs(
+    config: &mut Config,
+    has_explicit_globs: bool,
+    root: &Path,
+) -> Result<()> {
     // Explicit [] skips pnpm discovery but still selects the built-in fallback.
-    if raw.pointer("/workspace/packageGlobs").is_none() {
+    if !has_explicit_globs {
         config.workspace.package_globs = read_workspace_globs(root)?;
     }
     if config.workspace.package_globs.is_empty() {

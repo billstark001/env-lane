@@ -47,3 +47,19 @@ fn safe_public_material_requires_matching_pem_labels() {
         &options
     ));
 }
+
+#[test]
+fn url_fragment_credentials_follow_query_redaction_policy() {
+    let options = Options::default();
+    for value in [
+        "https://x.test/#access_token=12345678",
+        "https://x.test/#/route?token=12345678",
+    ] {
+        assert!(redaction::should_redact("safe", value, &options));
+    }
+    assert!(!redaction::should_redact(
+        "safe",
+        "https://x.test/#section=12345678",
+        &options
+    ));
+}

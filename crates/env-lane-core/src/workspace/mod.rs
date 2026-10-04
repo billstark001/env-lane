@@ -6,10 +6,10 @@ mod target;
 pub use discovery::list_packages;
 pub use target::resolve_target;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Package {
     #[serde(skip_serializing_if = "Option::is_none")]

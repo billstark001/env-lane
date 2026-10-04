@@ -18,11 +18,17 @@ pub fn resolve_path(base: &Path, value: &Path) -> PathBuf {
 pub fn find_root(cwd: &Path) -> PathBuf {
     for dir in cwd.ancestors() {
         for marker in ["pnpm-workspace.yaml", "package.json", ".git"] {
-            if dir.join(marker).is_file() {
+            if dir.join(marker).is_file() || (marker == ".git" && dir.join(marker).is_dir()) {
                 if marker == "package.json" {
                     for parent in dir.ancestors() {
                         if parent.join("pnpm-workspace.yaml").is_file() {
                             return parent.into();
+                        }
+                        // A nested repository must not inherit an unrelated
+                        // workspace file from above its own Git boundary.
+                        let git = parent.join(".git");
+                        if git.is_dir() || git.is_file() {
+                            break;
                         }
                     }
                 }

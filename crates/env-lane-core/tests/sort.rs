@@ -1,6 +1,7 @@
 use env_lane_core::{
+    config,
     document::effective_values,
-    sort::{SortOptions, build_plan, sort_file},
+    sort::{ConfiguredOptions, SortOptions, build_plan, sort_configured, sort_file},
 };
 use proptest::prelude::*;
 use std::fs;
@@ -36,6 +37,27 @@ fn check_mode_preserves_bytes_and_missing_file_create_policy() {
     assert!(result.changed);
     assert!(!result.applied);
     assert_eq!(fs::read_to_string(file).unwrap(), "B=two\nA=one\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn configured_sort_rejects_filesystem_root_as_file_without_panicking() {
+    let temporary = TempDir::new().unwrap();
+    fs::write(
+        temporary.path().join("env-lane.config.json"),
+        r#"{"sort":{"bad":{"file":"/"}}}"#,
+    )
+    .unwrap();
+    let loaded = config::load(temporary.path(), None).unwrap();
+    let error = sort_configured(
+        &loaded,
+        &[],
+        Some("bad"),
+        Some("production"),
+        &ConfiguredOptions::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "SORT_INVALID_CONFIG");
 }
 
 proptest! {

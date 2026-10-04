@@ -122,6 +122,12 @@ fn target_files(
         .as_ref()
         .expect("resolved target has baseDir");
     let default_file = resolve_path(base, Path::new(target.file.as_deref().unwrap_or(".env")));
+    let file_name = default_file.file_name().ok_or_else(|| {
+        Error::new(
+            "SORT_INVALID_CONFIG",
+            format!("config.sort.{name}.file must name a file, not a filesystem root."),
+        )
+    })?;
     let directory = default_file.parent().expect("resolved file has parent");
     let mut files = IndexMap::from([(String::new(), default_file.clone())]);
     for pattern in &loaded.config.dotenv.order {
@@ -154,11 +160,8 @@ fn target_files(
     if variant == "all" {
         return Ok(files.into_values().collect());
     }
-    let selected = files.shift_remove(variant).unwrap_or_else(|| {
-        directory.join(format!(
-            "{}.{variant}",
-            default_file.file_name().unwrap().to_string_lossy()
-        ))
-    });
+    let selected = files
+        .shift_remove(variant)
+        .unwrap_or_else(|| directory.join(format!("{}.{variant}", file_name.to_string_lossy())));
     Ok(vec![selected])
 }

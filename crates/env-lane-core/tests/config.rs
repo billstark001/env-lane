@@ -69,6 +69,44 @@ fn write(root: &Path, path: &str, content: &str) {
 }
 
 #[test]
+fn git_directory_marks_root_without_a_package_manifest() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path().join("repo");
+    write(temporary.path(), "package.json", "{}");
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::create_dir_all(root.join("nested/work")).unwrap();
+    write(
+        &root,
+        "env-lane.config.json",
+        r#"{"selector":{"envKey":"FROM_ROOT"}}"#,
+    );
+    let nested = root.join("nested/work");
+    assert_eq!(find_root(&nested), root);
+    let loaded = load(&nested, None).unwrap();
+    assert_eq!(loaded.project_root, root);
+    assert_eq!(loaded.config.selector.env_key, "FROM_ROOT");
+}
+
+#[test]
+fn nested_git_repository_does_not_inherit_outer_pnpm_workspace() {
+    let temporary = TempDir::new().unwrap();
+    let outer = temporary.path();
+    write(outer, "pnpm-workspace.yaml", "packages: [apps/*]");
+    let root = outer.join("repo");
+    write(&root, "package.json", "{}");
+    fs::create_dir(root.join(".git")).unwrap();
+    fs::create_dir_all(root.join("nested/work")).unwrap();
+    let cwd = root.join("nested/work");
+    assert_eq!(find_root(&cwd), root);
+
+    fs::remove_dir(root.join(".git")).unwrap();
+    write(&root, ".git", "gitdir: elsewhere\n");
+    assert_eq!(find_root(&cwd), root);
+    write(&cwd, "package.json", "{}");
+    assert_eq!(find_root(&cwd), cwd);
+}
+
+#[test]
 fn explicit_config_keeps_invocation_project_and_config_directories_distinct() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
@@ -147,13 +185,13 @@ fn discovery_prioritizes_native_formats_and_fails_closed_for_executable_config()
 }
 
 #[test]
-fn root_markers_match_the_frozen_file_only_discovery_contract() {
+fn root_markers_accept_git_directories_and_package_manifests() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
     fs::create_dir_all(root.join(".git")).unwrap();
     let child = root.join("child");
     fs::create_dir(&child).unwrap();
-    assert_eq!(find_root(&child), child);
+    assert_eq!(find_root(&child), root);
     write(root, "package.json", "{}");
     assert_eq!(find_root(&child), root);
 }

@@ -6,13 +6,14 @@ use serde_json::Value;
 impl Config {
     /// Apply defaults and validate the same schema regardless of source format.
     pub fn from_value(raw: Value) -> Result<Self> {
+        let has_default_target = raw.pointer("/workspace/defaultTarget").is_some();
         let config: Self =
-            serde_json::from_value(raw.clone()).map_err(|error| invalid(error.to_string()))?;
+            serde_json::from_value(raw).map_err(|error| invalid(error.to_string()))?;
         config.validate_selector_and_files()?;
 
         // The resolved default is empty to mean "infer from cwd". An explicitly
         // supplied target must be nonempty, so presence matters before defaults.
-        if raw.pointer("/workspace/defaultTarget").is_some() {
+        if has_default_target {
             require_nonempty(&config.workspace.default_target, "workspace.defaultTarget")?;
         }
         if let Some(targets) = &config.sort {

@@ -18,6 +18,8 @@ picomatch-rs = "=0.1.0"
 fancy-regex = "0.14"
 url = "2.5"
 base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 proptest.workspace = true

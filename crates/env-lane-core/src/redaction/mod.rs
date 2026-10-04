@@ -97,6 +97,9 @@ pub fn is_secret_value(value: &str, options: &Options) -> bool {
                 || url
                     .query_pairs()
                     .any(|(_, part)| is_high_entropy(&part, &url_options))
+                || fragment_parameters(&url)
+                    .iter()
+                    .any(|(_, part)| is_high_entropy(part, &url_options))
         }
         Err(_) => is_high_entropy(value, options),
     }
@@ -179,17 +182,30 @@ fn has_url_credentials(value: &str) -> bool {
                 || url.query_pairs().any(|(key, value)| {
                     CREDENTIAL_QUERY_KEY_RE.is_match(&key) && utf16_len(trim(&value)) >= 8
                 })
+                || fragment_parameters(&url).iter().any(|(key, value)| {
+                    CREDENTIAL_QUERY_KEY_RE.is_match(key) && utf16_len(trim(value)) >= 8
+                })
         }
         Err(_) => {
             static FALLBACK: LazyLock<Vec<Regex>> = LazyLock::new(|| {
                 [
                 r"://[^/@\s]+:[^/@\s]+@",
-                r"(?i)[?&](?:_?token|access_?token|id_?token|refresh_?token|api_?key|key|secret|password|passwd|pwd|signature|sig|client_secret)=[^&\s]{8,}",
+                r"(?i)[?#&](?:_?token|access_?token|id_?token|refresh_?token|api_?key|key|secret|password|passwd|pwd|signature|sig|client_secret)=[^&#\s]{8,}",
             ].into_iter().map(patterns::compile).collect()
             });
             matches_any(&FALLBACK, value)
         }
     }
+}
+
+fn fragment_parameters(url: &Url) -> Vec<(String, String)> {
+    let fragment = url.fragment().unwrap_or("");
+    let parameters = fragment
+        .split_once('?')
+        .map_or(fragment, |(_, parameters)| parameters);
+    url::form_urlencoded::parse(parameters.as_bytes())
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect()
 }
 
 fn has_inline_assignment(value: &str, options: &Options) -> bool {

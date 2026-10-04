@@ -92,12 +92,12 @@ pub(super) fn group_blocks(blocks: &[Block]) -> IndexMap<String, Group> {
             leading: normalize_blank_lines(
                 blocks
                     .iter()
-                    .flat_map(|block| block.leading.clone())
+                    .flat_map(|block| block.leading.iter().cloned())
                     .collect(),
             ),
             lines: retained
                 .iter()
-                .flat_map(|block| block.lines.clone())
+                .flat_map(|block| block.lines.iter().cloned())
                 .collect(),
         });
     }

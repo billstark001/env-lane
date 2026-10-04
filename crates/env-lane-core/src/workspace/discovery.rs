@@ -95,14 +95,21 @@ fn collect_directories(
         .follow_links(true)
         .into_iter()
         .filter_entry(|entry| {
+            // Ignore generated directories inside the project, not an
+            // unrelated ancestor that happens to have the same name.
             !entry
                 .path()
+                .strip_prefix(root)
+                .unwrap_or(entry.path())
                 .components()
                 .any(|part| matches!(part.as_os_str().to_str(), Some("node_modules" | "dist")))
         });
     for entry in walker {
         let entry = match entry {
             Ok(entry) => entry,
+            // A linked workspace directory can point back to an ancestor. Keep
+            // its valid siblings instead of failing all package discovery.
+            Err(error) if error.loop_ancestor().is_some() => continue,
             Err(error)
                 if error
                     .io_error()

@@ -1,12 +1,13 @@
 //! Native configuration: schema, validation, decoding and discovery are separate
 //! concerns. JavaScript evaluation is owned by an external configuration compiler.
+mod cache;
 mod format;
 mod load;
 mod schema;
 mod validate;
 
 pub use format::parse_yaml;
-pub use load::{LoadedConfig, load, read_native_config};
+pub use load::{LoadedConfig, load, read_config, read_native_config};
 pub use schema::*;
 
 use crate::error::Error;
