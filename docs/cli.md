@@ -14,15 +14,22 @@ cancels. `--prompt-loop` and `--no-prompt-loop` control wrapping. Use `--yes` wi
 prompts and diagnostics to stderr and structured results to stdout.
 
 The npm `env-lane` package installs the platform binary at its bin path. Installation uses Node
-to select the binary; invoking the command executes Rust directly. Plugins are resolved from
+to select the binary; invoking the installed command executes Rust directly. The packed bin path
+contains only a failure stub, so an installation that blocks lifecycle scripts fails explicitly
+instead of running the release runner's binary. Enable the package's install script when adding
+`env-lane`. Plugins are resolved from
 enabled root config registrations and their package `envLanePlugin` metadata. Vault uses the same
 resolver as other plugins.
 
 Install the executable package:
 
 ~~~bash
-pnpm add -D env-lane --allow-build=env-lane
+pnpm add -D env-lane
 ~~~
+
+pnpm blocks unapproved dependency install scripts. Add `env-lane: true` under `allowBuilds` in
+`pnpm-workspace.yaml` before installation, or approve the package with `pnpm approve-builds` and
+reinstall. The install script is required for the native npm command path.
 
 ## Global options
 

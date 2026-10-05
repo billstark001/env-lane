@@ -7,8 +7,12 @@ continue through the stable Core facade and `@env-lane/native` binding. See
 CLI for workspace-aware dotenv injection and optional development vault helpers.
 
 ```bash
-pnpm add -D env-lane --allow-build=env-lane
+pnpm add -D env-lane
 ```
+
+For pnpm, approve this package's install script with `allowBuilds: { env-lane: true }` in
+`pnpm-workspace.yaml` before installing. A blocked script leaves a failure stub at the command
+path; it does not install a binary for another operating system.
 
 ```bash
 env-lane packages

@@ -4,7 +4,7 @@ Version 0.5.0 uses a Rust CLI and Core engine, a Node-API binding for stable JS 
 
 ## Runtime paths
 
-- `env-lane` from npm runs the installed native binary. Its install script copies the platform binary to the npm bin path. Direct standalone binaries use the same native Core code. A standalone archive keeps its `plugins/` tree beside the executable.
+- `env-lane` from npm runs the installed native binary. Its install script copies the matching platform binary to the npm bin path; the packed file is a failure stub, not a binary built on the release runner. Installations that block lifecycle scripts must enable this script before using the CLI. Direct standalone binaries use the same native Core code. A standalone archive keeps its `plugins/` tree beside the executable.
 - JSON, JSONC, JSON5, YAML, and TOML main/Vault files are read and validated by Rust. They need no Node. JS/TS configuration uses `@env-lane/config-compat` to evaluate and cache source JSON; Rust performs schema validation. Dynamic sources need `env-lane-config run` for a fresh envelope.
 - The native CLI reads configured plugin package metadata. Vault is registered by `vault: { enabled: true }` and supplied by `@env-lane/vault`. The plugin process parses all Vault command options and owns its config schema. The host has no Vault command parser, peer check, or sibling-binary lookup.
 - Stable `@env-lane/core` and `@env-lane/vault` imports still use Node as their application runtime. Their business operations go through the native binding; Vault operations then use the same plugin package resolver and process protocol. `@env-lane/vault/cli` remains a separate, stable Commander adapter for embedding.

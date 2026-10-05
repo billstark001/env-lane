@@ -28,7 +28,14 @@ See [migration and verification](docs/native-migration.md) for the package and s
 ## Install
 
 ~~~bash
-pnpm add -D env-lane --allow-build=env-lane
+pnpm add -D env-lane
+~~~
+
+For pnpm, allow the native installer in `pnpm-workspace.yaml` before installing:
+
+~~~yaml
+allowBuilds:
+  env-lane: true
 ~~~
 
 For direct library use:
@@ -40,7 +47,7 @@ pnpm add -D @env-lane/core
 Install Vault only when its library or CLI commands are needed:
 
 ~~~bash
-pnpm add -D env-lane@^0.5.0 @env-lane/vault@^0.5.0 --allow-build=env-lane
+pnpm add -D env-lane@^0.5.0 @env-lane/vault@^0.5.0
 ~~~
 
 Enable its plugin command in the main config with `"vault": { "enabled": true }`.
