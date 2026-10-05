@@ -1,6 +1,6 @@
 {
   "name": "@env-lane/config-compat",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "description": "Compile JavaScript and TypeScript env-lane config for the native CLI",
   "license": "MIT",

@@ -1,7 +1,16 @@
-import { chmodSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 
-// No shebang: npm's Windows cmd shim invokes the installed native executable directly.
-const file = path.resolve(import.meta.dirname, '../dist/env-lane')
-writeFileSync(file, '')
-chmodSync(file, 0o755)
+const root = path.resolve(import.meta.dirname, '../../..')
+const require = createRequire(import.meta.url)
+const { platformSuffix } = require('@env-lane/native/bin.cjs')
+const binary = process.platform === 'win32' ? 'env-lane.exe' : 'env-lane'
+const source = [
+  path.join(root, 'target/debug', binary),
+  path.join(root, 'packages/native/npm', platformSuffix(), binary),
+].find((candidate) => existsSync(candidate))
+if (!source) throw new Error(`Native CLI artifact ${binary} is required before packaging.`)
+const destination = path.join(root, 'packages/cli/dist/env-lane')
+copyFileSync(source, destination)
+if (process.platform !== 'win32') chmodSync(destination, 0o755)

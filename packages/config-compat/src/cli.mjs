@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import native from '@env-lane/native/bin.cjs'
+import native from '@env-lane/native'
+import binary from '@env-lane/native/bin.cjs'
 import { compileConfig, locateConfig } from './cache.mjs'
 import { inspectRunnerArguments } from './runner-arguments.mjs'
 
@@ -13,22 +13,44 @@ if (command === 'run') {
     const cwd = path.resolve(args.cwd ?? process.cwd())
     const configFile = args.configFile
     const environment = { ...process.env }
+    const activeCaches = {}
     const main = await locateConfig({ cwd, configFile })
-    let mainConfig
     if (main.executable) {
-      const result = await compileConfig({ cwd, configFile })
-      if (!result.cacheable) environment.ENV_LANE_MAIN_CONFIG_CACHE = result.file
-      mainConfig = JSON.parse(readFileSync(result.file, 'utf8')).config
+      const compiled = await compileConfig({ cwd, configFile })
+      if (!compiled.cacheable) activeCaches.main = compiled.file
     }
-    if (args.operation === 'vault') {
-      const vaultConfig = args.vaultConfig ?? mainConfig?.vault?.configFile
-      const vault = await locateConfig({ kind: 'vault', cwd, configFile: vaultConfig })
-      if (vault.executable) {
-        const result = await compileConfig({ kind: 'vault', cwd, configFile: vaultConfig })
-        if (!result.cacheable) environment.ENV_LANE_VAULT_CONFIG_CACHE = result.file
+    const previousCaches = process.env.ENV_LANE_CONFIG_CACHES
+    process.env.ENV_LANE_CONFIG_CACHES = JSON.stringify(activeCaches)
+    let registrations
+    try {
+      const response = JSON.parse(
+        native.invoke('core.registeredPlugins', JSON.stringify({ cwd, configFile })),
+      )
+      if (!response.ok) throw new Error(response.error?.message ?? 'Config validation failed')
+      registrations = response.result.value
+    } finally {
+      if (previousCaches === undefined) delete process.env.ENV_LANE_CONFIG_CACHES
+      else process.env.ENV_LANE_CONFIG_CACHES = previousCaches
+    }
+    for (const plugin of registrations.plugins) {
+      const pluginConfig = path.resolve(registrations.projectRoot, plugin.configFile)
+      const located = await locateConfig({
+        kind: plugin.name,
+        cwd: registrations.projectRoot,
+        configFile: pluginConfig,
+      })
+      if (located.executable) {
+        const compiled = await compileConfig({
+          kind: plugin.name,
+          cwd: registrations.projectRoot,
+          configFile: pluginConfig,
+          packageName: plugin.packageName,
+        })
+        if (!compiled.cacheable) activeCaches[plugin.name] = compiled.file
       }
     }
-    const result = spawnSync(native.resolveBinary(), rest, { stdio: 'inherit', env: environment })
+    environment.ENV_LANE_CONFIG_CACHES = JSON.stringify(activeCaches)
+    const result = spawnSync(binary.resolveBinary(), rest, { stdio: 'inherit', env: environment })
     if (result.error) throw result.error
     process.exitCode = result.status ?? 1
   } catch (error) {
@@ -37,7 +59,7 @@ if (command === 'run') {
   }
 } else if (command !== 'compile') {
   process.stderr.write(
-    'Usage: env-lane-config compile [--kind main|vault] [--cwd dir] [--config file] | run [env-lane arguments]\n',
+    'Usage: env-lane-config compile [--kind main|PLUGIN_FIELD] [--cwd dir] [--config file] [--package-name npm-package] | run [env-lane arguments]\n',
   )
   process.exitCode = 1
 } else {
@@ -45,11 +67,18 @@ if (command === 'run') {
   for (let index = 0; index < rest.length; index += 2) {
     const flag = rest[index]
     const value = rest[index + 1]
-    if (!value || !['--kind', '--cwd', '--config'].includes(flag)) {
+    if (!value || !['--kind', '--cwd', '--config', '--package-name'].includes(flag)) {
       process.stderr.write(`Invalid option: ${flag}\n`)
       process.exit(1)
     }
-    options[{ '--kind': 'kind', '--cwd': 'cwd', '--config': 'configFile' }[flag]] = value
+    options[
+      {
+        '--kind': 'kind',
+        '--cwd': 'cwd',
+        '--config': 'configFile',
+        '--package-name': 'packageName',
+      }[flag]
+    ] = value
   }
   try {
     const result = await compileConfig(options)

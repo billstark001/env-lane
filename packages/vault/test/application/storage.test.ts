@@ -17,18 +17,21 @@ import { removeStaleLock, withFileLock } from '../../src/adapters/file-lock.js'
 import {
   buildRestorePlan,
   decryptEnvFiles,
-  deriveVaultKey,
   encryptEnvFiles,
-  encryptRecord,
   loadVaultConfig,
   pruneVaultHistory,
   sanitizeVaultHistory,
 } from '../../src/index.js'
+import { deriveVaultKey, encryptRecord } from '../helpers/crypto.js'
 
 const testDirectories = new Set<string>()
 
 function testDirectory(prefix: string): string {
   const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  writeFileSync(
+    path.join(root, 'env-lane.config.json'),
+    JSON.stringify({ vault: { enabled: true } }),
+  )
   testDirectories.add(root)
   return root
 }
@@ -126,7 +129,7 @@ describe('@env-lane/vault storage', () => {
     expect(readFileSync(envFile, 'utf8')).toBe('A="legacy # value" # keep local note\n')
   })
 
-  it('loads object-style exclude rules, de-dupes env files, and rejects store overlap', async () => {
+  it('loads canonical exclude rules, de-dupes env files, and rejects store overlap', async () => {
     const root = testDirectory(`env-lane-vault-config`)
     mkdirSync(root, { recursive: true })
     writeFileSync(path.join(root, 'key.aes'), 'dev-only-key-material')
@@ -137,7 +140,7 @@ describe('@env-lane/vault storage', () => {
         envFiles: ['.env', './.env'],
         outputDir: '.vault',
         outputFile: 'store.dat',
-        exclude: { '.env': ['SECRET_*'] },
+        exclude: [{ files: ['.env'], keys: ['SECRET_*'] }],
       })}`,
     )
     const enc = await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {})
@@ -168,7 +171,7 @@ describe('@env-lane/vault storage', () => {
         envFiles: ['.env', './.env'],
         outputDir: '.vault',
         outputFile: 'store.dat',
-        exclude: { '.env': ['SECRET_*'] },
+        exclude: [{ files: ['.env'], keys: ['SECRET_*'] }],
         restore: { redaction: 'partial', reveal: { start: 4, end: 4 }, promptLoop: false },
       }),
     )
@@ -240,7 +243,7 @@ describe('@env-lane/vault storage', () => {
         envFiles: ['.env'],
         outputDir: '.vault',
         outputFile: 'store.dat',
-        exclude: { '.env': ['SECRET_*'] },
+        exclude: [{ files: ['.env'], keys: ['SECRET_*'] }],
       }),
     )
 
@@ -365,6 +368,7 @@ describe('@env-lane/vault storage', () => {
       path.join(root, 'env-lane.config.json'),
       JSON.stringify({
         vault: {
+          enabled: true,
           configFile: 'custom-vault.json',
           disableUnsafeWarning: true,
         },
@@ -525,7 +529,7 @@ describe('@env-lane/vault storage', () => {
       }),
     )
     await expect(encryptEnvFiles(configFile, path.join(root, 'key.aes'), {})).rejects.toThrow(
-      /config.exclude must be an array or an object/,
+      /expected a sequence/,
     )
 
     // exclude array item must be object
@@ -537,7 +541,7 @@ describe('@env-lane/vault storage', () => {
       }),
     )
     await expect(encryptEnvFiles(configFile, path.join(root, 'key.aes'), {})).rejects.toThrow(
-      /must be an object/,
+      /expected struct Exclude/,
     )
 
     writeFileSync(
@@ -548,7 +552,7 @@ describe('@env-lane/vault storage', () => {
       }),
     )
     await expect(encryptEnvFiles(configFile, path.join(root, 'key.aes'), {})).rejects.toThrow(
-      /must define at least one file pattern and one key pattern/,
+      /missing field `files`/,
     )
   })
 
@@ -672,7 +676,7 @@ describe('@env-lane/vault storage', () => {
     writeFileSync(configPath, '{ invalid json')
     await expect(loadVaultConfig(configPath)).rejects.toMatchObject({
       code: 'VAULT_CONFIG_LOAD_FAILED',
-      message: expect.stringMatching(/JSON/),
+      message: expect.stringMatching(/Failed to load/),
     })
   })
 })

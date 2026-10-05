@@ -1,9 +1,8 @@
 # env-lane
 
-On `rewrite/rust-native`, this package installs a native platform binary for the `env-lane`
-command. The existing Node/Commander source entry remains for compatibility tests and JavaScript
-imports continue through the public facade. Stable Core and Vault operations reach Rust through
-`@env-lane/native`. See [native migration](../../docs/native-migration.md).
+This package installs a native platform binary for the `env-lane` command. JavaScript imports
+continue through the stable Core facade and `@env-lane/native` binding. See
+[native migration](../../docs/native-migration.md).
 
 CLI for workspace-aware dotenv injection and optional development vault helpers.
 
@@ -42,15 +41,14 @@ The package intentionally re-exports the stable `@env-lane/core` root API for co
 and deployment scripts. This convenience facade remains stable. Feature entry points such as
 `@env-lane/core/env-document` are available only from their owning package.
 
-Vault commands in the npm installation require the optional `@env-lane/vault` peer. The installer
-records its version for the native CLI's `VAULT_NOT_INSTALLED` and `VAULT_VERSION_UNSUPPORTED`
-checks; the binary reads the live peer manifest when Vault is installed later. The JavaScript
-`@env-lane/vault/cli` adapter remains available for Commander integrations.
+Vault commands require `@env-lane/vault` and `vault: { enabled: true }` in the main config.
+The binary reads the package's `envLanePlugin` manifest through the generic plugin resolver.
+The JavaScript `@env-lane/vault/cli` adapter remains available for embedded Commander integrations.
 Executable JS/TS configuration needs an `@env-lane/config-compat` cache; JSON/YAML is read
 directly.
 
-Configured `cli.aliases` were introduced in 0.3.0 and removed in 0.4.0. Use package scripts for
-command macros.
+Use package scripts for command macros. The old `env-files` and `env-json` command aliases were
+removed in 0.5.0.
 
 See the [CLI reference](https://github.com/billstark001/env-lane/blob/main/docs/cli.md) and
 [API compatibility guide](https://github.com/billstark001/env-lane/blob/main/docs/api.md).

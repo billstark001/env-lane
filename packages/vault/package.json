@@ -1,6 +1,6 @@
 {
   "name": "@env-lane/vault",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "description": "Unsafe-by-default development vault record storage for env-lane dotenv files.",
   "license": "MIT",
@@ -43,7 +43,6 @@
   },
   "files": [
     "dist",
-    "scripts/install-native.cjs",
     "README.md",
     "LICENSE"
   ],
@@ -52,9 +51,8 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts src/cli/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && node scripts/prepare-native-bin.mjs",
+    "build": "tsup src/index.ts src/cli/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
-    "postinstall": "node scripts/install-native.cjs",
     "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check ."
@@ -67,5 +65,56 @@
     "commander": "^15.0.0",
     "picomatch": "^4.0.5",
     "zod": "^4.4.3"
+  },
+  "envLanePlugin": {
+    "protocolVersion": 1,
+    "id": "vault",
+    "capabilities": [
+      {
+        "kind": "command",
+        "name": "vault"
+      },
+      {
+        "kind": "nativeApi",
+        "namespace": "vault"
+      }
+    ],
+    "entry": {
+      "kind": "native",
+      "platforms": {
+        "darwin-arm64": {
+          "package": "@env-lane/vault-native-darwin-arm64",
+          "path": "./env-lane-plugin-vault"
+        },
+        "darwin-x64": {
+          "package": "@env-lane/vault-native-darwin-x64",
+          "path": "./env-lane-plugin-vault"
+        },
+        "linux-arm64-gnu": {
+          "package": "@env-lane/vault-native-linux-arm64-gnu",
+          "path": "./env-lane-plugin-vault"
+        },
+        "linux-arm64-musl": {
+          "package": "@env-lane/vault-native-linux-arm64-musl",
+          "path": "./env-lane-plugin-vault"
+        },
+        "linux-x64-gnu": {
+          "package": "@env-lane/vault-native-linux-x64-gnu",
+          "path": "./env-lane-plugin-vault"
+        },
+        "linux-x64-musl": {
+          "package": "@env-lane/vault-native-linux-x64-musl",
+          "path": "./env-lane-plugin-vault"
+        },
+        "win32-arm64-msvc": {
+          "package": "@env-lane/vault-native-win32-arm64-msvc",
+          "path": "./env-lane-plugin-vault.exe"
+        },
+        "win32-x64-msvc": {
+          "package": "@env-lane/vault-native-win32-x64-msvc",
+          "path": "./env-lane-plugin-vault.exe"
+        }
+      }
+    }
   }
 }

@@ -18,6 +18,10 @@ const testDirectories = new Set<string>()
 
 function testDirectory(prefix: string): string {
   const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  writeFileSync(
+    path.join(root, 'env-lane.config.json'),
+    JSON.stringify({ vault: { enabled: true } }),
+  )
   testDirectories.add(root)
   return root
 }
@@ -447,6 +451,10 @@ describe('@env-lane/vault restore', () => {
       // 5. Test autoRemapPaths: false
       const rootNew = path.join(root, 'new-workspace')
       mkdirSync(rootNew, { recursive: true })
+      writeFileSync(
+        path.join(rootNew, 'env-lane.config.json'),
+        JSON.stringify({ vault: { enabled: true } }),
+      )
       const remappedConfigPath = path.join(rootNew, 'vault-remap.json')
       writeFileSync(
         remappedConfigPath,

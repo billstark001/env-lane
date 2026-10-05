@@ -13,18 +13,17 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { resolveConflict } from '../../src/application/sync.js'
 import type { RestorePlanEntry } from '../../src/domain/types.js'
-import {
-  buildRestorePlan,
-  decryptEnvFiles,
-  deriveVaultKey,
-  deriveVaultSyncKey,
-  encryptEnvFiles,
-} from '../../src/index.js'
+import { buildRestorePlan, decryptEnvFiles, encryptEnvFiles } from '../../src/index.js'
+import { deriveVaultKey, deriveVaultSyncKey } from '../helpers/crypto.js'
 
 const testDirectories = new Set<string>()
 
 function testDirectory(prefix: string): string {
   const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  writeFileSync(
+    path.join(root, 'env-lane.config.json'),
+    JSON.stringify({ vault: { enabled: true } }),
+  )
   testDirectories.add(root)
   return root
 }

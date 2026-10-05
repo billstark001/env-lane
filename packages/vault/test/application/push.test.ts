@@ -14,18 +14,20 @@ import { withVaultOperationLock } from '../../src/application/storage.js'
 import {
   buildRestorePlan,
   decryptEnvFiles,
-  decryptRecord,
-  deriveVaultKey,
   type EncryptOptions,
   encryptEnvFiles,
-  keyedDigest,
   loadVaultConfig,
 } from '../../src/index.js'
+import { decryptRecord, deriveVaultKey, keyedDigest } from '../helpers/crypto.js'
 
 const testDirectories = new Set<string>()
 
 function testDirectory(prefix: string): string {
   const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  writeFileSync(
+    path.join(root, 'env-lane.config.json'),
+    JSON.stringify({ vault: { enabled: true } }),
+  )
   testDirectories.add(root)
   return root
 }

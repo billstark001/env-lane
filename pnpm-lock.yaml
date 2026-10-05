@@ -35,13 +35,6 @@ importers:
       '@env-lane/native':
         specifier: workspace:*
         version: link:../native
-      commander:
-        specifier: ^15.0.0
-        version: 15.0.0
-    devDependencies:
-      '@env-lane/vault':
-        specifier: workspace:*
-        version: link:../vault
 
   packages/compat-test:
     dependencies:
@@ -84,9 +77,6 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
     devDependencies:
       dotenv:
         specifier: ^17.3.1
@@ -97,6 +87,8 @@ importers:
       '@napi-rs/cli':
         specifier: ^3.0.0
         version: 3.10.4(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@22.20.1)
+
+  packages/plugin-sdk: {}
 
   packages/vault:
     dependencies:

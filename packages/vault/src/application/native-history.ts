@@ -73,7 +73,7 @@ export async function pruneVaultHistory(
     )
   }
   const cwd = resolveInvocationCwd(options.cwd)
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, { ...options, cwd }))
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   return callNativeVault<PruneResult>('vault.pruneVaultHistory', {
     cwd,
     config,
@@ -103,7 +103,7 @@ export async function sanitizeVaultHistory(
     )
   }
   const cwd = resolveInvocationCwd(options.cwd)
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, { ...options, cwd }))
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   return callNativeVault<SanitizeResult>('vault.sanitizeVaultHistory', {
     cwd,
     config,

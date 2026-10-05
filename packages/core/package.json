@@ -1,6 +1,6 @@
 {
   "name": "@env-lane/core",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "description": "Core dotenv injection, workspace resolution, selector checks, and env sorting for env-lane.",
   "license": "MIT",
@@ -62,8 +62,7 @@
     "c12": "^3.3.4",
     "execa": "^10.0.1",
     "find-up": "^8.0.0",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "dotenv": "^17.3.1"

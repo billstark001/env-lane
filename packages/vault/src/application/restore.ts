@@ -2,10 +2,11 @@
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { EnvLaneError, writeFileContentAtomically } from '@env-lane/core'
+import { EnvLaneError } from '@env-lane/core'
 import picomatch from 'picomatch'
 import { z } from 'zod'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
+import { writeFileContentAtomically } from '../adapters/file-utils.js'
 import { callNativeVault } from '../adapters/native.js'
 import { resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
 import type {
@@ -59,9 +60,7 @@ export async function buildRestorePlan(
   options: BuildRestorePlanOptions = {},
 ) {
   const invocationCwd = resolveInvocationCwd(options.cwd)
-  const config =
-    options.resolvedConfig ??
-    (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   return nativeBuildRestorePlan(config, keyFilePath, invocationCwd, options)
 }
 
@@ -264,9 +263,7 @@ export async function applyRestorePlan(
   options: ApplyRestoreOptions = {},
 ) {
   const invocationCwd = resolveInvocationCwd(options.cwd)
-  const config =
-    options.resolvedConfig ??
-    (await loadVaultConfig(configPath, { ...options, cwd: invocationCwd }))
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   const request = {
     cwd: invocationCwd,
     keyFile: keyFilePath,

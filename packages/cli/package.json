@@ -1,8 +1,8 @@
 {
   "name": "env-lane",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
-  "description": "CLI for env-lane dotenv injection and optional development vault helpers.",
+  "description": "CLI for env-lane dotenv injection and optional plugins.",
   "license": "MIT",
   "author": "billstark001",
   "homepage": "https://github.com/billstark001/env-lane#readme",
@@ -49,8 +49,8 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && tsup src/cli.ts --format esm --clean false && node scripts/prepare-native-bin.mjs",
-    "dev": "tsx src/cli.ts",
+    "build": "tsup src/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && node scripts/prepare-native-bin.mjs",
+    "dev": "cargo run -p env-lane-cli --",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
     "postinstall": "node scripts/install-native.cjs",
@@ -59,18 +59,6 @@
   },
   "dependencies": {
     "@env-lane/native": "workspace:*",
-    "@env-lane/core": "workspace:*",
-    "commander": "^15.0.0"
-  },
-  "devDependencies": {
-    "@env-lane/vault": "workspace:*"
-  },
-  "peerDependencies": {
-    "@env-lane/vault": "^0.4.2"
-  },
-  "peerDependenciesMeta": {
-    "@env-lane/vault": {
-      "optional": true
-    }
+    "@env-lane/core": "workspace:*"
   }
 }

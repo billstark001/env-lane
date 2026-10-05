@@ -1,7 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { EnvLaneError } from '@env-lane/core'
+import { EnvLaneError, type ResolvedEnvLaneConfig } from '@env-lane/core'
 import native from '@env-lane/native'
 
 interface NativeResponse<T> {
@@ -10,37 +7,26 @@ interface NativeResponse<T> {
   error?: { code: string; message: string; details?: Record<string, unknown> }
 }
 
-let vaultExecutable: string | undefined
-function pluginExecutable(): string {
-  if (vaultExecutable) return vaultExecutable
-  const name = process.platform === 'win32' ? 'env-lane-plugin-vault.exe' : 'env-lane-plugin-vault'
-  let directory = dirname(
-    typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url),
-  )
-  while (directory !== dirname(directory)) {
-    const manifest = join(directory, 'package.json')
-    if (existsSync(manifest)) {
-      try {
-        if (JSON.parse(readFileSync(manifest, 'utf8')).name === '@env-lane/vault') {
-          const executable = join(directory, 'dist', name)
-          if (existsSync(executable)) {
-            vaultExecutable = executable
-            return executable
-          }
-          break
-        }
-      } catch {
-        /* Continue to the next package boundary. */
-      }
-    }
-    directory = dirname(directory)
-  }
-  throw new EnvLaneError('VAULT_NOT_INSTALLED', 'The native Vault plugin executable is missing.')
+const hostConfigs = new WeakMap<object, ResolvedEnvLaneConfig>()
+
+export function bindVaultHostConfig(config: object, hostConfig: ResolvedEnvLaneConfig): void {
+  hostConfigs.set(config, hostConfig)
 }
 
 export function callNativeVault<T>(operation: string, request: Record<string, unknown>): T {
+  const config = request.config
+  const hostConfig: ResolvedEnvLaneConfig | undefined =
+    (request.hostConfig as ResolvedEnvLaneConfig | undefined) ??
+    (config && typeof config === 'object' ? hostConfigs.get(config) : undefined)
   const response = JSON.parse(
-    native.invoke(operation, JSON.stringify({ ...request, pluginExecutable: pluginExecutable() })),
+    native.invoke(
+      operation,
+      JSON.stringify({
+        ...request,
+        hostConfig,
+        projectRoot: request.projectRoot ?? hostConfig?.rootDir,
+      }),
+    ),
   ) as NativeResponse<T>
   if (!response.ok) {
     const error = response.error

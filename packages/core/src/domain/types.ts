@@ -62,6 +62,8 @@ export interface EnvSyncConfig {
 }
 
 export interface EnvLaneConfig {
+  /** Other top-level fields register plugins by their package metadata ID. */
+  [plugin: string]: unknown
   selector?: {
     /** Environment selector variable. Defaults to ENV_BUILD. */
     envKey?: string
@@ -117,6 +119,7 @@ export interface EnvLaneConfig {
 }
 
 export interface ResolvedEnvLaneConfig {
+  [plugin: string]: unknown
   rootDir: string
   selector: Required<NonNullable<EnvLaneConfig['selector']>>
   workspace: Required<Omit<NonNullable<EnvLaneConfig['workspace']>, 'aliases'>> & {
@@ -126,7 +129,7 @@ export interface ResolvedEnvLaneConfig {
     preserveBOM: boolean
     eol: 'auto' | 'lf' | 'crlf'
   }
-  vault: Required<NonNullable<EnvLaneConfig['vault']>>
+  vault?: Required<NonNullable<EnvLaneConfig['vault']>>
   output: Required<NonNullable<EnvLaneConfig['output']>> & { prefix: boolean }
   /** Configured baseDir values are absolute after loading. */
   sort?: Record<string, EnvSortTargetConfig>

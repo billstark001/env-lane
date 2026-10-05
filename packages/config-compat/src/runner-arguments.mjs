@@ -1,31 +1,6 @@
 // Parse only env-lane's argv. The first child command after `run TARGET`
-// owns every following word, including flags named --config or --vault-config.
-const valuedFlags = new Set([
-  '-b',
-  '--build',
-  '-c',
-  '--config',
-  '--cwd',
-  '--format',
-  '--run-cwd',
-  '--vault-config',
-  '--sync-dir',
-  '--redaction',
-  '--reveal',
-  '--file',
-  '--key',
-  '--include',
-  '--exclude',
-  '--only',
-  '--fail-on',
-  '--missing-files',
-  '--conflicts',
-  '--output',
-  '--plan',
-  '--older-than-days',
-  '--keep-recent',
-  '--eol',
-])
+// owns every following word, including flags named --config.
+const valuedFlags = new Set(['-b', '--build', '-c', '--config', '--cwd', '--format', '--run-cwd'])
 
 export function inspectRunnerArguments(args) {
   const options = {}
@@ -45,7 +20,6 @@ export function inspectRunnerArguments(args) {
       const value = equals === -1 ? args[++index] : argument.slice(equals + 1)
       if (flag === '-c' || flag === '--config') options.configFile = value
       if (flag === '--cwd') options.cwd = value
-      if (flag === '--vault-config') options.vaultConfig = value
       continue
     }
     if (argument.startsWith('-')) continue

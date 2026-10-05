@@ -80,7 +80,7 @@ export async function encryptEnvFiles(
   options: EncryptOptions = {},
 ): Promise<PushResult> {
   const cwd = resolveInvocationCwd(options.cwd)
-  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, { ...options, cwd }))
+  const config = options.resolvedConfig ?? (await loadVaultConfig(configPath, options))
   const request = {
     cwd,
     keyFile: keyFilePath,

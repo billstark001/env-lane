@@ -8,16 +8,16 @@ import {
   parseEnvDocument,
   renderEnvTextDocument,
 } from '@env-lane/core/env-document'
+import { buildRestorePlan } from '@env-lane/vault'
+import { parse as parseDotenv } from 'dotenv'
+import { describe, expect, it } from 'vitest'
 import {
-  buildRestorePlan,
   decryptRecord,
   deriveVaultKey,
   deriveVaultSyncKey,
   encryptRecord,
   keyedDigest,
-} from '@env-lane/vault'
-import { parse as parseDotenv } from 'dotenv'
-import { describe, expect, it } from 'vitest'
+} from '../../vault/test/helpers/crypto.js'
 
 const workspace = path.resolve(import.meta.dirname, '../../..')
 
@@ -211,6 +211,10 @@ describe('shared 0.4.2 Vault persistence fixtures', () => {
     }
 
     writeFileSync(path.join(root, 'package.json'), '{"name":"vault-protocol-fixture"}\n')
+    writeFileSync(
+      path.join(root, 'env-lane.config.json'),
+      JSON.stringify({ vault: { enabled: true } }),
+    )
     writeFileSync(path.join(root, '.env'), '')
     mkdirSync(path.join(root, '.vault'))
     writeFileSync(

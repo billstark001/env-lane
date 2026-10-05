@@ -12,7 +12,10 @@ await withOracle(async ({ temporary, runtime }) => {
   mkdirSync(path.join(root, 'config'), { recursive: true })
   writeFileSync(path.join(root, 'package.json'), '{}')
   const mainConfig = path.join(root, 'env-lane.config.json')
-  writeFileSync(mainConfig, JSON.stringify({ vault: { disableUnsafeWarning: true } }))
+  writeFileSync(
+    mainConfig,
+    JSON.stringify({ vault: { enabled: true, disableUnsafeWarning: true } }),
+  )
   const requests = []
   const expected = []
   const configs = [

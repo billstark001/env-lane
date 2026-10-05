@@ -15,6 +15,13 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parse as parseDotenv } from 'dotenv'
 import { afterEach, describe, expect, it } from 'vitest'
+import { writeFileContentAtomically } from '../../src/adapters/file-utils.js'
+import { listEnvFilesForTarget } from '../../src/application/dotenv.js'
+import {
+  listWorkspacePackagesForConfig,
+  resolveTargetPackageFromList,
+} from '../../src/application/workspace.js'
+import { parseEnvDocument, parseEnvLine, setEnvDocumentValues } from '../../src/env-document.js'
 import {
   checkDotenvSelector,
   type Diagnostic,
@@ -24,27 +31,20 @@ import {
   isSecretLikeKey,
   isSecretLikeValue,
   listEnvFiles,
-  listEnvFilesForTarget,
   listWorkspacePackages,
-  listWorkspacePackagesForConfig,
   loadEnvLaneConfig,
   normalizeEnvFileVariant,
-  parseEnvDocument,
-  parseEnvLine,
   redactObject,
   redactRecord,
   redactValue,
   resolveInjectedEnv,
   resolveTargetPackage,
-  resolveTargetPackageFromList,
   runEnvCheck,
   runEnvSync,
-  setEnvDocumentValues,
   shouldRedact,
   sortEnvFile,
   sortEnvFilesFromConfig,
   withEnvLaneContext,
-  writeFileContentAtomically,
 } from '../../src/index.js'
 import {
   SYNTHETIC_CREDENTIALS,

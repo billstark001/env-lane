@@ -1,7 +1,7 @@
 {
   "name": "env-lane-workspace",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "engines": {
     "node": ">=22",
@@ -14,20 +14,20 @@
     "compat:fixtures": "node scripts/compat/run-fixtures.mjs",
     "compat:oracle:capture": "node scripts/compat/capture-oracle.mjs",
     "compat:oracle:verify": "node scripts/compat/verify-oracle.mjs",
-    "compat:verify": "pnpm compat:oracle:verify && node scripts/compat/verify-contract.mjs && pnpm compat:fixtures && node scripts/compat/verify-process-signals.mjs",
+    "compat:verify": "pnpm compat:oracle:verify && node scripts/compat/v05-node-api.mjs && node scripts/compat/v05-js-plugin.mjs && node scripts/compat/rust-native-install.mjs",
     "dev": "pnpm --filter env-lane dev",
     "pack:dry-run": "pnpm -r --filter './packages/*' --filter '!@env-lane/compat-test' pack --dry-run",
     "release:dry-run": "pnpm -r --filter './packages/*' --filter '!@env-lane/compat-test' publish --dry-run --access public --no-git-checks",
     "release:verify": "node scripts/verify-release.mjs",
     "release": "node scripts/publish-release.mjs",
-    "test": "cargo build --locked -p env-lane-plugin-vault && node packages/vault/scripts/prepare-native-bin.mjs && pnpm --filter @env-lane/native build && vitest run && pnpm compat:verify",
+    "test": "cargo build --locked -p env-lane-cli -p env-lane-plugin-vault && node scripts/stage-local-plugins.mjs && pnpm --filter @env-lane/native build && node scripts/run-vitest.mjs && pnpm compat:verify",
     "test:build": "pnpm build && node scripts/test-build.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "format": "biome check --write .",
     "rust:check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && cargo test -p env-lane-cli --features plugin-fixture --locked && pnpm compat:rust",
-    "compat:rust": "node scripts/compat/rust-document.mjs && node scripts/compat/rust-document-fuzz.mjs && node scripts/compat/rust-config.mjs && node scripts/compat/rust-config-cache.mjs && node scripts/compat/rust-policy.mjs && node scripts/compat/rust-sort.mjs && node scripts/compat/rust-core-fixtures.mjs && node scripts/compat/rust-workspace.mjs && node scripts/compat/rust-process.mjs && node scripts/compat/rust-redaction.mjs && node scripts/compat/rust-cli.mjs && node scripts/compat/rust-cli-options.mjs && node scripts/compat/rust-vault-crypto.mjs && node scripts/compat/rust-vault-store.mjs && node scripts/compat/rust-vault-config.mjs && node scripts/compat/rust-vault-lock.mjs && node scripts/compat/rust-vault-sync.mjs && node scripts/compat/rust-vault-history.mjs && node scripts/compat/rust-vault-push.mjs && node scripts/compat/rust-vault-restore.mjs && node scripts/compat/rust-vault-cli.mjs && node scripts/compat/rust-vault-tty.mjs && node scripts/compat/rust-native-install.mjs"
+    "compat:rust": "node scripts/compat/rust-document.mjs && node scripts/compat/rust-sort.mjs && node scripts/compat/rust-vault-crypto.mjs && node scripts/compat/rust-vault-store.mjs && node scripts/compat/rust-vault-config.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

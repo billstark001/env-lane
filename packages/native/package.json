@@ -1,6 +1,6 @@
 {
   "name": "@env-lane/native",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Native Node-API binding for env-lane",
   "license": "MIT",
   "repository": {

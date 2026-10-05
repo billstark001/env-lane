@@ -47,42 +47,6 @@ function assertJson(value, at = '$', seen = new Set()) {
   seen.delete(value)
 }
 
-function normalizeVaultExclude(config) {
-  if (config.exclude === undefined) return config
-  if (config.exclude === null || typeof config.exclude !== 'object')
-    throw new Error('config.exclude must be an array or an object')
-  const rules = Array.isArray(config.exclude)
-    ? config.exclude
-    : Object.entries(config.exclude).map(([file, keys]) => ({ files: file, keys }))
-  const list = (value, field) => {
-    const values =
-      value === undefined || value === null ? [] : Array.isArray(value) ? value : [value]
-    return values.map((item) => {
-      if (typeof item !== 'string' || !item.trim())
-        throw new Error(`${field} must contain non-empty strings`)
-      return item.trim()
-    })
-  }
-  return {
-    ...config,
-    exclude: rules.map((rule, index) => {
-      if (!rule || typeof rule !== 'object' || Array.isArray(rule))
-        throw new Error(`config.exclude[${index}] must be an object`)
-      const files = list(
-        rule.files ?? rule.file ?? rule.filePattern ?? rule.filePatterns,
-        `config.exclude[${index}].files`,
-      )
-      const keys = list(
-        rule.keys ?? rule.key ?? rule.keyPattern ?? rule.keyPatterns,
-        `config.exclude[${index}].keys`,
-      )
-      if (files.length === 0 || keys.length === 0)
-        throw new Error(`config.exclude[${index}] requires files and keys`)
-      return { files, keys }
-    }),
-  }
-}
-
 async function projectRoot(cwd) {
   const marker = await findUp(['pnpm-workspace.yaml', 'package.json', '.git'], {
     cwd,
@@ -125,7 +89,7 @@ async function projectRoot(cwd) {
   return candidate
 }
 
-function localDependencyGraph(entry) {
+function localDependencyGraph(entry, packageName) {
   const visited = new Map()
   let staticGraph = true
   const extensions = [...nativeExtensions, ...executableExtensions]
@@ -159,13 +123,13 @@ function localDependencyGraph(entry) {
     visited.set(file, digest(bytes))
     if (nonStaticSyntax.test(source) || /\bextends\s*:|=>|`/.test(source)) staticGraph = false
     for (const call of source.matchAll(callPattern)) {
-      if (call[1] !== 'defineConfig' && call[1] !== 'defineVaultConfig') staticGraph = false
+      if (call[1] !== 'defineConfig' && !/^define[A-Za-z]+Config$/.test(call[1]))
+        staticGraph = false
     }
     for (const match of source.matchAll(importPattern)) {
       const specifier = match[1]
       if (!specifier.startsWith('.')) {
-        if (!['env-lane', '@env-lane/core', '@env-lane/vault'].includes(specifier))
-          staticGraph = false
+        if (!['env-lane', '@env-lane/core', packageName].includes(specifier)) staticGraph = false
         continue
       }
       const requested = path.resolve(path.dirname(file), specifier)
@@ -192,7 +156,7 @@ function cacheFile(root, kind, source) {
 
 function discover(root, name, specified) {
   const base =
-    specified ?? path.join(root, name === 'env-lane' ? 'env-lane.config' : 'env-lane.vault')
+    specified ?? path.join(root, name === 'env-lane' ? 'env-lane.config' : `env-lane.${name}`)
   if ([...nativeExtensions, ...executableExtensions].includes(path.extname(base).slice(1))) {
     return existsSync(base) ? base : undefined
   }
@@ -211,7 +175,7 @@ function discover(root, name, specified) {
 export async function locateConfig({ kind = 'main', cwd = process.cwd(), configFile } = {}) {
   const invocationCwd = path.resolve(cwd)
   const root = await projectRoot(invocationCwd)
-  const name = kind === 'main' ? 'env-lane' : 'env-lane.vault'
+  const name = kind === 'main' ? 'env-lane' : kind
   const specified = configFile ? path.resolve(invocationCwd, configFile) : undefined
   const source = discover(root, name, specified)
   return {
@@ -250,11 +214,16 @@ function atomicJson(file, value) {
   }
 }
 
-export async function compileConfig({ kind = 'main', cwd = process.cwd(), configFile } = {}) {
-  if (kind !== 'main' && kind !== 'vault') throw new Error(`Unknown configuration kind: ${kind}`)
+export async function compileConfig({
+  kind = 'main',
+  cwd = process.cwd(),
+  configFile,
+  packageName,
+} = {}) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(kind)) throw new Error(`Invalid configuration kind: ${kind}`)
   const invocationCwd = path.resolve(cwd)
   const root = await projectRoot(invocationCwd)
-  const name = kind === 'main' ? 'env-lane' : 'env-lane.vault'
+  const name = kind === 'main' ? 'env-lane' : kind
   const specified = configFile ? path.resolve(invocationCwd, configFile) : undefined
   const source = discover(root, name, specified)
   if (!source) throw new Error(`No ${kind} configuration file was found`)
@@ -263,7 +232,7 @@ export async function compileConfig({ kind = 'main', cwd = process.cwd(), config
     throw new Error('Native declarative config does not need compilation')
   if (!executableExtensions.includes(extension))
     throw new Error(`Unsupported configuration extension: ${extension}`)
-  const graph = localDependencyGraph(source)
+  const graph = localDependencyGraph(source, packageName)
   const output = cacheFile(root, kind, source)
   if (existsSync(output)) {
     try {
@@ -283,7 +252,6 @@ export async function compileConfig({ kind = 'main', cwd = process.cwd(), config
     configFileRequired: true,
   })
   assertJson(loaded.config)
-  const normalized = kind === 'vault' ? normalizeVaultExclude(loaded.config) : loaded.config
   const envelope = {
     formatVersion: CACHE_VERSION,
     bridgeVersion: BRIDGE_VERSION,
@@ -293,7 +261,7 @@ export async function compileConfig({ kind = 'main', cwd = process.cwd(), config
     configDir: path.dirname(source),
     cacheable: graph.cacheable,
     dependencies: graph.dependencies,
-    config: normalized,
+    config: loaded.config,
   }
   atomicJson(output, envelope)
   return { file: output, reused: false, cacheable: graph.cacheable }

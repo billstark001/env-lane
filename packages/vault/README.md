@@ -1,8 +1,8 @@
 # @env-lane/vault
 
-The standard encrypt, restore, prune, and sanitize operations on `rewrite/rust-native` call
-the Rust Node-API binding from JavaScript. The native CLI uses a separate Vault plugin executable
-installed by this package; a standalone checkout uses the sibling `env-lane-plugin-vault` binary.
+The standard encrypt, restore, prune, and sanitize operations call the Rust Node-API binding
+from JavaScript. The native CLI resolves this package's `envLanePlugin` manifest and starts the
+platform Vault plugin executable when needed.
 Restore callbacks supply explicit decisions to native apply; encrypt
 callbacks use native candidates and frozen dotenv snapshots before native apply. The durable
 store format remains compatible with 0.4.2. See [native migration](../../docs/native-migration.md).
@@ -88,7 +88,7 @@ creating/updating the store, sync state, or output directories.
 Install a matching `env-lane` release alongside this package:
 
 ~~~bash
-pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
+pnpm add -D env-lane@^0.5.0 @env-lane/vault@^0.5.0
 ~~~
 
 Then use the Vault commands:
@@ -101,15 +101,16 @@ env-lane vault apply key.aes --plan restore-plan.json --yes --non-interactive
 env-lane vault prune key.aes --keep-recent 3 --dry-run
 ~~~
 
-The CLI loads its adapter from `@env-lane/vault/cli`.
+The main config must contain `vault: { enabled: true }`. The native CLI launches the Vault
+plugin using package metadata. Embedded Commander integrations may still import the separate
+adapter:
 
 ~~~ts
 import { registerVaultCommands } from '@env-lane/vault/cli';
 ~~~
 
-The Vault-root `registerVaultCommands` export is deprecated in 0.4.0 and is planned for removal in
-the next intentionally breaking release. Vault-root cryptographic helpers are implementation
-details deprecated on the same schedule.
+The deprecated Vault-root `registerVaultCommands` and cryptographic helper re-exports were
+removed in 0.5.0. Import the former from `@env-lane/vault/cli`.
 
 ## Safety model
 
