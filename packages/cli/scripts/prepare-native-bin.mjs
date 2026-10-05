@@ -14,3 +14,4 @@ if (!source) throw new Error(`Native CLI artifact ${binary} is required before p
 const destination = path.join(root, 'packages/cli/dist/env-lane')
 copyFileSync(source, destination)
 if (process.platform !== 'win32') chmodSync(destination, 0o755)
+if (process.platform === 'win32') copyFileSync(source, `${destination}.exe`)
