@@ -6,7 +6,7 @@ platform package and package-manager installation gates have passed.
 
 ## Configuration
 
-The standalone Rust binary reads JSON or YAML directly:
+The standalone Rust binary reads JSON, JSONC, JSON5, YAML, and TOML directly:
 
 ~~~bash
 cargo run --locked -p env-lane-cli -- --cwd . packages
@@ -23,10 +23,10 @@ pnpm exec env-lane-config compile --kind vault --cwd .
 The resulting `.env-lane-cache/` envelope is reused while its source and local imports are
 unchanged. For a dynamic configuration, use `env-lane-config run --cwd . <command>`; this
 starts Node for each invocation. Neither route caches dotenv values or Vault keys; the envelope
-does contain the resolved configuration object. JSON/YAML conversion is the simplest way to use
-the standalone binary without Node. The compiler accepts
+does contain the resolved configuration object. A declarative configuration is the simplest way
+to use the standalone binary without Node. The compiler accepts
 the existing Vault exclude aliases and shorthand, writing canonical `files`/`keys` arrays for
-Rust. Hand-written native JSON/YAML should use the canonical array form.
+Rust. Hand-written native configuration should use the canonical array form.
 
 ## API and commands
 
@@ -40,10 +40,12 @@ native candidate preview with frozen dotenv documents. JavaScript gathers callba
 under the operation lock, then Rust applies those decisions to the frozen snapshot. A callback
 that edits a dotenv file cannot change the values committed by the current operation.
 The npm `env-lane` package installs the platform binary at its bin path; the source Commander
-entry remains for compatibility tests. The installer records the optional Vault peer state so
-native Vault commands keep the prior missing/version error codes. Under `node_modules`, the
-binary also checks the live peer manifest when Vault is installed later without rerunning the
-CLI install script.
+entry remains for compatibility tests. Vault is an optional native plugin executable shipped by
+`@env-lane/vault`. The installer records the optional Vault peer state so native Vault commands
+keep the prior missing/version error codes. Under `node_modules`, the binary also checks the
+live peer manifest when Vault is installed later without rerunning the CLI install script.
+Native plugin registration and wire details are in
+[Native plugin protocol](native-plugin-protocol.md).
 On pnpm 12, approve this package's install script with
 `pnpm add -D env-lane --allow-build=env-lane` or an `allowBuilds: { env-lane: true }` entry in the
 consumer's `pnpm-workspace.yaml`. Installation without that approval is rejected by pnpm before

@@ -3,16 +3,16 @@ use std::fmt;
 
 #[derive(Debug, Serialize)]
 pub struct Error {
-    pub code: &'static str,
+    pub code: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<serde_json::Value>,
 }
 
 impl Error {
-    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
-            code,
+            code: code.into(),
             message: message.into(),
             details: None,
         }

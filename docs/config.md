@@ -2,10 +2,13 @@
 
 ## Native configuration and executable compatibility
 
-The Rust CLI reads `env-lane.config.json`, `.yaml`, or `.yml` directly. Vault accepts the same
-native extensions for `env-lane.vault`. Native configuration needs no Node runtime. For existing
-executable configuration (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`, JSONC, JSON5, or TOML), use
-the separate `@env-lane/config-compat` package:
+The Rust CLI reads `env-lane.config.json`, `.yaml`, `.yml`, `.jsonc`, `.json5`, and `.toml`
+directly. Vault accepts the same native extensions for `env-lane.vault`. Native configuration
+needs no Node runtime. JSON, JSONC, and JSON5 use one JSON5 decoder and the same schema;
+TOML dates become strings. Non-finite numbers are rejected. If several default config files
+exist, discovery checks them in the order listed above before executable files. For existing
+executable configuration (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`), use the separate
+`@env-lane/config-compat` package:
 
 ~~~bash
 pnpm add -D @env-lane/config-compat
@@ -30,8 +33,8 @@ The runner reads `--cwd`, `--config`, and `--vault-config` only from env-lane's 
 after the child command in `run <target> <child command>` belong to that child. Use `--` to mark
 the child boundary explicitly when needed.
 
-The Node API still loads `env-lane.config.ts`, JavaScript ESM/CJS, or JSON through c12. The native
-CLI reads JSON/YAML directly and requires the compatibility compiler for executable formats.
+The Node API still loads executable configuration through c12. The native CLI reads all six
+declarative formats directly and requires the compatibility compiler for executable formats.
 Use `--config <file>` or the API `configFile` option for a non-default name. Relative paths are
 resolved from `--cwd`; default config discovery searches the discovered project root. A `.git`
 directory or worktree file can mark that root even when it has no `package.json`. A nested Git

@@ -4,10 +4,14 @@ import { cpSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { normalizeRoot, withOracle, workspace } from './rust-support.mjs'
 
-const build = spawnSync('cargo', ['build', '--locked', '--bin', 'env-lane'], {
-  cwd: workspace,
-  encoding: 'utf8',
-})
+const build = spawnSync(
+  'cargo',
+  ['build', '--locked', '--bin', 'env-lane', '--bin', 'env-lane-plugin-vault'],
+  {
+    cwd: workspace,
+    encoding: 'utf8',
+  },
+)
 assert.equal(build.status, 0, build.stderr)
 const native = path.join(
   workspace,

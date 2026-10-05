@@ -73,15 +73,20 @@ pub(super) fn execute(
             include_shell,
             no_process_env,
         } => {
-            let resolved = context.resolve(
-                &Options {
-                    target: Some(target),
-                    build: cli.common.build.as_deref(),
-                    include_process_env: Some(!no_process_env),
-                    ..Default::default()
-                },
-                diagnostics,
-            )?;
+            let options = Options {
+                target: Some(target),
+                build: cli.common.build.as_deref(),
+                include_process_env: Some(!no_process_env),
+                ..Default::default()
+            };
+            let resolved = if !crate::plugins::Runtime::needed(&context.loaded.config.plugins) {
+                context.resolve(&options, diagnostics)?
+            } else {
+                let mut plugins = crate::plugins::Runtime::new(context)?;
+                let resolved = context.resolve_with_plugins(&options, diagnostics, &mut plugins)?;
+                plugins.finish()?;
+                resolved
+            };
             let redaction = RedactionOptions {
                 show_secrets: *show_secrets,
                 ..Default::default()
@@ -102,7 +107,18 @@ pub(super) fn execute(
             keys.sort();
             let mut result = serde_json::Map::new();
             for key in keys {
-                let value = redaction::redact(key, &resolved.values[key], &redaction);
+                let value = if !show_secrets
+                    && matches!(
+                        resolved.sources.get(key),
+                        Some(ValueOrigin::Plugin {
+                            sensitive: true,
+                            ..
+                        })
+                    ) {
+                    redaction.redaction_text.as_str()
+                } else {
+                    redaction::redact(key, &resolved.values[key], &redaction)
+                };
                 match output.format {
                     OutputFormat::Json => {
                         result.insert(

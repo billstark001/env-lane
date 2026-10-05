@@ -2,7 +2,7 @@
 use crate::{
     error::{Diagnostic, Error, Result},
     paths::resolve_path,
-    resolve::{Context, Options, ResolvedEnvironment},
+    resolve::{Context, NoPlugins, Options, PluginHooks, ResolvedEnvironment},
 };
 use std::{
     ffi::{OsStr, OsString},
@@ -34,10 +34,28 @@ pub fn prepare(
     directory: WorkingDirectory<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<PreparedRun> {
+    prepare_with_plugins(
+        context,
+        options,
+        command,
+        directory,
+        diagnostics,
+        &mut NoPlugins,
+    )
+}
+
+pub fn prepare_with_plugins(
+    context: &Context<'_>,
+    options: &Options<'_>,
+    command: &[impl AsRef<OsStr>],
+    directory: WorkingDirectory<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+    plugins: &mut impl PluginHooks,
+) -> Result<PreparedRun> {
     let (program, arguments) = command
         .split_first()
         .ok_or_else(|| Error::new("MISSING_COMMAND", "Missing command."))?;
-    let environment = context.resolve(options, diagnostics)?;
+    let environment = context.resolve_with_plugins(options, diagnostics, plugins)?;
     let cwd = match directory {
         WorkingDirectory::Target => environment.target.dir.clone(),
         WorkingDirectory::ProjectRoot => environment.root_dir.clone(),

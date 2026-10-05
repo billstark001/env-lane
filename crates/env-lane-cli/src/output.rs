@@ -48,7 +48,7 @@ impl Output {
             self.json(&serde_json::json!({"ok": false, "error": error}))
         } else {
             self.diagnostic(&Diagnostic {
-                code: error.code.into(),
+                code: error.code.clone(),
                 severity: Severity::Error,
                 message: error.message.clone(),
                 details: None,

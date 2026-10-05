@@ -1,4 +1,4 @@
-//! JSON/YAML data model and defaults; no discovery, I/O, or runtime execution.
+//! Declarative configuration data model and defaults; no discovery or I/O.
 use crate::document::Eol;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,9 @@ pub struct Config {
     pub workspace: Workspace,
     pub dotenv: Dotenv,
     pub vault: Vault,
+    /// Native plugins are inert until a declared capability is used.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub plugins: Vec<PluginRegistration>,
     pub output: Output,
     #[serde(
         default,
@@ -40,6 +43,25 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub sync: Option<IndexMap<String, Sync>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PluginRegistration {
+    pub manifest: PathBuf,
+    pub document_filter: bool,
+    pub filter_lookup: Vec<String>,
+    pub source_keys: Vec<String>,
+    pub generators: Vec<PluginGenerator>,
+    pub replace_file_values: bool,
+    pub settings: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginGenerator {
+    pub group: String,
+    pub keys: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]

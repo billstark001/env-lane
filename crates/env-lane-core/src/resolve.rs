@@ -68,6 +68,44 @@ pub enum ValueOrigin {
         #[serde(rename = "shellOverride")]
         shell_override: bool,
     },
+    Plugin {
+        id: String,
+        sensitive: bool,
+    },
+}
+
+/// Narrow hook boundary; the native resolver owns ordering and final precedence.
+pub trait PluginHooks {
+    fn filter_document(
+        &mut self,
+        _file: &FileRef,
+        content: String,
+        _target: &Package,
+        _build: &str,
+        _existing: &Environment,
+    ) -> Result<String> {
+        Ok(content)
+    }
+    fn provide_values(
+        &mut self,
+        _target: &Package,
+        _build: &str,
+        _existing: &Environment,
+        _include_process_env: bool,
+    ) -> Result<Vec<PluginValue>> {
+        Ok(Vec::new())
+    }
+}
+
+pub struct NoPlugins;
+impl PluginHooks for NoPlugins {}
+
+pub struct PluginValue {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+    pub sensitive: bool,
+    pub replace_file: bool,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -149,6 +187,15 @@ impl Context<'_> {
         options: &Options<'_>,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Result<ResolvedEnvironment> {
+        self.resolve_with_plugins(options, diagnostics, &mut NoPlugins)
+    }
+
+    pub fn resolve_with_plugins(
+        &self,
+        options: &Options<'_>,
+        diagnostics: &mut Vec<Diagnostic>,
+        plugins: &mut impl PluginHooks,
+    ) -> Result<ResolvedEnvironment> {
         let target = self.target(options.target)?;
         let config = &self.loaded.config;
         let build = select_build(
@@ -162,12 +209,39 @@ impl Context<'_> {
         let mut values = Environment::new();
         let mut sources = IndexMap::new();
         for file in files.iter().filter(|file| file.exists) {
-            merge_dotenv(file, &config.selector, &mut values, &mut sources)?;
+            merge_dotenv(
+                file,
+                &config.selector,
+                target,
+                &build,
+                plugins,
+                &mut values,
+                &mut sources,
+            )?;
         }
-        if options
+        let include_process_env = options
             .include_process_env
-            .unwrap_or(config.dotenv.include_process_env)
-        {
+            .unwrap_or(config.dotenv.include_process_env);
+        for provided in plugins.provide_values(target, &build, &values, include_process_env)? {
+            if provided.key == config.selector.env_key {
+                return Err(Error::new(
+                    "PLUGIN_SELECTOR_OVERRIDE",
+                    "Plugins cannot provide the selector key.",
+                ));
+            }
+            if !provided.replace_file && values.contains_key(&provided.key) {
+                continue;
+            }
+            sources.insert(
+                provided.key.clone(),
+                ValueOrigin::Plugin {
+                    id: provided.id,
+                    sensitive: provided.sensitive,
+                },
+            );
+            values.insert(provided.key, provided.value);
+        }
+        if include_process_env {
             for (key, value) in self.process_env {
                 let shell_override = values.contains_key(key).then_some(true);
                 values.insert(key.clone(), value.clone());
@@ -257,6 +331,9 @@ fn require_files(files: &[FileRef]) -> Result<()> {
 fn merge_dotenv(
     file: &FileRef,
     selector: &Selector,
+    target: &Package,
+    build: &str,
+    plugins: &mut impl PluginHooks,
     values: &mut Environment,
     sources: &mut IndexMap<String, ValueOrigin>,
 ) -> Result<()> {
@@ -264,7 +341,9 @@ fn merge_dotenv(
         .map_err(|error| Error::new("ENV_FILE_READ_FAILED", error.to_string()))?;
     // Node's UTF-8 reader replaces malformed sequences; that is part of the
     // persisted document contract, so native consumers use the same decoding.
-    let document = Document::parse(&String::from_utf8_lossy(&bytes));
+    let content = String::from_utf8_lossy(&bytes).into_owned();
+    let filtered = plugins.filter_document(file, content, target, build, values)?;
+    let document = Document::parse(&filtered);
     if selector.forbid_in_dotenv && document.current_map.contains_key(&selector.env_key) {
         return Err(Error::new(
             "SELECTOR_IN_DOTENV",

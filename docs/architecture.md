@@ -4,8 +4,10 @@
 
 `env-lane-core` owns native config, workspace, dotenv, policy, sort, and process preparation.
 `env-lane-vault` owns crypto, records, synchronization, restore, selection, and history.
-`env-lane-cli` owns argv, streams, prompts, and child process execution. `env-lane-node` exposes
-application operations to `@env-lane/core` and `@env-lane/vault` through Node-API.
+`env-lane-cli` owns argv, streams, and child process execution. `env-lane-plugin-api` defines
+typed capabilities and the versioned process protocol. `env-lane-plugin-vault` owns Vault
+command presentation and runs only when invoked. `env-lane-node` exposes Core operations
+through Node-API and forwards Vault operations to that optional plugin process.
 `@env-lane/config-compat` alone evaluates executable JS/TS configuration and writes the validated
 cache envelope; Rust only reads the envelope. The 0.4.2 oracle and shared fixtures remain in
 `compat/` for differential checks.
@@ -13,6 +15,9 @@ cache envelope; Rust only reads the envelope. The 0.4.2 oracle and shared fixtur
 The TypeScript packages keep configuration, callbacks, and presentation at the Node boundary;
 the Rust crates own the corresponding file-oriented operations. The layers below show the
 remaining TypeScript responsibilities.
+
+The plugin manifest, lazy activation, and wire semantics are documented in
+[Native plugin protocol](native-plugin-protocol.md).
 
 ## Package ownership
 

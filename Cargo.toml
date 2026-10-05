@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/env-lane-core", "crates/env-lane-cli", "crates/env-lane-vault", "crates/env-lane-node"]
+members = ["crates/env-lane-core", "crates/env-lane-cli", "crates/env-lane-vault", "crates/env-lane-node", "crates/env-lane-plugin-api", "crates/env-lane-plugin-vault"]
 resolver = "3"
 
 [workspace.package]
@@ -10,7 +10,7 @@ license = "MIT"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 indexmap = { version = "2", features = ["serde"] }
 regex = "1"
 yaml_serde = "0.10.7"

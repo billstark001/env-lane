@@ -4,4 +4,5 @@ pub mod arguments;
 pub mod bootstrap;
 pub mod commands;
 pub mod output;
+pub mod plugins;
 pub mod process;

@@ -12,7 +12,11 @@ const suffix = NATIVE_TARGETS[triple]
 const directory = path.join(root, 'native-artifacts', `native-${suffix}`)
 const addon = path.join(directory, `env-lane-native.${suffix}.node`)
 const binary = path.join(directory, triple.includes('windows') ? 'env-lane.exe' : 'env-lane')
-for (const file of [addon, binary]) {
+const plugin = path.join(
+  directory,
+  triple.includes('windows') ? 'env-lane-plugin-vault.exe' : 'env-lane-plugin-vault',
+)
+for (const file of [addon, binary, plugin]) {
   assert.ok(
     existsSync(file) && statSync(file).size > 100_000,
     `Missing or truncated artifact ${file}`,
@@ -27,4 +31,4 @@ if (!triple.includes('musl')) {
   assert.equal(typeof native.invoke, 'function')
   assert.equal(JSON.parse(native.invoke('invalid', '{}')).error.code, 'INVALID_NATIVE_REQUEST')
 }
-process.stdout.write(`Verified ${suffix} native CLI and Node addon artifacts.\n`)
+process.stdout.write(`Verified ${suffix} native CLI, Vault plugin, and Node addon artifacts.\n`)

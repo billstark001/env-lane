@@ -17,8 +17,8 @@ export const BRIDGE_VERSION = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 ).version
 
-const executableExtensions = ['js', 'ts', 'mjs', 'cjs', 'mts', 'cts', 'jsonc', 'json5', 'toml']
-const nativeExtensions = ['json', 'yaml', 'yml']
+const executableExtensions = ['js', 'ts', 'mjs', 'cjs', 'mts', 'cts']
+const nativeExtensions = ['json', 'yaml', 'yml', 'jsonc', 'json5', 'toml']
 const nonStaticSyntax =
   /\b(?:import\s*\(|require\s*\(|process\b|globalThis\b|performance\b|import\.meta\b|Date\b|fetch\s*\(|readFile(?:Sync)?\s*\(|readdir(?:Sync)?\s*\(|eval\s*\(|new\b|function\b|class\b|while\b|for\b|await\b|Math\.random\s*\(|crypto\b)/
 const callPattern = /\b([A-Za-z_$][\w$]*)\s*\(/g
@@ -128,7 +128,7 @@ async function projectRoot(cwd) {
 function localDependencyGraph(entry) {
   const visited = new Map()
   let staticGraph = true
-  const extensions = [...executableExtensions, ...nativeExtensions]
+  const extensions = [...nativeExtensions, ...executableExtensions]
   const isFile = (candidate) => {
     try {
       return statSync(candidate).isFile()
@@ -193,16 +193,10 @@ function cacheFile(root, kind, source) {
 function discover(root, name, specified) {
   const base =
     specified ?? path.join(root, name === 'env-lane' ? 'env-lane.config' : 'env-lane.vault')
-  if ([...executableExtensions, ...nativeExtensions].includes(path.extname(base).slice(1))) {
+  if ([...nativeExtensions, ...executableExtensions].includes(path.extname(base).slice(1))) {
     return existsSync(base) ? base : undefined
   }
-  for (const extension of [
-    ...executableExtensions.slice(0, 6),
-    'json',
-    ...executableExtensions.slice(6, 8),
-    ...nativeExtensions.slice(1),
-    'toml',
-  ]) {
+  for (const extension of [...nativeExtensions, ...executableExtensions]) {
     for (const candidate of [
       `${base}.${extension}`,
       path.join(root, '.config', `${name}.config.${extension}`),
@@ -266,7 +260,7 @@ export async function compileConfig({ kind = 'main', cwd = process.cwd(), config
   if (!source) throw new Error(`No ${kind} configuration file was found`)
   const extension = path.extname(source).slice(1)
   if (nativeExtensions.includes(extension))
-    throw new Error('Native JSON/YAML config does not need compilation')
+    throw new Error('Native declarative config does not need compilation')
   if (!executableExtensions.includes(extension))
     throw new Error(`Unsupported configuration extension: ${extension}`)
   const graph = localDependencyGraph(source)

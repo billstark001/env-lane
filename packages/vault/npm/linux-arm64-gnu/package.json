@@ -1,0 +1,19 @@
+{
+  "name": "@env-lane/vault-native-linux-arm64-gnu",
+  "version": "0.4.2",
+  "description": "Native Vault plugin for env-lane",
+  "license": "MIT",
+  "cpu": [
+    "arm64"
+  ],
+  "os": [
+    "linux"
+  ],
+  "main": "env-lane-plugin-vault",
+  "files": [
+    "env-lane-plugin-vault"
+  ],
+  "libc": [
+    "glibc"
+  ]
+}

@@ -61,6 +61,23 @@ impl Config {
         for target in self.workspace.aliases.values() {
             require_nonempty(target, "workspace.aliases")?;
         }
+        for plugin in &self.plugins {
+            if plugin.manifest.as_os_str().is_empty() {
+                return Err(invalid("plugins.manifest must not be empty"));
+            }
+            for key in plugin.filter_lookup.iter().chain(&plugin.source_keys) {
+                require_nonempty(key, "plugin key")?;
+            }
+            for generator in &plugin.generators {
+                require_nonempty(&generator.group, "plugin generator group")?;
+                if generator.keys.is_empty() {
+                    return Err(invalid("plugin generator keys must not be empty"));
+                }
+                for key in &generator.keys {
+                    require_nonempty(key, "plugin generator key")?;
+                }
+            }
+        }
         Ok(())
     }
 }

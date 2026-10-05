@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { locateConfig } from '../../packages/config-compat/src/cache.mjs'
+import { compileConfig, locateConfig } from '../../packages/config-compat/src/cache.mjs'
 import { inspectRunnerArguments } from '../../packages/config-compat/src/runner-arguments.mjs'
 import { runRustExample, workspace } from './rust-support.mjs'
 
@@ -75,6 +75,28 @@ function packages() {
 }
 
 try {
+  const nativeRoot = path.join(temporary, 'native-formats')
+  mkdirSync(nativeRoot)
+  writeFileSync(path.join(nativeRoot, 'package.json'), '{}')
+  for (const [extension, content] of [
+    ['json', '{}'],
+    ['jsonc', '{ // comment\n}'],
+    ['json5', '{ unquoted: true }'],
+    ['toml', 'enabled = true\n'],
+  ]) {
+    const configFile = `env-lane.config.${extension}`
+    writeFileSync(path.join(nativeRoot, configFile), content)
+    const located = await locateConfig({ cwd: nativeRoot, configFile })
+    assert.equal(located.executable, false, configFile)
+    await assert.rejects(
+      compileConfig({ cwd: nativeRoot, configFile }),
+      /Native declarative config does not need compilation/,
+    )
+  }
+  writeFileSync(path.join(nativeRoot, 'env-lane.config.ts'), 'throw new Error("must not run")')
+  const discoveredNative = await locateConfig({ cwd: nativeRoot })
+  assert.equal(discoveredNative.source, path.join(nativeRoot, 'env-lane.config.json'))
+  assert.equal(discoveredNative.executable, false)
   const gitRoot = path.join(gitOnly, 'repo')
   writeFileSync(path.join(gitOnly, 'package.json'), '{}')
   mkdirSync(path.join(gitRoot, '.git'), { recursive: true })

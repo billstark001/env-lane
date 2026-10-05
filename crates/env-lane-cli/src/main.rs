@@ -103,6 +103,9 @@ fn verify_installed_vault_peer(cli: &Cli) -> Result<()> {
 
 fn execute(cli: &Cli, output: &mut Output) -> Result<i32> {
     verify_installed_vault_peer(cli)?;
+    if let env_lane_cli::arguments::Operation::Vault { operation } = &cli.command {
+        return env_lane_cli::plugins::execute_vault(operation, cli, output);
+    }
     let current = std::env::current_dir()
         .map_err(|error| Error::new("CWD_READ_FAILED", error.to_string()))?;
     let cwd = cli
@@ -112,7 +115,9 @@ fn execute(cli: &Cli, output: &mut Output) -> Result<i32> {
         .map_or(current.clone(), |cwd| resolve_path(&current, cwd));
     let loaded = config::load(&cwd, cli.common.config.as_deref())?;
     output.prefix = !cli.common.no_prefix && loaded.config.output.prefix;
-    output.format = if cli.common.json {
+    output.format = if matches!(cli.command, env_lane_cli::arguments::Operation::Plugin(_)) {
+        output.format.clone()
+    } else if cli.common.json {
         OutputFormat::Json
     } else {
         match cli.common.format.as_deref() {
@@ -155,12 +160,11 @@ fn execute(cli: &Cli, output: &mut Output) -> Result<i32> {
 
 fn main() {
     let arguments = protect_child_arguments(std::env::args_os().collect());
-    let mut output = env_lane_cli::bootstrap::output(&arguments);
     let cli = match Cli::try_parse_from(arguments) {
         Ok(cli) => cli,
         Err(error) => {
             if error.kind() == clap::error::ErrorKind::DisplayVersion {
-                let _ = output.line(env!("CARGO_PKG_VERSION"));
+                println!("{}", env!("CARGO_PKG_VERSION"));
                 return;
             }
             if matches!(
@@ -172,12 +176,31 @@ fn main() {
                 return;
             }
             let rendered = env_lane_cli::argument_error::render(&error);
+            let output = env_lane_cli::bootstrap::output(&std::env::args_os().collect::<Vec<_>>());
             if rendered.message == "error: missing required argument 'command'" {
                 eprintln!("{}", rendered.message);
             } else {
                 let _ = output.error(&rendered);
             }
             std::process::exit(1);
+        }
+    };
+    // Successful native commands load configuration exactly once in execute().
+    // Vault keeps the 0.4.2 error-rendering defaults before its external plugin runs.
+    let mut output = if matches!(
+        cli.command,
+        env_lane_cli::arguments::Operation::Vault { .. }
+            | env_lane_cli::arguments::Operation::Plugin(_)
+    ) {
+        env_lane_cli::bootstrap::output(&std::env::args_os().collect::<Vec<_>>())
+    } else {
+        Output {
+            format: if cli.common.json || cli.common.format.as_deref() == Some("json") {
+                OutputFormat::Json
+            } else {
+                OutputFormat::Text
+            },
+            prefix: !cli.common.no_prefix,
         }
     };
     let code = match execute(&cli, &mut output) {

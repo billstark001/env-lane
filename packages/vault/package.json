@@ -43,6 +43,7 @@
   },
   "files": [
     "dist",
+    "scripts/install-native.cjs",
     "README.md",
     "LICENSE"
   ],
@@ -51,8 +52,9 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts src/cli/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json",
+    "build": "tsup src/index.ts src/cli/index.ts --format esm,cjs --clean && tsc -p tsconfig.build.json && node scripts/prepare-native-bin.mjs",
     "prepack": "pnpm run build",
+    "postinstall": "node scripts/install-native.cjs",
     "prepublishOnly": "pnpm run typecheck",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "biome check ."

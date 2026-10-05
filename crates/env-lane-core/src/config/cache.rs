@@ -38,7 +38,9 @@ fn compile_required(kind: &str, reason: &str) -> Error {
     };
     Error::new(
         code,
-        format!("{reason}. Run env-lane-config compile --kind {kind}, or migrate to JSON/YAML."),
+        format!(
+            "{reason}. Run env-lane-config compile --kind {kind}, or migrate to a native declarative format."
+        ),
     )
 }
 

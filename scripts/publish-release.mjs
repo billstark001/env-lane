@@ -20,6 +20,17 @@ for (const entry of readdirSync(platformRoot).sort()) {
     '--ignore-scripts',
   ])
 }
+const vaultPlatformRoot = path.join(root, 'packages/vault/npm')
+for (const entry of readdirSync(vaultPlatformRoot).sort()) {
+  run('npm', [
+    'publish',
+    path.join(vaultPlatformRoot, entry),
+    '--access',
+    'public',
+    '--provenance',
+    '--ignore-scripts',
+  ])
+}
 run('npm', [
   'publish',
   './packages/native',

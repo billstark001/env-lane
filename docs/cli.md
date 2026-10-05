@@ -3,7 +3,7 @@
 ## Native executable on the rewrite branch
 
 `cargo run --locked -p env-lane-cli -- <command>` exercises the standalone Rust CLI. It implements
-the Core commands below and `vault encrypt|plan|decrypt|apply|sanitize|prune`. JSON/YAML
+the Core commands below and `vault encrypt|plan|decrypt|apply|sanitize|prune`. Native declarative
 configuration runs without Node. For executable JS/TS configuration, compile a cache first or use
 `env-lane-config run <command>` for dynamic configuration; see [configuration](config.md).
 

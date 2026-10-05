@@ -1,7 +1,7 @@
 //! Native config discovery and path ownership; no executable config evaluation.
 mod schema;
 use env_lane_core::{
-    config::{LoadedConfig, read_config},
+    config::{EXECUTABLE_EXTENSIONS, LoadedConfig, NATIVE_EXTENSIONS, read_config},
     error::{Error, Result},
     paths::resolve_path,
     text::trim,
@@ -10,11 +10,6 @@ use indexmap::IndexSet;
 pub use schema::{Config, Exclude, Redaction, Restore, Reveal, SortTarget};
 use schema::{RawConfig, invalid};
 use std::path::{Path, PathBuf};
-
-const NATIVE_EXTENSIONS: &[&str] = &["json", "yaml", "yml"];
-const EXTERNAL_EXTENSIONS: &[&str] = &[
-    "ts", "js", "mjs", "cjs", "mts", "cts", "jsonc", "json5", "toml",
-];
 
 pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
     let requested = match explicit {
@@ -86,7 +81,7 @@ fn discover(requested: &Path) -> Result<PathBuf> {
         return Ok(requested.to_owned());
     }
     let extension = requested.extension().and_then(|value| value.to_str());
-    let supported = NATIVE_EXTENSIONS.iter().chain(EXTERNAL_EXTENSIONS);
+    let supported = NATIVE_EXTENSIONS.iter().chain(EXECUTABLE_EXTENSIONS);
     if extension.is_none_or(|value| !supported.clone().any(|known| *known == value))
         && let Some(candidate) = supported
             .map(|extension| PathBuf::from(format!("{}.{extension}", requested.display())))

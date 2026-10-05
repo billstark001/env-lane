@@ -68,6 +68,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: pnpm --filter @env-lane/native exec napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --release --target ${{ matrix.target }} --output-dir .
       - run: cargo build --release --locked --target ${{ matrix.target }} -p env-lane-cli
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p env-lane-plugin-vault
       - run: node scripts/native-release.mjs stage ${{ matrix.target }}
       - run: node scripts/verify-native-artifact.mjs ${{ matrix.target }}
       - uses: actions/upload-artifact@v4

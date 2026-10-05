@@ -15,6 +15,12 @@ fn native_formats_preserve_origin_and_reject_invalid_reveal() {
             "\u{feff}{\"envFiles\":[\"../.env\",\"../.env\"]}",
         ),
         ("vault.yaml", "envFiles: [../.env, ../.env]\n"),
+        (
+            "vault.jsonc",
+            "{ // comment\n \"envFiles\": [\"../.env\", \"../.env\",], }",
+        ),
+        ("vault.json5", "{envFiles: ['../.env', '../.env']}"),
+        ("vault.toml", "envFiles = ['../.env', '../.env']\n"),
     ] {
         fs::write(root.join("nested").join(name), content).unwrap();
         let loaded = config::load(&main, Some(&Path::new("nested").join(name))).unwrap();
@@ -60,6 +66,10 @@ fn extensionless_vault_config_prefers_native_json_over_executable_source() {
     fs::write(root.join("env-lane.vault.json"), r#"{"envFiles":[".env"]}"#).unwrap();
 
     let main = main_config::load(root, None).unwrap();
+    let loaded = config::load(&main, None).unwrap();
+    assert_eq!(loaded.env_files, [root.join(".env")]);
+    fs::remove_file(root.join("env-lane.vault.json")).unwrap();
+    fs::write(root.join("env-lane.vault.toml"), "envFiles = ['.env']\n").unwrap();
     let loaded = config::load(&main, None).unwrap();
     assert_eq!(loaded.env_files, [root.join(".env")]);
 }

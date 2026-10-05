@@ -6,8 +6,10 @@ mod load;
 mod schema;
 mod validate;
 
-pub use format::parse_yaml;
-pub use load::{LoadedConfig, load, read_config, read_native_config};
+pub use format::{parse_json5, parse_toml, parse_yaml};
+pub use load::{
+    EXECUTABLE_EXTENSIONS, LoadedConfig, NATIVE_EXTENSIONS, load, read_config, read_native_config,
+};
 pub use schema::*;
 
 use crate::error::Error;

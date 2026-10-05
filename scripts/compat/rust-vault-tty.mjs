@@ -8,10 +8,14 @@ if (process.platform === 'win32') {
     'Native Vault PTY test requires POSIX; Windows non-interactive gates run separately.\n',
   )
 } else {
-  const build = spawnSync('cargo', ['build', '--locked', '--bin', 'env-lane'], {
-    cwd: workspace,
-    encoding: 'utf8',
-  })
+  const build = spawnSync(
+    'cargo',
+    ['build', '--locked', '--bin', 'env-lane', '--bin', 'env-lane-plugin-vault'],
+    {
+      cwd: workspace,
+      encoding: 'utf8',
+    },
+  )
   assert.equal(build.status, 0, build.stderr)
   const result = spawnSync(
     'python3',

@@ -3,8 +3,6 @@ mod check;
 mod inspect;
 mod sort;
 mod sync;
-mod vault;
-mod vault_prompt;
 use crate::{
     arguments::{Cli, Operation},
     output::Output,
@@ -22,7 +20,10 @@ pub fn execute(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<i32> {
     match &cli.command {
-        Operation::Vault { operation } => vault::execute(operation, cli, context, output),
+        Operation::Vault { operation } => crate::plugins::execute_vault(operation, cli, output),
+        Operation::Plugin(arguments) => {
+            crate::plugins::execute_command(arguments, cli, context, output)
+        }
         Operation::Packages
         | Operation::ResolveTarget { .. }
         | Operation::Files { .. }
@@ -49,17 +50,26 @@ pub fn execute(
                 Some(path) if path == std::path::Path::new("root") => WorkingDirectory::ProjectRoot,
                 Some(path) => WorkingDirectory::Path(path),
             };
-            let prepared = run::prepare(
-                context,
-                &Options {
-                    target: Some(target),
-                    build: cli.common.build.as_deref(),
-                    ..Default::default()
-                },
-                command,
-                directory,
-                diagnostics,
-            )?;
+            let options = Options {
+                target: Some(target),
+                build: cli.common.build.as_deref(),
+                ..Default::default()
+            };
+            let prepared = if !crate::plugins::Runtime::needed(&context.loaded.config.plugins) {
+                run::prepare(context, &options, command, directory, diagnostics)?
+            } else {
+                let mut plugins = crate::plugins::Runtime::new(context)?;
+                let prepared = run::prepare_with_plugins(
+                    context,
+                    &options,
+                    command,
+                    directory,
+                    diagnostics,
+                    &mut plugins,
+                )?;
+                plugins.finish()?;
+                prepared
+            };
             for event in diagnostics.drain(..) {
                 output.diagnostic(&event)?;
             }

@@ -20,9 +20,9 @@ Node.js 22 or newer is required for npm installation, configuration compilation,
 The standalone Rust binary does not need Node.js.
 
 The Rust executable can run Core, Sort, and Vault commands without Node.js when configuration is
-JSON/YAML or has a valid compiled cache. The npm package installs a platform executable at
-`env-lane`; JavaScript API calls enter Rust through `@env-lane/native`. The native release
-pipeline is present on this branch but has not published new packages. See
+JSON, JSONC, JSON5, YAML, or TOML, or has a valid compiled cache. The npm package installs a
+platform executable at `env-lane`; JavaScript API calls enter Rust through `@env-lane/native`.
+The native release pipeline is present on this branch but has not published new packages. See
 [migration and verification status](docs/native-migration.md).
 
 ## Install

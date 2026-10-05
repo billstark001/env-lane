@@ -1,5 +1,5 @@
 use env_lane_core::{
-    config::{Config, load, parse_yaml},
+    config::{Config, load, parse_json5, parse_toml, parse_yaml},
     paths::find_root,
 };
 use serde_json::{Value, json};
@@ -19,6 +19,71 @@ fn json_and_yaml_share_defaults_and_schema() {
         json!([".env", ".env.{build}"])
     );
     assert_eq!(from_json["selector"]["buildValidation"], "warn");
+}
+
+#[test]
+fn json_family_and_toml_use_the_native_schema() {
+    let expected = json!({"selector":{"envKey":"LANE"},"workspace":{"includeRoot":false}});
+    for source in [
+        r#"{"selector":{"envKey":"LANE"},"workspace":{"includeRoot":false}}"#,
+        "{ // comment\n selector: { envKey: 'LANE', }, workspace: { includeRoot: false } }",
+    ] {
+        assert_eq!(parse_json5(source).unwrap(), expected);
+    }
+    assert_eq!(
+        parse_toml("[selector]\nenvKey = 'LANE'\n[workspace]\nincludeRoot = false\n").unwrap(),
+        expected
+    );
+    assert!(parse_toml("value = nan").is_err());
+    assert!(parse_toml("value = inf").is_err());
+    assert!(parse_toml("value = 1\nvalue = 2").is_err());
+    assert!(parse_json5("{value: NaN}").is_err());
+    assert!(parse_json5("{value: Infinity}").is_err());
+    assert!(parse_json5("{nested: [1, {value: -Infinity}]}").is_err());
+    assert!(parse_json5("{value: 1, value: 2}").is_err());
+    assert_eq!(
+        parse_toml("created = 2026-10-05T12:00:00Z\n").unwrap()["created"],
+        "2026-10-05T12:00:00Z"
+    );
+}
+
+#[test]
+fn declarative_extensions_load_directly_and_precede_executable_configs() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    write(root, "package.json", "{}");
+    write(
+        root,
+        "env-lane.config.ts",
+        "throw new Error('must never execute')",
+    );
+    for (extension, content) in [
+        ("json", "{selector:{envKey:'JSON'}}"),
+        (
+            "jsonc",
+            "{ // comment\n \"selector\": {\"envKey\": \"JSONC\",},}",
+        ),
+        ("json5", "{selector:{envKey:'JSON5'}}"),
+        ("toml", "[selector]\nenvKey = 'TOML'\n"),
+    ] {
+        let file = format!("env-lane.config.{extension}");
+        write(root, &file, content);
+        assert_eq!(
+            load(root, Some(Path::new(&file)))
+                .unwrap()
+                .config
+                .selector
+                .env_key,
+            extension.to_ascii_uppercase()
+        );
+    }
+    assert_eq!(load(root, None).unwrap().config.selector.env_key, "JSON");
+    fs::remove_file(root.join("env-lane.config.json")).unwrap();
+    assert_eq!(load(root, None).unwrap().config.selector.env_key, "JSONC");
+    fs::remove_file(root.join("env-lane.config.jsonc")).unwrap();
+    assert_eq!(load(root, None).unwrap().config.selector.env_key, "JSON5");
+    fs::remove_file(root.join("env-lane.config.json5")).unwrap();
+    assert_eq!(load(root, None).unwrap().config.selector.env_key, "TOML");
 }
 
 #[test]

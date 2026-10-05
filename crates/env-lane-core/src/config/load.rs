@@ -1,5 +1,5 @@
 //! Locate native configuration and resolve each path against its owning root.
-use super::{Config, cache, invalid, parse_yaml};
+use super::{Config, cache, invalid, parse_json5, parse_toml, parse_yaml};
 use crate::{
     error::{Error, Result},
     paths::{find_root, resolve_path},
@@ -7,10 +7,8 @@ use crate::{
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-const NATIVE_EXTENSIONS: &[&str] = &["json", "yaml", "yml"];
-const EXTERNAL_EXTENSIONS: &[&str] = &[
-    "ts", "js", "mjs", "cjs", "mts", "cts", "jsonc", "json5", "toml",
-];
+pub const NATIVE_EXTENSIONS: &[&str] = &["json", "yaml", "yml", "jsonc", "json5", "toml"];
+pub const EXECUTABLE_EXTENSIONS: &[&str] = &["ts", "js", "mjs", "cjs", "mts", "cts"];
 
 /// Keep origin information alongside the schema. Cache placement must never
 /// change the meaning of paths owned by the original configuration.
@@ -58,7 +56,7 @@ fn discover_config(project_root: &Path) -> Result<Option<PathBuf>> {
     if let Some(file) = find_config_with_extension(project_root, NATIVE_EXTENSIONS) {
         return Ok(Some(file));
     }
-    if let Some(file) = find_config_with_extension(project_root, EXTERNAL_EXTENSIONS) {
+    if let Some(file) = find_config_with_extension(project_root, EXECUTABLE_EXTENSIONS) {
         return Ok(Some(file));
     }
     Ok(None)
@@ -82,7 +80,7 @@ fn discover_explicit(path: &Path) -> PathBuf {
     }
     NATIVE_EXTENSIONS
         .iter()
-        .chain(EXTERNAL_EXTENSIONS)
+        .chain(EXECUTABLE_EXTENSIONS)
         .map(|extension| PathBuf::from(format!("{}.{extension}", path.display())))
         .find(|candidate| candidate.is_file())
         .unwrap_or_else(|| path.to_owned())
@@ -97,10 +95,11 @@ pub fn read_native_config(path: &Path) -> Result<Value> {
         return Err(compilation_required());
     }
     let content = std::fs::read_to_string(path).map_err(|error| invalid(error.to_string()))?;
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
     match extension {
-        "json" => serde_json::from_str(content.strip_prefix('\u{feff}').unwrap_or(&content))
-            .map_err(|error| invalid(error.to_string())),
-        _ => parse_yaml(&content),
+        "json" | "jsonc" | "json5" => parse_json5(content),
+        "toml" => parse_toml(content),
+        _ => parse_yaml(content),
     }
 }
 
@@ -111,7 +110,7 @@ pub fn read_config(path: &Path, root: &Path, kind: &str) -> Result<Value> {
         .unwrap_or("");
     if NATIVE_EXTENSIONS.contains(&extension) {
         read_native_config(path)
-    } else if EXTERNAL_EXTENSIONS.contains(&extension) {
+    } else if EXECUTABLE_EXTENSIONS.contains(&extension) {
         cache::load(root, path, kind)
     } else {
         Err(compilation_required())
@@ -121,7 +120,7 @@ pub fn read_config(path: &Path, root: &Path, kind: &str) -> Result<Value> {
 fn compilation_required() -> Error {
     Error::new(
         "CONFIG_COMPILATION_REQUIRED",
-        "Executable config requires external compilation. Run env-lane-config compile or migrate to JSON/YAML.",
+        "Executable config requires external compilation. Run env-lane-config compile or migrate to a native declarative format.",
     )
 }
 

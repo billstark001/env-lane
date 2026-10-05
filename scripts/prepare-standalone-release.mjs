@@ -13,9 +13,16 @@ const checksums = []
 for (const suffix of targets) {
   const source = path.join(artifactRoot, `native-${suffix}`)
   const binary = suffix.startsWith('win32') ? 'env-lane.exe' : 'env-lane'
+  const plugin = suffix.startsWith('win32') ? 'env-lane-plugin-vault.exe' : 'env-lane-plugin-vault'
   const addon = `env-lane-native.${suffix}.node`
   for (const [name, releaseName] of [
     [binary, suffix.startsWith('win32') ? `env-lane-${suffix}.exe` : `env-lane-${suffix}`],
+    [
+      plugin,
+      suffix.startsWith('win32')
+        ? `env-lane-plugin-vault-${suffix}.exe`
+        : `env-lane-plugin-vault-${suffix}`,
+    ],
     [addon, addon],
   ]) {
     const from = path.join(source, name)

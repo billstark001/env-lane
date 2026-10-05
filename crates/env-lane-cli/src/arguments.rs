@@ -1,5 +1,6 @@
 //! CLI syntax and run's opaque child-argument boundary.
 use clap::{Args, Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 use std::{ffi::OsString, path::PathBuf};
 
 #[derive(Debug, Parser)]
@@ -15,7 +16,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Operation,
 }
-#[derive(Debug, Default, Args)]
+#[derive(Debug, Default, Args, Serialize, Deserialize)]
 pub struct Common {
     #[arg(short = 'c', long, global = true)]
     /// env-lane config file
@@ -108,9 +109,12 @@ pub enum Operation {
         #[command(flatten)]
         options: SortOptions,
     },
+    /// Command supplied by an installed native plugin.
+    #[command(external_subcommand)]
+    Plugin(Vec<OsString>),
 }
 
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct VaultCommon {
     #[arg(long)]
     pub vault_config: Option<PathBuf>,
@@ -128,7 +132,7 @@ pub struct VaultCommon {
     pub no_reveal: bool,
 }
 
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone, Args, Serialize, Deserialize)]
 pub struct VaultSelection {
     #[arg(long)]
     pub file: Option<String>,
@@ -148,7 +152,7 @@ pub struct VaultSelection {
     pub fail_on: Option<String>,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Subcommand, Serialize, Deserialize)]
 pub enum VaultOperation {
     Encrypt {
         key_file: PathBuf,
