@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import {
   normalizeRoot,
   plainValue,
@@ -50,13 +51,19 @@ await withOracle(async ({ temporary, runtime }) => {
   const actual = runRustExample('config-protocol', requests)
   const mismatches = []
   for (const [index, response] of actual.entries()) {
+    const normalizedActual = normalizeRoot(response, root)
+    const normalizedExpected = normalizeRoot(expected[index], root)
     try {
-      assert.deepEqual(normalizeRoot(response, root), normalizeRoot(expected[index], root))
+      assert.deepEqual(normalizedActual, normalizedExpected)
     } catch {
+      const first = normalizedActual.findIndex(
+        (pkg, packageIndex) => !isDeepStrictEqual(pkg, normalizedExpected[packageIndex]),
+      )
       mismatches.push({
         patterns: fixture.patterns[index],
-        expected: expected[index].map((pkg) => pkg.relativeDir),
-        actual: Array.isArray(response) ? response.map((pkg) => pkg.relativeDir) : response,
+        packageIndex: first,
+        expected: normalizedExpected[first],
+        actual: normalizedActual[first],
       })
     }
   }

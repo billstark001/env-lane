@@ -45,6 +45,7 @@ for (const [triple, suffix] of Object.entries(NATIVE_TARGETS)) {
   const packed = spawnSync('npm', ['pack', directory, '--dry-run', '--ignore-scripts', '--json'], {
     cwd: root,
     encoding: 'utf8',
+    shell: process.platform === 'win32',
   })
   assert.equal(packed.status, 0, packed.stderr)
   const files = new Set(JSON.parse(packed.stdout)[0].files.map((file) => file.path))
@@ -81,6 +82,7 @@ for (const [triple, suffix] of Object.entries(NATIVE_TARGETS)) {
     {
       cwd: root,
       encoding: 'utf8',
+      shell: process.platform === 'win32',
     },
   )
   assert.equal(vaultPacked.status, 0, vaultPacked.stderr)

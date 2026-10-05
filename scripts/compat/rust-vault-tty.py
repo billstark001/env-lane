@@ -13,6 +13,7 @@ binary = pathlib.Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory(prefix="env-lane-tty-") as temporary:
     root = pathlib.Path(temporary)
     (root / "package.json").write_text('{"name":"tty-fixture"}')
+    (root / "env-lane.config.json").write_text(json.dumps({"vault": {"enabled": True, "configFile": "vault.json"}}))
     (root / "vault.json").write_text(json.dumps({
         "envFiles": [".env"],
         "outputDir": ".vault",
