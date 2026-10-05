@@ -3,10 +3,10 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { EnvLaneError } from '@env-lane/core'
+import { writeEnvDocumentContentAtomically } from '@env-lane/core/env-document'
 import picomatch from 'picomatch'
 import { z } from 'zod'
 import { loadVaultConfig, type VaultConfig } from '../adapters/config.js'
-import { writeFileContentAtomically } from '../adapters/file-utils.js'
 import { callNativeVault } from '../adapters/native.js'
 import { resolveFromDirectory, resolveInvocationCwd } from '../adapters/paths.js'
 import type {
@@ -385,7 +385,7 @@ export function readApprovalDocument(filePath: string): ApprovalDocument {
 
 export function writeApprovalDocument(filePath: string, document: ApprovalDocument): void {
   const resolvedFilePath = resolveFromDirectory(resolveInvocationCwd(), filePath)
-  writeFileContentAtomically(resolvedFilePath, `${JSON.stringify(document, null, 2)}\n`)
+  writeEnvDocumentContentAtomically(resolvedFilePath, `${JSON.stringify(document, null, 2)}\n`)
 }
 
 export interface VaultSelectionOptions {

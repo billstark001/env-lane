@@ -1,3 +1,5 @@
+// The published Commander adapter owns prompts and output only. Restore planning,
+// digest validation, and writes are delegated through application/restore to Rust.
 import path from 'node:path'
 import { EnvLaneError } from '@env-lane/core'
 import type { Command } from 'commander'
