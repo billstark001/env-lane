@@ -31,13 +31,8 @@ fn digest(value: &[u8]) -> String {
 }
 
 fn compile_required(kind: &str, reason: &str) -> Error {
-    let code = if kind == "vault" {
-        "VAULT_CONFIG_COMPILATION_REQUIRED"
-    } else {
-        "CONFIG_COMPILATION_REQUIRED"
-    };
     Error::new(
-        code,
+        "CONFIG_COMPILATION_REQUIRED",
         format!(
             "{reason}. Run env-lane-config compile --kind {kind}, or migrate to a native declarative format."
         ),
@@ -68,12 +63,15 @@ pub(super) fn load(root: &Path, source: &Path, kind: &str) -> Result<Value> {
         ));
     }
     if !envelope.cacheable {
-        let variable = if kind == "vault" {
-            "ENV_LANE_VAULT_CONFIG_CACHE"
-        } else {
-            "ENV_LANE_MAIN_CONFIG_CACHE"
-        };
-        if std::env::var_os(variable).is_none_or(|value| value != file.as_os_str()) {
+        let active = std::env::var("ENV_LANE_CONFIG_CACHES")
+            .ok()
+            .and_then(|value| serde_json::from_str::<serde_json::Map<String, Value>>(&value).ok());
+        if active
+            .as_ref()
+            .and_then(|map| map.get(kind))
+            .and_then(Value::as_str)
+            != Some(file.to_string_lossy().as_ref())
+        {
             return Err(compile_required(
                 kind,
                 "Dynamic executable config requires a fresh compatibility runner invocation",

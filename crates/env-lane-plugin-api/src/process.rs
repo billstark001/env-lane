@@ -57,6 +57,7 @@ impl Session {
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         let child = Command::new(&manifest.executable)
+            .args(&manifest.arguments)
             .env(ADDRESS_ENV, listener.local_addr().unwrap().to_string())
             .env(TOKEN_ENV, &token)
             .stdin(Stdio::inherit())

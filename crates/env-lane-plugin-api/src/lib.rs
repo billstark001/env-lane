@@ -1,5 +1,6 @@
 //! Versioned plugin messages. The domain model is independent of the wire codec.
 pub mod codec;
+pub mod package;
 pub mod process;
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,8 @@ pub fn new_run_id() -> std::io::Result<String> {
 pub struct Manifest {
     pub id: String,
     pub executable: PathBuf,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<String>,
     pub capabilities: Vec<Capability>,
 }
 
@@ -72,9 +75,12 @@ pub struct PluginError {
 #[serde(rename_all = "camelCase")]
 pub struct CommandInvocation {
     pub common: Value,
-    pub operation: Value,
     #[serde(default)]
     pub arguments: Vec<String>,
+    pub invocation_cwd: PathBuf,
+    pub project_root: PathBuf,
+    pub config_file: Option<PathBuf>,
+    pub plugin_config_file: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

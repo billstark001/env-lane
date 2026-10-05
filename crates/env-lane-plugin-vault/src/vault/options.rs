@@ -1,8 +1,6 @@
 //! Vault CLI option validation and shared filesystem access.
-use env_lane_cli::{
-    arguments::{VaultCommon, VaultSelection},
-    output::Output,
-};
+use crate::arguments::{VaultCommon, VaultSelection};
+use env_lane_cli::output::Output;
 use env_lane_core::{
     error::{Error, Result},
     paths::resolve_path,

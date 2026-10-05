@@ -1,5 +1,5 @@
 //! Semantic constraints that cannot be expressed by field types alone.
-use super::{Config, KeyRef, Rule, SortTarget, Sync, ValueSource, invalid};
+use super::{BUILTIN_PLUGINS, Config, KeyRef, Rule, SortTarget, Sync, ValueSource, invalid};
 use crate::error::Result;
 use serde_json::Value;
 
@@ -7,9 +7,16 @@ impl Config {
     /// Apply defaults and validate the same schema regardless of source format.
     pub fn from_value(raw: Value) -> Result<Self> {
         let has_default_target = raw.pointer("/workspace/defaultTarget").is_some();
-        let config: Self =
+        let mut config: Self =
             serde_json::from_value(raw).map_err(|error| invalid(error.to_string()))?;
         config.validate_selector_and_files()?;
+        for builtin in BUILTIN_PLUGINS {
+            if let Some(registration) = config.plugins.get_mut(builtin.field) {
+                registration
+                    .config_file
+                    .get_or_insert_with(|| builtin.default_config_file.into());
+            }
+        }
 
         // The resolved default is empty to mean "infer from cwd". An explicitly
         // supplied target must be nonempty, so presence matters before defaults.
@@ -45,7 +52,6 @@ impl Config {
             (&self.selector.default_build, "selector.defaultBuild"),
             (&self.dotenv.local_build_name, "dotenv.localBuildName"),
             (&self.dotenv.local_override_file, "dotenv.localOverrideFile"),
-            (&self.vault.config_file, "vault.configFile"),
         ] {
             require_nonempty(value, field)?;
         }
@@ -61,10 +67,23 @@ impl Config {
         for target in self.workspace.aliases.values() {
             require_nonempty(target, "workspace.aliases")?;
         }
-        for plugin in &self.plugins {
-            if plugin.manifest.as_os_str().is_empty() {
-                return Err(invalid("plugins.manifest must not be empty"));
+        for (name, plugin) in &self.plugins {
+            if name.is_empty()
+                || name == "plugins"
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            {
+                return Err(invalid(format!("Invalid plugin field: {name}")));
             }
+            let Some(package_name) = plugin.package_name(name) else {
+                return Err(invalid(format!("{name}.packageName is required")));
+            };
+            require_nonempty(package_name, &format!("{name}.packageName"))?;
+            let Some(config_file) = plugin.config_file(name) else {
+                return Err(invalid(format!("{name}.configFile is required")));
+            };
+            require_nonempty(config_file, &format!("{name}.configFile"))?;
             for key in plugin.filter_lookup.iter().chain(&plugin.source_keys) {
                 require_nonempty(key, "plugin key")?;
             }

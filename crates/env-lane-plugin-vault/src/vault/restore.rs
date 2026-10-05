@@ -1,10 +1,8 @@
 //! Plan, decrypt, and apply Vault records.
 use super::{options::*, plan::*};
+use crate::arguments::VaultOperation;
 use crate::vault_prompt;
-use env_lane_cli::{
-    arguments::{Common, VaultOperation},
-    output::Output,
-};
+use env_lane_cli::{arguments::Common, output::Output};
 use env_lane_core::{
     error::{Error, Result},
     paths::resolve_path,

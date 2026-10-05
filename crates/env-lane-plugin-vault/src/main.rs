@@ -1,16 +1,15 @@
 //! Optional Vault command provider. Terminal streams are inherited; control is RPC.
+mod arguments;
 mod native;
 mod vault;
 mod vault_prompt;
 
-use env_lane_cli::{
-    arguments::{Common, VaultOperation},
-    output::Output,
-};
+use arguments::VaultCli;
+use clap::Parser;
+use env_lane_cli::{arguments::Common, output::Output};
 use env_lane_core::{
     config::{self, OutputFormat},
     error::{Error, Result},
-    paths::resolve_path,
     resolve::{Context, Environment},
 };
 use env_lane_plugin_api::{
@@ -23,15 +22,26 @@ struct VaultHandler;
 fn invoke_command(request: CommandInvocation) -> Result<i32> {
     let common: Common = serde_json::from_value(request.common)
         .map_err(|error| Error::new("PLUGIN_INVALID_REQUEST", error.to_string()))?;
-    let operation: VaultOperation = serde_json::from_value(request.operation)
-        .map_err(|error| Error::new("PLUGIN_INVALID_REQUEST", error.to_string()))?;
-    let current = std::env::current_dir()
-        .map_err(|error| Error::new("CWD_READ_FAILED", error.to_string()))?;
-    let cwd = common
-        .cwd
-        .as_ref()
-        .map_or(current.clone(), |cwd| resolve_path(&current, cwd));
-    let loaded = config::load(&cwd, common.config.as_deref())?;
+    let parsed = match VaultCli::try_parse_from(&request.arguments) {
+        Ok(parsed) => parsed,
+        Err(error)
+            if matches!(
+                error.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) =>
+        {
+            let _ = error.print();
+            return Ok(0);
+        }
+        Err(error) => return Err(Error::new("CLI_ARGUMENT_ERROR", error.to_string())),
+    };
+    let loaded = config::load(&request.invocation_cwd, request.config_file.as_deref())?;
+    if loaded.project_root != request.project_root {
+        return Err(Error::new(
+            "PLUGIN_INVALID_REQUEST",
+            "Plugin project root differs from the host invocation.",
+        ));
+    }
     let format = if common.json {
         OutputFormat::Json
     } else {
@@ -59,7 +69,7 @@ fn invoke_command(request: CommandInvocation) -> Result<i32> {
         packages: &packages,
         process_env: &environment,
     };
-    vault::execute(&operation, &common, &context, &output)
+    vault::execute(&parsed.operation, &common, &context, &output)
 }
 
 impl Handler for VaultHandler {
@@ -110,6 +120,7 @@ fn main() {
     let manifest = Manifest {
         id: "vault".into(),
         executable: std::env::current_exe().unwrap_or_default(),
+        arguments: Vec::new(),
         capabilities: vec![
             Capability::Command {
                 name: "vault".into(),

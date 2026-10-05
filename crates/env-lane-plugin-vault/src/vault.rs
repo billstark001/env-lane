@@ -5,10 +5,8 @@ mod options;
 mod plan;
 mod restore;
 
-use env_lane_cli::{
-    arguments::{Common, VaultOperation},
-    output::Output,
-};
+use crate::arguments::VaultOperation;
+use env_lane_cli::{arguments::Common, output::Output};
 use env_lane_core::{error::Result, resolve::Context};
 
 pub fn execute(

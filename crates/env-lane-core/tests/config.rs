@@ -122,9 +122,14 @@ fn known_fields_reject_null_empty_values_and_conflicting_sources() {
     ] {
         assert!(Config::from_value(raw.clone()).is_err(), "accepted {raw}");
     }
-    // Extensions are ignored instead of recursively imposing the native schema
-    // on data the application does not own.
-    assert!(Config::from_value(json!({"extension":null,"selector":{"extension":null}})).is_ok());
+    assert!(Config::from_value(json!({"extension":null})).is_err());
+    assert!(Config::from_value(json!({"extension":{"enabled":true,"configFile":"x"}})).is_err());
+    assert!(
+        Config::from_value(
+            json!({"extension":{"enabled":true,"configFile":"x","packageName":"example"}})
+        )
+        .is_ok()
+    );
 }
 
 fn write(root: &Path, path: &str, content: &str) {

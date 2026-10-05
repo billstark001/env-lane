@@ -16,23 +16,66 @@ fn native_plugins_filter_and_provide_without_node() {
     )
     .unwrap();
     let plugin = env!("CARGO_BIN_EXE_env-lane-test-plugin");
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        other => other,
+    };
+    let platform = if cfg!(target_os = "windows") {
+        format!("win32-{arch}-msvc")
+    } else if cfg!(target_os = "linux") {
+        format!(
+            "linux-{arch}-{}",
+            if cfg!(target_env = "musl") {
+                "musl"
+            } else {
+                "gnu"
+            }
+        )
+    } else {
+        format!(
+            "{}-{arch}",
+            if cfg!(target_os = "macos") {
+                "darwin"
+            } else {
+                std::env::consts::OS
+            }
+        )
+    };
+    let binary_name = if cfg!(windows) {
+        "fixture.exe"
+    } else {
+        "fixture"
+    };
+    let package_dir = root.join("node_modules/fixture-plugin");
+    let binary_dir = root.join("node_modules/fixture-native");
+    fs::create_dir_all(&package_dir).unwrap();
+    fs::create_dir_all(&binary_dir).unwrap();
+    fs::copy(plugin, binary_dir.join(binary_name)).unwrap();
     fs::write(
-        root.join("plugin.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "id": "fixture", "executable": plugin,
-            "capabilities": [{"kind":"command","name":"example"},{"kind":"documentFilter"},{"kind":"envSource"},{"kind":"envGenerate"}]
-        }))
-        .unwrap(),
+        binary_dir.join("package.json"),
+        r#"{"name":"fixture-native"}"#,
     )
     .unwrap();
+    fs::write(package_dir.join("package.json"), serde_json::to_vec(&serde_json::json!({
+        "name":"fixture-plugin",
+        "envLanePlugin": {
+            "protocolVersion":1,
+            "id":"fixture",
+            "capabilities":[{"kind":"command","name":"example"},{"kind":"documentFilter"},{"kind":"envSource"},{"kind":"envGenerate"}],
+            "entry":{"kind":"native","platforms":{platform:{"package":"fixture-native","path":binary_name}}}
+        }
+    })).unwrap()).unwrap();
+    fs::write(root.join("fixture.json"), "{}").unwrap();
     fs::write(
         root.join("env-lane.config.json"),
         serde_json::to_vec(&serde_json::json!({
-            "plugins": [{
-                "manifest":"plugin.json", "documentFilter":true,
+            "fixture": {
+                "enabled":true, "configFile":"fixture.json", "packageName":"fixture-plugin",
+                "documentFilter":true,
                 "filterLookup":["FROM_SOURCE", "A"], "sourceKeys":["FROM_SOURCE"],
                 "generators":[{"group":"pair","keys":["PAIR_A","PAIR_B"]}]
-            }]
+            }
         }))
         .unwrap(),
     )

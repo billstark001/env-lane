@@ -20,7 +20,6 @@ pub fn execute(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<i32> {
     match &cli.command {
-        Operation::Vault { operation } => crate::plugins::execute_vault(operation, cli, output),
         Operation::Plugin(arguments) => {
             crate::plugins::execute_command(arguments, cli, context, output)
         }

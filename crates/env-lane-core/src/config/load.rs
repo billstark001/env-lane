@@ -52,6 +52,32 @@ pub fn load(cwd: &Path, explicit: Option<&Path>) -> Result<LoadedConfig> {
     })
 }
 
+/// Apply the native schema to a JS/TS loader's raw JSON value while preserving
+/// the source file's original project and path context.
+pub fn resolve_value(
+    invocation_cwd: PathBuf,
+    project_root: PathBuf,
+    config_file: Option<PathBuf>,
+    raw: Value,
+) -> Result<LoadedConfig> {
+    let has_explicit_globs = raw.pointer("/workspace/packageGlobs").is_some();
+    let mut config = Config::from_value(raw)?;
+    resolve_workspace_globs(&mut config, has_explicit_globs, &project_root)?;
+    resolve_sort_directories(&mut config, &project_root);
+    let config_dir = config_file
+        .as_ref()
+        .and_then(|file| file.parent())
+        .unwrap_or(&project_root)
+        .to_path_buf();
+    Ok(LoadedConfig {
+        config,
+        invocation_cwd,
+        project_root,
+        config_file,
+        config_dir,
+    })
+}
+
 fn discover_config(project_root: &Path) -> Result<Option<PathBuf>> {
     if let Some(file) = find_config_with_extension(project_root, NATIVE_EXTENSIONS) {
         return Ok(Some(file));

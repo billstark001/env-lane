@@ -20,10 +20,6 @@ pub struct Config {
     pub selector: Selector,
     pub workspace: Workspace,
     pub dotenv: Dotenv,
-    pub vault: Vault,
-    /// Native plugins are inert until a declared capability is used.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub plugins: Vec<PluginRegistration>,
     pub output: Output,
     #[serde(
         default,
@@ -43,18 +39,65 @@ pub struct Config {
         skip_serializing_if = "Option::is_none"
     )]
     pub sync: Option<IndexMap<String, Sync>>,
+    /// Every non-core top-level field is a named plugin registration.
+    #[serde(flatten)]
+    pub plugins: IndexMap<String, PluginRegistration>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginRegistration {
-    pub manifest: PathBuf,
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_name: Option<String>,
+    #[serde(default)]
+    pub disable_unsafe_warning: bool,
+    #[serde(default)]
     pub document_filter: bool,
+    #[serde(default)]
     pub filter_lookup: Vec<String>,
+    #[serde(default)]
     pub source_keys: Vec<String>,
+    #[serde(default)]
     pub generators: Vec<PluginGenerator>,
+    #[serde(default)]
     pub replace_file_values: bool,
+    #[serde(default)]
     pub settings: serde_json::Value,
+}
+
+pub struct BuiltinPlugin {
+    pub field: &'static str,
+    pub package_name: &'static str,
+    pub default_config_file: &'static str,
+}
+
+pub const BUILTIN_PLUGINS: &[BuiltinPlugin] = &[BuiltinPlugin {
+    field: "vault",
+    package_name: "@env-lane/vault",
+    default_config_file: "env-lane.vault",
+}];
+
+impl PluginRegistration {
+    pub fn package_name<'a>(&'a self, field: &str) -> Option<&'a str> {
+        self.package_name.as_deref().or_else(|| {
+            BUILTIN_PLUGINS
+                .iter()
+                .find(|item| item.field == field)
+                .map(|item| item.package_name)
+        })
+    }
+
+    pub fn config_file<'a>(&'a self, field: &str) -> Option<&'a str> {
+        self.config_file.as_deref().or_else(|| {
+            BUILTIN_PLUGINS
+                .iter()
+                .find(|item| item.field == field)
+                .map(|item| item.default_config_file)
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,22 +173,6 @@ impl Default for Dotenv {
             include_process_env: true,
             preserve_bom: true,
             eol: Eol::Auto,
-        }
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct Vault {
-    pub enabled: bool,
-    pub disable_unsafe_warning: bool,
-    pub config_file: String,
-}
-impl Default for Vault {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            disable_unsafe_warning: false,
-            config_file: "env-lane.vault".into(),
         }
     }
 }

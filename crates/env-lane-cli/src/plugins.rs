@@ -1,8 +1,5 @@
-//! Manifest discovery and command routing. The main CLI does not link plugin code.
-use crate::{
-    arguments::{Cli, VaultOperation},
-    output::Output,
-};
+//! Package metadata discovery and capability based command routing.
+use crate::{arguments::Cli, output::Output};
 use env_lane_core::{
     config::PluginRegistration,
     error::{Error, Result},
@@ -13,12 +10,12 @@ use env_lane_core::{
 use env_lane_plugin_api::{
     Capability, CommandInvocation, CommandResult, DocumentFilterInput, DocumentFilterResult,
     FilePlanRequest, FilePlanResult, LookupValue, Manifest, PluginError, ProvidedValue,
-    ValueRequest, ValueResult, new_run_id, process::Session,
+    ValueRequest, ValueResult, new_run_id, package, process::Session,
 };
+use indexmap::IndexMap;
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -39,114 +36,72 @@ fn invoke(manifest: &Manifest, request: CommandInvocation) -> Result<i32> {
     Ok(result.exit_code)
 }
 
-fn vault_binary(executable: &Path) -> PathBuf {
-    let name = if cfg!(windows) {
-        "env-lane-plugin-vault.exe"
-    } else {
-        "env-lane-plugin-vault"
-    };
-    let sibling = executable.with_file_name(name);
-    if sibling.is_file() {
-        return sibling;
-    }
-    for ancestor in executable.ancestors() {
-        let modules = if ancestor
-            .file_name()
-            .is_some_and(|name| name == "node_modules")
-        {
-            ancestor.to_path_buf()
-        } else {
-            ancestor.join("node_modules")
-        };
-        let installed = modules.join("@env-lane/vault/dist").join(name);
-        if installed.is_file() {
-            return installed;
-        }
-    }
-    sibling
-}
-
-pub fn execute_vault(operation: &VaultOperation, cli: &Cli, _output: &Output) -> Result<i32> {
+pub fn manifests(
+    root: &Path,
+    plugins: &IndexMap<String, PluginRegistration>,
+) -> Result<Vec<Manifest>> {
     let executable = std::env::current_exe()
-        .map_err(|error| Error::new("PLUGIN_START_FAILED", error.to_string()))?;
-    let binary = vault_binary(&executable);
-    if !binary.is_file() {
-        return Err(Error::new(
-            "VAULT_NOT_INSTALLED",
-            "Vault commands require the native Vault plugin executable.",
-        ));
-    }
-    let manifest = Manifest {
-        id: "vault".into(),
-        executable: binary,
-        capabilities: vec![
-            Capability::Command {
-                name: "vault".into(),
-            },
-            Capability::NativeApi {
-                namespace: "vault".into(),
-            },
-        ],
-    };
-    invoke(
-        &manifest,
-        CommandInvocation {
-            common: serde_json::to_value(&cli.common)
-                .map_err(|error| Error::new("PLUGIN_PROTOCOL_ERROR", error.to_string()))?,
-            operation: serde_json::to_value(operation)
-                .map_err(|error| Error::new("PLUGIN_PROTOCOL_ERROR", error.to_string()))?,
-            arguments: Vec::new(),
-        },
-    )
-}
-
-pub fn manifests(root: &Path, plugins: &[PluginRegistration]) -> Result<Vec<Manifest>> {
-    let mut manifests = Vec::with_capacity(plugins.len());
+        .map_err(|error| Error::new("PLUGIN_PACKAGE_INVALID", error.to_string()))?;
+    let mut manifests = Vec::new();
     let mut commands = HashSet::new();
-    for plugin in plugins {
-        let path = resolve_path(root, &plugin.manifest);
-        let bytes = fs::read(&path)
-            .map_err(|error| Error::new("PLUGIN_MANIFEST_FAILED", error.to_string()))?;
-        let mut manifest: Manifest = serde_json::from_slice(&bytes)
-            .map_err(|error| Error::new("PLUGIN_MANIFEST_FAILED", error.to_string()))?;
-        if manifest.id.is_empty()
-            || manifest.capabilities.is_empty()
-            || manifest.executable.as_os_str().is_empty()
-        {
-            return Err(Error::new(
-                "PLUGIN_MANIFEST_FAILED",
-                format!("Invalid plugin manifest: {}", path.display()),
-            ));
+    let mut namespaces = HashSet::new();
+    for (field, registration) in plugins {
+        if !registration.enabled {
+            continue;
         }
-        manifest.executable = resolve_path(path.parent().unwrap_or(root), &manifest.executable);
-        if manifests
-            .iter()
-            .any(|existing: &Manifest| existing.id == manifest.id)
-        {
-            return Err(Error::new(
-                "PLUGIN_MANIFEST_FAILED",
-                format!("Duplicate plugin id: {}", manifest.id),
-            ));
-        }
+        let package_name = registration.package_name(field).ok_or_else(|| {
+            Error::new(
+                "PLUGIN_PACKAGE_INVALID",
+                format!("{field}.packageName is required"),
+            )
+        })?;
+        let manifest = package::resolve(field, package_name, root, &executable).map_err(error)?;
         for capability in &manifest.capabilities {
-            if let Capability::Command { name } = capability
-                && (name.is_empty() || !commands.insert(name.clone()) || name == "vault")
-            {
-                return Err(Error::new(
-                    "PLUGIN_MANIFEST_FAILED",
-                    format!("Duplicate or reserved plugin command: {name}"),
-                ));
+            match capability {
+                Capability::Command { name } => {
+                    if name.is_empty()
+                        || matches!(
+                            name.as_str(),
+                            "packages"
+                                | "resolve-target"
+                                | "files"
+                                | "print"
+                                | "run"
+                                | "check"
+                                | "sync"
+                                | "sort"
+                                | "sort-file"
+                        )
+                        || !commands.insert(name.clone())
+                    {
+                        return Err(Error::new(
+                            "PLUGIN_PACKAGE_INVALID",
+                            format!("Duplicate or reserved plugin command: {name}"),
+                        ));
+                    }
+                }
+                Capability::NativeApi { namespace }
+                    if namespace.is_empty()
+                        || namespace == "core"
+                        || !namespaces.insert(namespace.clone()) =>
+                {
+                    return Err(Error::new(
+                        "PLUGIN_PACKAGE_INVALID",
+                        format!("Duplicate or reserved native namespace: {namespace}"),
+                    ));
+                }
+                _ => {}
             }
         }
         for (required, enabled) in [
-            (Capability::DocumentFilter, plugin.document_filter),
-            (Capability::EnvSource, !plugin.source_keys.is_empty()),
-            (Capability::EnvGenerate, !plugin.generators.is_empty()),
+            (Capability::DocumentFilter, registration.document_filter),
+            (Capability::EnvSource, !registration.source_keys.is_empty()),
+            (Capability::EnvGenerate, !registration.generators.is_empty()),
         ] {
             if enabled && !manifest.capabilities.contains(&required) {
                 return Err(Error::new(
-                    "PLUGIN_MANIFEST_FAILED",
-                    format!("Plugin {} did not declare {required:?}", manifest.id),
+                    "PLUGIN_CAPABILITY_DENIED",
+                    format!("Plugin {field} did not declare {required:?}"),
                 ));
             }
         }
@@ -156,7 +111,7 @@ pub fn manifests(root: &Path, plugins: &[PluginRegistration]) -> Result<Vec<Mani
 }
 
 pub struct Runtime<'a> {
-    registrations: &'a [PluginRegistration],
+    registrations: Vec<PluginRegistration>,
     manifests: Vec<Manifest>,
     sessions: Vec<Option<Session>>,
     run_id: String,
@@ -165,17 +120,25 @@ pub struct Runtime<'a> {
 }
 
 impl<'a> Runtime<'a> {
-    pub fn needed(plugins: &[PluginRegistration]) -> bool {
-        plugins.iter().any(|plugin| {
-            plugin.document_filter
-                || !plugin.source_keys.is_empty()
-                || !plugin.generators.is_empty()
+    pub fn needed(plugins: &IndexMap<String, PluginRegistration>) -> bool {
+        plugins.values().any(|plugin| {
+            plugin.enabled
+                && (plugin.document_filter
+                    || !plugin.source_keys.is_empty()
+                    || !plugin.generators.is_empty())
         })
     }
 
     pub fn new(context: &'a Context<'_>) -> Result<Self> {
-        let registrations = &context.loaded.config.plugins;
-        let manifests = manifests(&context.loaded.project_root, registrations)?;
+        let registrations = context
+            .loaded
+            .config
+            .plugins
+            .values()
+            .filter(|plugin| plugin.enabled)
+            .cloned()
+            .collect();
+        let manifests = manifests(&context.loaded.project_root, &context.loaded.config.plugins)?;
         let sessions = (0..manifests.len()).map(|_| None).collect();
         Ok(Self {
             registrations,
@@ -488,6 +451,20 @@ pub fn execute_command(
                 format!("error: unknown command '{name}'"),
             )
         })?;
+    let registration = context
+        .loaded
+        .config
+        .plugins
+        .get(&manifest.id)
+        .ok_or_else(|| {
+            Error::new(
+                "PLUGIN_PACKAGE_INVALID",
+                "Plugin registration was not found.",
+            )
+        })?;
+    let config_file = registration
+        .config_file(&manifest.id)
+        .ok_or_else(|| Error::new("PLUGIN_PACKAGE_INVALID", "Plugin configFile was not found."))?;
     let arguments = arguments
         .iter()
         .map(|arg| {
@@ -501,8 +478,11 @@ pub fn execute_command(
         CommandInvocation {
             common: serde_json::to_value(&cli.common)
                 .map_err(|error| Error::new("PLUGIN_PROTOCOL_ERROR", error.to_string()))?,
-            operation: serde_json::Value::Null,
             arguments,
+            invocation_cwd: context.loaded.invocation_cwd.clone(),
+            project_root: context.loaded.project_root.clone(),
+            config_file: context.loaded.config_file.clone(),
+            plugin_config_file: resolve_path(&context.loaded.project_root, Path::new(config_file)),
         },
     )
 }

@@ -7,6 +7,11 @@ fn missing_store_preview_does_not_create_its_output_directory() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(
+        root.join("env-lane.config.json"),
+        r#"{"vault":{"enabled":true}}"#,
+    )
+    .unwrap();
     fs::write(root.join("env-lane.vault.json"), r#"{"envFiles":[".env"]}"#).unwrap();
     let main = main_config::load(root, None).unwrap();
     let config = config::load(&main, None).unwrap();

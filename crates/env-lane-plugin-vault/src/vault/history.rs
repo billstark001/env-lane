@@ -1,9 +1,7 @@
 //! Vault store maintenance commands.
 use super::options::*;
-use env_lane_cli::{
-    arguments::{Common, VaultOperation},
-    output::Output,
-};
+use crate::arguments::VaultOperation;
+use env_lane_cli::{arguments::Common, output::Output};
 use env_lane_core::{error::Result, paths::resolve_path, resolve::Context};
 use env_lane_vault::{history, selection};
 use std::time::{SystemTime, UNIX_EPOCH};

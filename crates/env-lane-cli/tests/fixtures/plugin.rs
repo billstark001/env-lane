@@ -98,6 +98,7 @@ fn main() {
     let manifest = Manifest {
         id: "fixture".into(),
         executable: std::env::current_exe().unwrap(),
+        arguments: Vec::new(),
         capabilities: vec![
             Capability::Command {
                 name: "example".into(),

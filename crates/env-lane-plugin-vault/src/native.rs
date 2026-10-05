@@ -34,6 +34,34 @@ fn path(value: &Value, field: &str, base: &Path) -> Option<PathBuf> {
 }
 
 pub fn invoke(operation: &str, value: &Value) -> Result<Value> {
+    if operation == "vault.loadConfig" {
+        let file = PathBuf::from(required(value, "configFile")?);
+        let raw = env_lane_core::config::read_native_config(&file)
+            .map_err(|error| Error::new("VAULT_CONFIG_LOAD_FAILED", error.message))?;
+        let disable = value
+            .get("disableUnsafeWarning")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        return Ok(json!(env_lane_vault::config::resolve_raw(
+            raw,
+            file.parent().unwrap_or(Path::new(".")),
+            disable,
+        )?));
+    }
+    if operation == "vault.resolveConfig" {
+        let raw = value
+            .get("rawConfig")
+            .cloned()
+            .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", "Missing rawConfig."))?;
+        let base_dir = PathBuf::from(required(value, "baseDir")?);
+        let disable = value
+            .get("disableUnsafeWarning")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        return Ok(json!(env_lane_vault::config::resolve_raw(
+            raw, &base_dir, disable
+        )?));
+    }
     let config: VaultConfig = serde_json::from_value(
         value
             .get("config")

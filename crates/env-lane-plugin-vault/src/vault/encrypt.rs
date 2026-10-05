@@ -1,6 +1,7 @@
 //! Encrypt and push Vault records.
 use super::options::*;
-use env_lane_cli::{arguments::VaultOperation, output::Output};
+use crate::arguments::VaultOperation;
+use env_lane_cli::output::Output;
 use env_lane_core::{error::Result, resolve::Context};
 use env_lane_vault::push;
 

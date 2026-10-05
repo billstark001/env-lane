@@ -9,19 +9,36 @@ use env_lane_core::{
 use indexmap::IndexSet;
 pub use schema::{Config, Exclude, Redaction, Restore, Reveal, SortTarget};
 use schema::{RawConfig, invalid};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
+    let registration = main.config.plugins.get("vault").ok_or_else(|| {
+        Error::new(
+            "PLUGIN_DISABLED",
+            "Vault plugin is not enabled in the main config.",
+        )
+    })?;
+    if !registration.enabled {
+        return Err(Error::new(
+            "PLUGIN_DISABLED",
+            "Vault plugin is not enabled in the main config.",
+        ));
+    }
     let requested = match explicit {
         Some(path) => resolve_path(&main.invocation_cwd, path),
         None => resolve_path(
             &main.project_root,
-            Path::new(&main.config.vault.config_file),
+            Path::new(
+                registration
+                    .config_file("vault")
+                    .expect("built-in config file"),
+            ),
         ),
     };
     let file = discover(&requested)?;
     let raw = read_config(&file, &main.project_root, "vault").map_err(|error| {
-        if error.code == "VAULT_CONFIG_COMPILATION_REQUIRED" {
+        if error.code == "CONFIG_COMPILATION_REQUIRED" {
             error
         } else {
             Error::new(
@@ -30,9 +47,18 @@ pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
             )
         }
     })?;
+    resolve_raw(
+        raw,
+        file.parent().unwrap_or(&main.project_root),
+        registration.disable_unsafe_warning,
+    )
+}
+
+/// Canonicalize a plugin config supplied by a JS/TS source evaluator.
+pub fn resolve_raw(raw: Value, base_dir: &Path, disable_unsafe_warning: bool) -> Result<Config> {
     let raw: RawConfig = serde_json::from_value(raw).map_err(|error| invalid(error.to_string()))?;
     raw.validate()?;
-    let base_dir = file.parent().unwrap_or(&main.project_root).to_owned();
+    let base_dir = base_dir.to_owned();
     let output_dir = resolve_path(&base_dir, Path::new(&raw.output_dir));
     let store_path = resolve_path(&output_dir, Path::new(&raw.output_file));
     let env_files: IndexSet<_> = raw
@@ -68,9 +94,7 @@ pub fn load(main: &LoadedConfig, explicit: Option<&Path>) -> Result<Config> {
         restore: raw.restore,
         exclude,
         sort: raw.sort,
-        disable_unsafe_warning: raw
-            .disable_unsafe_warning
-            .unwrap_or(main.config.vault.disable_unsafe_warning),
+        disable_unsafe_warning: raw.disable_unsafe_warning.unwrap_or(disable_unsafe_warning),
     };
     config.validate_resolved()?;
     Ok(config)

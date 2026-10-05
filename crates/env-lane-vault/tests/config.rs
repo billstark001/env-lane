@@ -7,6 +7,11 @@ fn native_formats_preserve_origin_and_reject_invalid_reveal() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(
+        root.join("env-lane.config.json"),
+        r#"{"vault":{"enabled":true}}"#,
+    )
+    .unwrap();
     let main = main_config::load(root, None).unwrap();
     fs::create_dir(root.join("nested")).unwrap();
     for (name, content) in [
@@ -59,6 +64,11 @@ fn extensionless_vault_config_prefers_native_json_over_executable_source() {
     let root = temporary.path();
     fs::write(root.join("package.json"), "{}").unwrap();
     fs::write(
+        root.join("env-lane.config.json"),
+        r#"{"vault":{"enabled":true}}"#,
+    )
+    .unwrap();
+    fs::write(
         root.join("env-lane.vault.ts"),
         "throw new Error('must not run')",
     )
@@ -82,6 +92,11 @@ fn store_symlink_cannot_alias_a_managed_env_file() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(
+        root.join("env-lane.config.json"),
+        r#"{"vault":{"enabled":true}}"#,
+    )
+    .unwrap();
     fs::write(root.join(".env"), "A=keep\n").unwrap();
     fs::write(root.join("vault.json"), r#"{"envFiles":[".env"]}"#).unwrap();
     fs::create_dir(root.join(".env-lane-vault")).unwrap();
@@ -103,6 +118,11 @@ fn managed_env_symlink_aliases_are_rejected() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(
+        root.join("env-lane.config.json"),
+        r#"{"vault":{"enabled":true}}"#,
+    )
+    .unwrap();
     fs::write(root.join(".env"), "A=keep\n").unwrap();
     symlink(".env", root.join("alias.env")).unwrap();
     fs::write(
@@ -126,6 +146,11 @@ fn dangling_env_symlink_cannot_become_the_store_after_creation() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     fs::write(root.join("package.json"), "{}").unwrap();
+    fs::write(
+        root.join("env-lane.config.json"),
+        r#"{"vault":{"enabled":true}}"#,
+    )
+    .unwrap();
     fs::write(root.join("vault.json"), r#"{"envFiles":[".env"]}"#).unwrap();
     symlink(".env-lane-vault/store.dat", root.join(".env")).unwrap();
 

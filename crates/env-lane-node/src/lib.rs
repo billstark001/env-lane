@@ -1,4 +1,4 @@
-//! Node-API transport. Vault behavior is supplied by an optional native plugin.
+//! Node-API transport and registered plugin namespace routing.
 use env_lane_core::{
     check,
     config::{self, LoadedConfig},
@@ -9,9 +9,10 @@ use env_lane_core::{
     resolve::{Context, Environment, Options},
     sort, workspace,
 };
-use env_lane_plugin_api::{Capability, Manifest, PluginError, process::Session};
+use env_lane_plugin_api::{Capability, PluginError, package, process::Session};
 use napi_derive::napi;
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 fn required<'a>(value: &'a Value, field: &str) -> Result<&'a str> {
@@ -35,7 +36,12 @@ fn load_core(value: &Value) -> Result<LoadedConfig> {
     // A resolved JS config already contains defaults and has passed the public
     // c12/Zod validation. The raw-config validator rejects empty defaults that
     // are legal in this resolved form (for example defaultTarget: "").
-    let parsed: config::Config = serde_json::from_value(config.clone())
+    let mut config = config.clone();
+    config
+        .as_object_mut()
+        .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", "config must be an object."))?
+        .remove("rootDir");
+    let parsed: config::Config = serde_json::from_value(config)
         .map_err(|error| Error::new("CONFIG_LOAD_FAILED", error.to_string()))?;
     let config_file = path(value, "configFile", &cwd);
     let config_dir = config_file
@@ -128,6 +134,27 @@ fn core_document(operation: &str, value: &Value) -> Result<Value> {
     }
 }
 fn core(operation: &str, value: &Value) -> Result<Value> {
+    if operation == "core.registeredPlugins" {
+        let cwd = PathBuf::from(required(value, "cwd")?);
+        let loaded = config::load(&cwd, path(value, "configFile", &cwd).as_deref())?;
+        let plugins = loaded.config.plugins.iter().filter(|(_, registration)| registration.enabled)
+            .map(|(name, registration)| json!({"name":name,"configFile":registration.config_file(name),"packageName":registration.package_name(name)}))
+            .collect::<Vec<_>>();
+        return Ok(
+            json!({"value":{"projectRoot":loaded.project_root,"plugins":plugins},"diagnostics":[]}),
+        );
+    }
+    if operation == "core.resolveConfig" {
+        let cwd = PathBuf::from(required(value, "cwd")?);
+        let root = PathBuf::from(required(value, "rootDir")?);
+        let raw = value.get("rawConfig").cloned().unwrap_or_else(|| json!({}));
+        let file = path(value, "configFile", &cwd);
+        let loaded = config::resolve_value(cwd, root.clone(), file, raw)?;
+        let mut resolved = serde_json::to_value(loaded.config)
+            .map_err(|error| Error::new("CONFIG_LOAD_FAILED", error.to_string()))?;
+        resolved["rootDir"] = json!(root);
+        return Ok(json!({"value":resolved,"diagnostics":[]}));
+    }
     if operation.starts_with("core.envDocument.") {
         return Ok(json!({"value":core_document(operation, value)?,"diagnostics":[]}));
     }
@@ -275,20 +302,74 @@ fn plugin_error(error: PluginError) -> Error {
     }
 }
 
-fn vault(operation: &str, value: &Value) -> Result<Value> {
-    let executable = PathBuf::from(required(value, "pluginExecutable")?);
-    let manifest = Manifest {
-        id: "vault".into(),
-        executable,
-        capabilities: vec![
-            Capability::Command {
-                name: "vault".into(),
-            },
-            Capability::NativeApi {
-                namespace: "vault".into(),
-            },
-        ],
+fn plugin(operation: &str, value: &Value) -> Result<Value> {
+    let namespace = operation.split('.').next().unwrap_or_default();
+    if namespace.is_empty() || namespace == "core" || !operation.contains('.') {
+        return Err(Error::new(
+            "INVALID_NATIVE_OPERATION",
+            format!("Unknown operation: {operation}"),
+        ));
+    }
+    let cwd = optional(value, "projectRoot")
+        .or_else(|| value.pointer("/config/baseDir").and_then(Value::as_str))
+        .map(PathBuf::from)
+        .unwrap_or(
+            std::env::current_dir()
+                .map_err(|error| Error::new("CWD_READ_FAILED", error.to_string()))?,
+        );
+    let loaded = if let Some(host_config) = value.get("hostConfig") {
+        load_core(
+            &json!({"cwd": cwd, "config": host_config, "configFile": value.get("configFile")}),
+        )?
+    } else {
+        config::load(&cwd, path(value, "configFile", &cwd).as_deref())?
     };
+    let executable = std::env::current_exe()
+        .map_err(|error| Error::new("PLUGIN_PACKAGE_INVALID", error.to_string()))?;
+    let mut namespaces = HashSet::new();
+    let mut selected = None;
+    for (field, registration) in &loaded.config.plugins {
+        if !registration.enabled {
+            continue;
+        }
+        let package_name = registration.package_name(field).ok_or_else(|| {
+            Error::new(
+                "PLUGIN_PACKAGE_INVALID",
+                format!("{field}.packageName is required"),
+            )
+        })?;
+        let manifest =
+            match package::resolve(field, package_name, &loaded.project_root, &executable) {
+                Ok(manifest) => manifest,
+                Err(error) if field == namespace => return Err(plugin_error(error)),
+                Err(_) => continue,
+            };
+        for capability in &manifest.capabilities {
+            if let Capability::NativeApi {
+                namespace: registered,
+            } = capability
+            {
+                if registered == "core"
+                    || registered.is_empty()
+                    || !namespaces.insert(registered.clone())
+                {
+                    return Err(Error::new(
+                        "PLUGIN_PACKAGE_INVALID",
+                        format!("Duplicate native namespace: {registered}"),
+                    ));
+                }
+                if registered == namespace {
+                    selected = Some(manifest.clone());
+                }
+            }
+        }
+    }
+    let manifest = selected.ok_or_else(|| {
+        Error::new(
+            "INVALID_NATIVE_OPERATION",
+            format!("Unknown operation: {operation}"),
+        )
+    })?;
     let mut session = Session::start(&manifest).map_err(plugin_error)?;
     let result: Value = session
         .call_typed(
@@ -310,7 +391,7 @@ pub fn invoke(operation: String, request: String) -> String {
             if operation.starts_with("core.") {
                 core(&operation, &value)
             } else {
-                vault(&operation, &value)
+                plugin(&operation, &value)
             }
         });
     match result {

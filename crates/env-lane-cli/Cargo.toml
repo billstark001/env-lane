@@ -11,6 +11,7 @@ env-lane-core = { path = "../env-lane-core" }
 env-lane-plugin-api = { path = "../env-lane-plugin-api" }
 serde_json.workspace = true
 serde.workspace = true
+indexmap.workspace = true
 crossterm = "0.29"
 
 [target.'cfg(unix)'.dependencies]
