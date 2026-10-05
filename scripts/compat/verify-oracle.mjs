@@ -20,7 +20,15 @@ if (manifest.gitCommit !== 'bdd0e9f4881b433063629e3caed04cd102444e44') {
 const listing = spawnSync('tar', ['-tzf', artifactPath], { encoding: 'utf8' })
 if (listing.status !== 0) throw new Error(`Cannot list oracle artifact: ${listing.stderr}`)
 const entries = listing.stdout.trim().split('\n')
-if (entries.some((entry) => !entry.startsWith('runtime/') || entry.includes('../'))) {
+// GNU tar shows the archived macOS AppleDouble header and the root directory
+// without a trailing slash; BSD tar hides the header and adds the slash.
+if (
+  entries.some(
+    (entry) =>
+      !['runtime', 'runtime/', '._runtime'].includes(entry) &&
+      (!entry.startsWith('runtime/') || entry.includes('../')),
+  )
+) {
   throw new Error('Oracle archive contains a path outside runtime/')
 }
 const verboseListing = spawnSync('tar', ['-tvzf', artifactPath], { encoding: 'utf8' })

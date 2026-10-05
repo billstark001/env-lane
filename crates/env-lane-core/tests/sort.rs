@@ -1,7 +1,8 @@
+#[cfg(unix)]
+use env_lane_core::{config, sort::ConfiguredOptions, sort::sort_configured};
 use env_lane_core::{
-    config,
     document::effective_values,
-    sort::{ConfiguredOptions, SortOptions, build_plan, sort_configured, sort_file},
+    sort::{SortOptions, build_plan, sort_file},
 };
 use proptest::prelude::*;
 use std::fs;

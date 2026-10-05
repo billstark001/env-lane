@@ -40,7 +40,11 @@ assert.equal(
   sdk.PROTOCOL_VERSION,
   protocolSchema.properties.envLanePlugin.properties.protocolVersion.const,
 )
-const cli = path.join(root, 'packages/cli/dist/env-lane')
+const cli = path.join(
+  root,
+  'packages/cli/dist',
+  process.platform === 'win32' ? 'env-lane.exe' : 'env-lane',
+)
 assert.ok(existsSync(cli), 'Native CLI missing from npm bin path')
 const version = spawnSync(cli, ['--version'], { encoding: 'utf8' })
 assert.equal(version.status, 0)

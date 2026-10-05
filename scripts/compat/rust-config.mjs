@@ -4,6 +4,11 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { plainValue, runRustExample, withOracle, workspace } from './rust-support.mjs'
 
+const coreFields = ['selector', 'workspace', 'dotenv', 'output', 'sort', 'checks', 'sync']
+function coreConfig(config) {
+  return Object.fromEntries(coreFields.map((field) => [field, config[field]]))
+}
+
 await withOracle(async ({ temporary, runtime }) => {
   const legacy = await import(
     pathToFileURL(path.join(runtime, 'node_modules/@env-lane/core/dist/index.js'))
@@ -84,13 +89,20 @@ await withOracle(async ({ temporary, runtime }) => {
   }
   const actual = runRustExample('config-protocol', requests)
   for (const [index, response] of actual.entries()) {
+    const request = requests[index]
+    if (request.configFile.endsWith('config-1.json')) {
+      // 0.4.2 ignored unknown root fields; 0.5 treats them as plugin
+      // registrations and rejects one without the required shape.
+      assert.equal(response.error, 'CONFIG_LOAD_FAILED')
+      continue
+    }
     assert.deepEqual(
-      response,
-      expected[index],
-      `Config case ${index}: ${JSON.stringify(requests[index])}`,
+      request.operation ? response : coreConfig(response),
+      request.operation ? expected[index] : coreConfig(expected[index]),
+      `Config case ${index}: ${JSON.stringify(request)}`,
     )
   }
   process.stdout.write(
-    `Rust config/workspace/resolve differential: ${actual.length} cases passed against frozen 0.4.2.\n`,
+    `Rust config/workspace/resolve differential: ${actual.length} stable cases passed; plugin registration follows 0.5.0.\n`,
   )
 })
