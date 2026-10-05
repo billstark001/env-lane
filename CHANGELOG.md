@@ -43,7 +43,7 @@ No changes yet.
 - The Core Node API adds `runWithInjectedEnvDetailed` and `spawnWithInjectedEnv` for structured
   completion results and optional pipe streams. Its numeric API now maps signals to 128 plus the
   signal number and startup failures to 127/126. Windows direct executables bypass `cmd.exe`;
-  discovered batch files still use it.
+  direct child arguments retain shell metacharacters, while discovered batch files still use it.
 - Stable Core and Vault application calls reach Rust while preserving the Vault v0/v1 store and
   sync data formats. The separate `@env-lane/vault/cli` Commander adapter remains public.
 

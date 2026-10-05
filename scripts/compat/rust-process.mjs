@@ -100,6 +100,26 @@ async function terminateTree(command, args, root) {
   }
 }
 
+function assertProcessObservation(executable, oracle, requestFile, root, request) {
+  const actual = observation(executable, [requestFile], root)
+  if (process.platform === 'win32' && request.command[1] === 'child-argv.mjs') {
+    // 0.4.2 passed these arguments through cmd.exe and split at '&'.
+    // The 0.5 executable launches Node directly and preserves every word.
+    assert.deepEqual(actual, {
+      status: 0,
+      signal: null,
+      stdout: request.command.slice(2).join('|'),
+      stderr: '',
+    })
+    return
+  }
+  assert.deepEqual(
+    actual,
+    observation(process.execPath, [oracle, requestFile], root),
+    JSON.stringify(request),
+  )
+}
+
 await withOracle(async ({ temporary, runtime }) => {
   const root = path.join(temporary, 'project')
   cpSync(path.join(workspace, 'compat/fixtures/topologies/moment-landing'), root, {
@@ -165,11 +185,7 @@ await withOracle(async ({ temporary, runtime }) => {
     writeFileSync(base.configFile, JSON.stringify(config))
     for (const request of requests) {
       writeFileSync(requestFile, JSON.stringify({ ...base, ...request }))
-      assert.deepEqual(
-        observation(executable, [requestFile], root),
-        observation(process.execPath, [oracle, requestFile], root),
-        JSON.stringify(request),
-      )
+      assertProcessObservation(executable, oracle, requestFile, root, request)
     }
   }
   for (const [request, status, diagnostic] of [
