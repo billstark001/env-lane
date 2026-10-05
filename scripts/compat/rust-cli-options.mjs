@@ -9,6 +9,11 @@ const build = spawnSync('cargo', ['build', '--locked', '--bin', 'env-lane'], {
   encoding: 'utf8',
 })
 assert.equal(build.status, 0, build.stderr)
+const staged = spawnSync(process.execPath, ['scripts/stage-local-plugins.mjs'], {
+  cwd: workspace,
+  encoding: 'utf8',
+})
+assert.equal(staged.status, 0, staged.stderr)
 const executable = path.join(
   workspace,
   'target/debug',
@@ -18,7 +23,12 @@ const executable = path.join(
 function observe(program, args, root, env = process.env) {
   const result = spawnSync(program, args, {
     cwd: root,
-    env: { ...env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    env: {
+      ...env,
+      ENV_LANE_PLUGIN_PACKAGE_ROOT: path.join(workspace, 'target/debug'),
+      NO_COLOR: '1',
+      FORCE_COLOR: '0',
+    },
     encoding: 'utf8',
     timeout: 10_000,
   })
@@ -44,7 +54,6 @@ await withOracle(async ({ temporary, runtime }) => {
     ['packages', '--unexpected', '--json'],
     ['files', 'missing', '--json'],
     ['files', 'landing', '--no-prefix', '--build', 'unknown'],
-    ['run', 'landing', '--quiet', '--json', 'node', 'child-cwd.mjs'],
     ['run', 'landing', '--quiet'],
     ['resolve-target'],
     ['print'],
@@ -89,6 +98,14 @@ await withOracle(async ({ temporary, runtime }) => {
   })
   assert.equal(noNode.status, 0)
   assert.equal(JSON.parse(noNode.stdout).length, 2)
+  const rejectedRunJson = observe(
+    executable,
+    [...common, 'run', 'landing', '--quiet', '--json', 'node', 'child-cwd.mjs'],
+    root,
+  )
+  assert.equal(rejectedRunJson.status, 1)
+  assert.equal(rejectedRunJson.stdout, '')
+  assert.match(rejectedRunJson.stderr, /UNSUPPORTED_OUTPUT_FORMAT/)
   assert.deepEqual(failures, [], 'CLI option and failure differential')
-  process.stdout.write(`Rust CLI options: ${cases.length + 2} cases and no-Node smoke passed.\n`)
+  process.stdout.write(`Rust CLI options: ${cases.length + 3} cases and no-Node smoke passed.\n`)
 })

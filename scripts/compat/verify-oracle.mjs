@@ -19,7 +19,7 @@ if (manifest.gitCommit !== 'bdd0e9f4881b433063629e3caed04cd102444e44') {
 
 const listing = spawnSync('tar', ['-tzf', artifactPath], { encoding: 'utf8' })
 if (listing.status !== 0) throw new Error(`Cannot list oracle artifact: ${listing.stderr}`)
-const entries = listing.stdout.trim().split('\n')
+const entries = listing.stdout.trim().split(/\r?\n/)
 // GNU tar shows the archived macOS AppleDouble header and the root directory
 // without a trailing slash; BSD tar hides the header and adds the slash.
 if (

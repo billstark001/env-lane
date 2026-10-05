@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { plainValue, runRustExample, withOracle, workspace } from './rust-support.mjs'
+import {
+  normalizeRoot,
+  plainValue,
+  runRustExample,
+  withOracle,
+  workspace,
+} from './rust-support.mjs'
 
 const fixture = JSON.parse(
   readFileSync(path.join(workspace, 'compat/fixtures/workspace/globs.json')),
@@ -45,7 +51,7 @@ await withOracle(async ({ temporary, runtime }) => {
   const mismatches = []
   for (const [index, response] of actual.entries()) {
     try {
-      assert.deepEqual(response, expected[index])
+      assert.deepEqual(normalizeRoot(response, root), normalizeRoot(expected[index], root))
     } catch {
       mismatches.push({
         patterns: fixture.patterns[index],
