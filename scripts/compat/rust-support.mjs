@@ -112,6 +112,7 @@ export function normalizeCliObservation(observation, root) {
     value
       .replaceAll(JSON.stringify(root).slice(1, -1), '$ROOT')
       .replaceAll(root, '$ROOT')
+      .replaceAll(root.replaceAll('\\', '/'), '$ROOT')
       .replace(/\$ROOT(?:\\+[^"\r\n]*)*/g, (matched) => matched.replace(/\\+/g, '/'))
   return {
     ...observation,
