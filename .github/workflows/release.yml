@@ -65,7 +65,14 @@ jobs:
       - run: rustup target add ${{ matrix.target }}
       - if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: pnpm --filter @env-lane/native exec napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --release --target ${{ matrix.target }} --output-dir .
+      - if: matrix.suffix == 'linux-arm64-musl'
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.14.1
+      - if: matrix.suffix == 'linux-arm64-musl'
+        run: pnpm --filter @env-lane/native exec napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --release --target ${{ matrix.target }} --output-dir . --cross-compile
+      - if: matrix.suffix != 'linux-arm64-musl'
+        run: pnpm --filter @env-lane/native exec napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --release --target ${{ matrix.target }} --output-dir .
       - run: cargo build --release --locked --target ${{ matrix.target }} -p env-lane-cli
       - run: cargo build --release --locked --target ${{ matrix.target }} -p env-lane-plugin-vault
       - run: node scripts/native-release.mjs stage ${{ matrix.target }}

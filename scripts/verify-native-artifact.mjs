@@ -29,6 +29,6 @@ assert.equal(result.stdout.trim().split(/\s+/).at(-1), manifest.version)
 if (!triple.includes('musl')) {
   const native = createRequire(import.meta.url)(addon)
   assert.equal(typeof native.invoke, 'function')
-  assert.equal(JSON.parse(native.invoke('invalid', '{}')).error.code, 'INVALID_NATIVE_REQUEST')
+  assert.equal(JSON.parse(native.invoke('invalid', '{}')).error.code, 'INVALID_NATIVE_OPERATION')
 }
 process.stdout.write(`Verified ${suffix} native CLI, Vault plugin, and Node addon artifacts.\n`)
