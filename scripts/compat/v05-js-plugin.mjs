@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -12,9 +13,10 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import native from '../../packages/native/index.js'
-import { createNativeClient } from '../../packages/plugin-sdk/index.mjs'
+import { createNativeClient, PROTOCOL_VERSION } from '../../packages/plugin-sdk/dist/index.js'
 
 const workspace = path.resolve(import.meta.dirname, '../..')
+const { version } = JSON.parse(readFileSync(path.join(workspace, 'package.json'), 'utf8'))
 const fixture = mkdtempSync(path.join(tmpdir(), 'env-lane-js-plugin-'))
 try {
   const modules = path.join(fixture, 'node_modules')
@@ -36,7 +38,7 @@ try {
       name: 'synthetic-plugin',
       type: 'module',
       envLanePlugin: {
-        protocolVersion: 1,
+        protocolVersion: PROTOCOL_VERSION,
         id: 'example',
         capabilities,
         entry: { kind: 'node', path: './plugin.mjs' },
@@ -88,7 +90,9 @@ try {
   }
   const client = createNativeClient('example', native)
   assert.deepEqual(client.invoke('ping', { projectRoot: fixture, hostConfig }), { pong: true })
-  process.stdout.write('0.5.0 JS plugin command, namespace, and TS cache conformance passed.\n')
+  process.stdout.write(
+    `${version} JS plugin command, namespace, and TS cache conformance passed.\n`,
+  )
 } finally {
   rmSync(fixture, { recursive: true, force: true })
 }

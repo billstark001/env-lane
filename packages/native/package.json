@@ -39,7 +39,7 @@
     ]
   },
   "scripts": {
-    "build": "napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --output-dir .",
+    "build": "napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --output-dir . && node scripts/normalize-loader.mjs",
     "typecheck": "node --check index.js"
   },
   "devDependencies": {

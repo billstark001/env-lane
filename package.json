@@ -8,13 +8,13 @@
     "pnpm": ">=12 <13"
   },
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "node scripts/verify-workspace-metadata.mjs && pnpm -r build",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:build",
     "compat:classify": "node scripts/compat/classify-tests.mjs",
     "compat:fixtures": "node scripts/compat/run-fixtures.mjs",
     "compat:oracle:capture": "node scripts/compat/capture-oracle.mjs",
     "compat:oracle:verify": "node scripts/compat/verify-oracle.mjs",
-    "compat:verify": "pnpm compat:oracle:verify && node scripts/compat/v05-node-api.mjs && node scripts/compat/v05-js-plugin.mjs && node scripts/compat/rust-native-install.mjs && node scripts/compat/platform-packages.mjs",
+    "compat:verify": "pnpm --filter @env-lane/plugin-sdk build && pnpm compat:oracle:verify && node scripts/compat/v05-node-api.mjs && node scripts/compat/v05-js-plugin.mjs && node scripts/compat/rust-native-install.mjs && node scripts/compat/platform-packages.mjs",
     "dev": "pnpm --filter env-lane dev",
     "pack:dry-run": "pnpm -r --filter './packages/*' --filter '!@env-lane/compat-test' pack --dry-run",
     "release:dry-run": "pnpm -r --filter './packages/*' --filter '!@env-lane/compat-test' publish --dry-run --access public --no-git-checks",

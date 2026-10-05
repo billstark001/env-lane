@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url'
 
 const root = path.resolve(import.meta.dirname, '..')
 const require = createRequire(import.meta.url)
+const metadata = require(path.join(root, 'package.json'))
 const entries = [
   ['core', 'index', ['defineConfig', 'loadEnvLaneConfig', 'resolveInjectedEnv', 'sortEnvFile']],
   ['core', 'env-document', ['parseEnvDocument', 'parseEnvLine']],
@@ -33,13 +34,17 @@ for (const item of removed)
 const vault = await import(pathToFileURL(path.join(root, 'packages/vault/dist/index.js')).href)
 for (const item of ['registerVaultCommands', 'deriveVaultKey'])
   assert.ok(!(item in vault), `Deprecated Vault root export remains: ${item}`)
-const sdk = await import(pathToFileURL(path.join(root, 'packages/plugin-sdk/index.mjs')).href)
-assert.equal(sdk.PROTOCOL_VERSION, 1)
+const sdk = await import(pathToFileURL(path.join(root, 'packages/plugin-sdk/dist/index.js')).href)
+const protocolSchema = require(path.join(root, 'packages/plugin-sdk/package.schema.json'))
+assert.equal(
+  sdk.PROTOCOL_VERSION,
+  protocolSchema.properties.envLanePlugin.properties.protocolVersion.const,
+)
 const cli = path.join(root, 'packages/cli/dist/env-lane')
 assert.ok(existsSync(cli), 'Native CLI missing from npm bin path')
 const version = spawnSync(cli, ['--version'], { encoding: 'utf8' })
 assert.equal(version.status, 0)
-assert.equal(version.stdout.trim(), '0.5.0')
+assert.equal(version.stdout.trim(), metadata.version)
 const fixture = mkdtempSync(path.join(tmpdir(), 'env-lane-built-smoke-'))
 try {
   writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({ name: 'synthetic-smoke' }))
@@ -53,4 +58,4 @@ try {
 } finally {
   rmSync(fixture, { recursive: true, force: true })
 }
-process.stdout.write('0.5.0 package entries and native CLI smoke passed\n')
+process.stdout.write(`${metadata.version} package entries and native CLI smoke passed\n`)

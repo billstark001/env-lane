@@ -54,10 +54,11 @@ try {
   const metadata = JSON.parse(
     readFileSync(path.join(workspace, 'packages/vault/package.json'), 'utf8'),
   )
-  metadata.envLanePlugin.protocolVersion = 99
+  const expectedProtocol = metadata.envLanePlugin.protocolVersion
+  metadata.envLanePlugin.protocolVersion = expectedProtocol + 98
   writeFileSync(path.join(vault, 'package.json'), JSON.stringify(metadata))
   assert.equal(invoke(), 'PLUGIN_PACKAGE_INVALID')
-  metadata.envLanePlugin.protocolVersion = 1
+  metadata.envLanePlugin.protocolVersion = expectedProtocol
   writeFileSync(path.join(vault, 'package.json'), JSON.stringify(metadata))
   mkdirSync(platform, { recursive: true })
   writeFileSync(

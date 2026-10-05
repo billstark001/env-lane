@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import native from '../../packages/native/index.js'
 
 const root = path.resolve(import.meta.dirname, '../..')
+const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 process.env.ENV_LANE_PLUGIN_PACKAGE_ROOT = path.join(root, 'target/debug')
 const core = await import(pathToFileURL(path.join(root, 'packages/core/dist/index.js')).href)
 const vault = await import(pathToFileURL(path.join(root, 'packages/vault/dist/index.js')).href)
@@ -39,7 +40,7 @@ try {
     ),
   )
   assert.equal(disabled.error.code, 'INVALID_NATIVE_OPERATION')
-  process.stdout.write('0.5.0 Node config and namespace conformance passed.\n')
+  process.stdout.write(`${version} Node config and namespace conformance passed.\n`)
 } finally {
   rmSync(fixture, { recursive: true, force: true })
 }

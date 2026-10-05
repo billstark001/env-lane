@@ -9,15 +9,14 @@
   },
   "exports": {
     ".": {
-      "types": "./index.d.ts",
-      "import": "./index.mjs"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./protocol.schema.json": "./protocol.schema.json",
     "./package.schema.json": "./package.schema.json"
   },
   "files": [
-    "index.mjs",
-    "index.d.ts",
+    "dist",
     "protocol.schema.json",
     "package.schema.json",
     "README.md"
@@ -27,8 +26,8 @@
     "provenance": true
   },
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "prepack": "node scripts/build.mjs",
-    "typecheck": "node --check index.mjs"
+    "build": "node scripts/build.mjs && tsup src/index.ts --format esm --clean && tsc -p tsconfig.json --emitDeclarationOnly",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }
