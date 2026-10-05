@@ -1,7 +1,7 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { constants } from 'node:os'
-import path from 'node:path'
+import spawn from 'cross-spawn'
 import type { AbsolutePath } from './paths.js'
 
 export interface RunSpawnError {
@@ -37,31 +37,6 @@ function spawnError(error: Error & { code?: string }, cwd: string): RunSpawnErro
   }
 }
 
-function windowsBatchCommand(command: string, cwd: string, env: Record<string, string>): boolean {
-  if (process.platform !== 'win32') return false
-  const extension = path.extname(command).toLowerCase()
-  if (extension && extension !== '.cmd' && extension !== '.bat') return false
-  const pathValue = Object.entries(env).find(([key]) => key.toUpperCase() === 'PATH')?.[1] ?? ''
-  const pathExt =
-    Object.entries(env).find(([key]) => key.toUpperCase() === 'PATHEXT')?.[1] ??
-    '.COM;.EXE;.BAT;.CMD'
-  const directories =
-    path.dirname(command) === '.' ? [cwd, ...pathValue.split(path.delimiter)] : [cwd]
-  for (const directory of directories) {
-    const base = path.resolve(cwd, directory, command)
-    for (const suffix of extension ? [''] : pathExt.split(';')) {
-      if (!extension && !suffix.startsWith('.')) continue
-      try {
-        if (!statSync(base + suffix).isFile()) continue
-      } catch {
-        continue
-      }
-      return ['.cmd', '.bat'].includes((extension || suffix).toLowerCase())
-    }
-  }
-  return false
-}
-
 export function childRunStatus(result: ChildRunResult): number {
   if (result.spawnError) return result.spawnError.exitStatus
   if (result.exitCode !== null) return result.exitCode
@@ -76,13 +51,15 @@ export function executeChildProcess(options: {
   env: Record<string, string>
   stdio?: 'inherit' | 'pipe'
 }): StartedChildProcess {
+  // cross-spawn escapes cmd.exe metacharacters, but cmd.exe still treats line
+  // breaks as command separators for batch-file shims.
+  if (process.platform === 'win32' && options.command.some((part) => /[\r\n]/.test(part))) {
+    throw new TypeError('Windows command arguments cannot contain line breaks.')
+  }
   const child = spawn(options.command[0], options.command.slice(1), {
     cwd: options.cwd,
     env: options.env,
     stdio: options.stdio ?? 'inherit',
-    // Windows requires a shell for batch files, but direct executables must not
-    // go through cmd.exe: that would turn ENOENT into an unrelated shell exit.
-    shell: windowsBatchCommand(options.command[0], options.cwd, options.env),
   })
   let failure: RunSpawnError | undefined
   const completed = new Promise<ChildRunResult>((resolve) => {
