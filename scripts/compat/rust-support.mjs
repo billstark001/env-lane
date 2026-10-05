@@ -72,7 +72,9 @@ export function plainValue(value) {
 export function normalizeRoot(value, root) {
   if (typeof value === 'string') {
     if (value.startsWith(root)) return `$ROOT${value.slice(root.length).replaceAll('\\', '/')}`
-    return value.replaceAll(root, '$ROOT')
+    const portableRoot = root.replaceAll('\\', '/')
+    if (value.startsWith(portableRoot)) return `$ROOT${value.slice(portableRoot.length)}`
+    return value.replaceAll(root, '$ROOT').replaceAll(portableRoot, '$ROOT')
   }
   if (Array.isArray(value)) return value.map((item) => normalizeRoot(item, root))
   if (value && typeof value === 'object')
