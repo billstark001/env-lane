@@ -106,9 +106,15 @@ fn command_for(prepared: &PreparedRun, program: &OsStr) -> Command {
 #[cfg(windows)]
 fn windows_batch_fallback(prepared: &PreparedRun) -> Option<PathBuf> {
     let program = PathBuf::from(&prepared.program);
-    if program.extension().is_some() {
-        return None;
-    }
+    let explicit_batch = match program.extension().and_then(|extension| extension.to_str()) {
+        Some(extension)
+            if extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat") =>
+        {
+            true
+        }
+        Some(_) => return None,
+        None => false,
+    };
     let mut directories = vec![prepared.cwd.clone()];
     if program.components().count() == 1 {
         let path = prepared
@@ -121,15 +127,19 @@ fn windows_batch_fallback(prepared: &PreparedRun) -> Option<PathBuf> {
             .or_else(|| std::env::var_os("PATH"));
         directories.extend(path.as_deref().into_iter().flat_map(std::env::split_paths));
     }
-    let extensions = prepared
-        .environment
-        .values
-        .iter()
-        .rev()
-        .find(|(key, _)| key.eq_ignore_ascii_case("PATHEXT"))
-        .map(|(_, value)| value.clone())
-        .or_else(|| std::env::var("PATHEXT").ok())
-        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into());
+    let extensions = if explicit_batch {
+        String::new()
+    } else {
+        prepared
+            .environment
+            .values
+            .iter()
+            .rev()
+            .find(|(key, _)| key.eq_ignore_ascii_case("PATHEXT"))
+            .map(|(_, value)| value.clone())
+            .or_else(|| std::env::var("PATHEXT").ok())
+            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
+    };
     for directory in directories {
         // Windows resolves relative PATH entries from the child's working
         // directory, while is_file() observes this process's working directory.
@@ -140,7 +150,10 @@ fn windows_batch_fallback(prepared: &PreparedRun) -> Option<PathBuf> {
         };
         let base = directory.join(&program);
         for extension in extensions.split(';') {
-            if !extension.eq_ignore_ascii_case(".cmd") && !extension.eq_ignore_ascii_case(".bat") {
+            if !explicit_batch
+                && !extension.eq_ignore_ascii_case(".cmd")
+                && !extension.eq_ignore_ascii_case(".bat")
+            {
                 continue;
             }
             let mut name = base.as_os_str().to_owned();
