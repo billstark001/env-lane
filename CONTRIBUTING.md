@@ -25,17 +25,23 @@ pnpm rust:check
 `pnpm check` is the release gate. It runs lint, type checking, all tests, a clean package build,
 published-entry checks, and built CLI child-process tests.
 
-`pnpm rust:check` adds rustfmt, Clippy, Cargo tests, and frozen 0.4.2 differential tests. The
+`pnpm rust:check` adds rustfmt, Clippy, Cargo tests, and curated frozen 0.4.2 differential tests. The
 standalone CLI is `cargo run --locked -p env-lane-cli -- <arguments>`. The Node binding is built
 with `pnpm --filter @env-lane/native build`. Keep `.rewrite/` implementation notes current even
 though that directory is ignored by Git. See [native migration](docs/native-migration.md) for
 the remaining release gates.
 
-Use `pnpm dev -- <arguments>` to run the local CLI through TypeScript:
+Use `pnpm dev -- <arguments>` to run the local Rust CLI:
 
 ~~~bash
 pnpm dev -- files . --build local
 ~~~
+
+The eight `@env-lane/native-*` and eight `@env-lane/vault-native-*` directories are generated
+from `scripts/native-targets.mjs` and staged release binaries. They are ignored by Git. Run
+`node scripts/compat/platform-packages.mjs` to verify package derivation and npm pack contents
+with synthetic binaries; the release workflow runs `node scripts/native-release.mjs prepare` with
+the real platform artifacts.
 
 ## Change boundaries
 
@@ -53,7 +59,7 @@ when responsibilities change independently or dependency direction becomes uncle
 ## Tests
 
 Add the narrowest useful regression first, then cover a real public entry when behavior depends on
-package exports, Commander registration, streams, process arguments, or built artifacts.
+package exports, the embedded Vault Commander adapter, streams, process arguments, or built artifacts.
 
 Do not copy production wiring into tests. Avoid shared global state where possible; restore
 `process.cwd()`, TTY stubs, environment variables, and temporary files in cleanup hooks.

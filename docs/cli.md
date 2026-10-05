@@ -14,10 +14,9 @@ cancels. `--prompt-loop` and `--no-prompt-loop` control wrapping. Use `--yes` wi
 prompts and diagnostics to stderr and structured results to stdout.
 
 The npm `env-lane` package installs the platform binary at its bin path. Installation uses Node
-to select the binary; invoking the command executes Rust directly. The installer records the
-optional `@env-lane/vault` peer state, preserving `VAULT_NOT_INSTALLED` and
-`VAULT_VERSION_UNSUPPORTED` for Vault commands. The old Commander presentation remains in source
-and compatibility tests while clean package-manager installations are validated.
+to select the binary; invoking the command executes Rust directly. Plugins are resolved from
+enabled root config registrations and their package `envLanePlugin` metadata. Vault uses the same
+resolver as other plugins.
 
 Install the executable package:
 
@@ -118,11 +117,11 @@ A missing template is always an error.
 Vault commands require `@env-lane/vault`:
 
 ~~~bash
-pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
+pnpm add -D env-lane@^0.5.0 @env-lane/vault@^0.5.0
 ~~~
 
-The CLI and Vault adapter must use a compatible release line. Env-lane 0.4.2 requires
-`@env-lane/vault ^0.4.2` and reports `VAULT_VERSION_UNSUPPORTED` for a forced incompatible peer.
+Enable Vault in the main configuration with `vault: { enabled: true }`. The package is read via
+its `envLanePlugin` manifest and its command parser runs inside the plugin process.
 
 | Command | Purpose |
 | --- | --- |
@@ -165,8 +164,5 @@ condition. Ordinary command errors return status 1.
 
 See [Vault](vault.md) for the full workflow and safety model.
 
-## Configured command aliases
-
-The former `cli.aliases` config feature was introduced in 0.3.0 and removed in 0.4.0. Use package
-scripts or a dedicated shell/Node script for parameterized command macros. Built-in `env-files`
-and `env-json` aliases remain available for `files` and `print`.
+Plugin command names are their root config field names. The `env-files` and `env-json` aliases
+were removed in 0.5.0; use `files` and `print`.

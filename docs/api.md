@@ -1,20 +1,18 @@
 # API and compatibility
 
-## Rust binding on the rewrite branch
+## 0.5.0 runtime
 
 Stable Core and Vault application calls now use `@env-lane/native` through thin ESM/CommonJS
 facades. The binding accepts JSON requests, returns value and diagnostic envelopes, and maps Rust
-error codes to `EnvLaneError`. The facades continue to provide c12 configuration loading,
-AsyncLocalStorage diagnostic context, public types, and the optional Commander Vault adapter.
-Deprecated exports remain in the package entries during the 0.4.x compatibility window.
+error codes to `EnvLaneError`. The facades retain JS/TS source evaluation, diagnostic context,
+public types, and callback orchestration. `@env-lane/vault/cli` is the standalone Commander adapter.
 
 Vault restore callbacks resolve decisions in JavaScript, then send explicit decisions to the Rust
 apply operation. Vault encrypt callbacks receive native candidates and a frozen dotenv snapshot;
 JavaScript collects their decisions under the operation lock, and Rust applies them. See
 [native migration status](native-migration.md).
 
-Version 0.4.0 establishes explicit package boundaries before a later intentionally breaking cleanup.
-New code should depend only on the stable entries below.
+The stable entries below remain supported in 0.5.0.
 
 ## Stable entry points
 
@@ -88,9 +86,8 @@ The optional Commander adapter has a stable dedicated entry:
 import { registerVaultCommands } from '@env-lane/vault/cli';
 ~~~
 
-`env-lane` and its optional Vault adapter must share a compatible CLI contract. Version 0.4.2
-requires `@env-lane/vault ^0.4.2` and validates `VAULT_CLI_API_VERSION` before registering Vault
-commands. A forced incompatible peer fails with `VAULT_VERSION_UNSUPPORTED`.
+The native `env-lane vault` command is provided by the plugin package metadata. The Commander
+adapter above is available only to programs that embed it; the native CLI does not load it.
 
 Library APIs are terminal-independent. Put diagnostics behind an explicit async context:
 
@@ -108,50 +105,30 @@ await withEnvLaneContext(
 );
 ~~~
 
-## Deprecated in 0.4.0
+## Migration from 0.4.2
 
-These exports remain available in 0.4.x only to give existing consumers a migration window.
-TypeScript declaration output includes `@deprecated` documentation.
-
-| Current compatibility export | Migration |
+| Removed in 0.5.0 | Use instead |
 | --- | --- |
-| Core root env-document types/functions, including transitively through `env-lane` | Import from `@env-lane/core/env-document`. |
-| `findWorkspaceRoot`, `loadConfigWithC12`, `readPnpmWorkspaceGlobs`, `LoadConfigOptionsWithC12` | Use `loadEnvLaneConfig` or own application-specific discovery; these are config adapter internals. |
-| `listEnvFilesForTarget`, `resolveBuildName` | Use `listEnvFiles` and pass the target/build through public options. |
-| `writeFileContentAtomically` | Keep file persistence in the consuming application; this is a Node adapter detail. |
-| `buildEnvSortPlan`, `EnvSortPlan`, `SortOperationAction` | Use `sortEnvFile` or `sortEnvFilesFromConfig`. |
-| `listWorkspacePackagesForConfig`, `resolveTargetPackageFromList` | Use `listWorkspacePackages` and `resolveTargetPackage`. |
-| Vault-root `registerVaultCommands` and `VaultCliContext` | Import from `@env-lane/vault/cli`. |
-| Vault-root crypto helpers | Do not depend on the encrypted record implementation as a key-management API. |
+| Core root env-document exports, including transitively through `env-lane` | `@env-lane/core/env-document` |
+| Core root config discovery helpers | `loadEnvLaneConfig` or application-owned discovery |
+| `listEnvFilesForTarget`, `resolveBuildName` | `listEnvFiles` with public options |
+| `writeFileContentAtomically` | Application-owned persistence |
+| `buildEnvSortPlan`, `EnvSortPlan`, `SortOperationAction` | `sortEnvFile` or `sortEnvFilesFromConfig` |
+| `listWorkspacePackagesForConfig`, `resolveTargetPackageFromList` | `listWorkspacePackages`, `resolveTargetPackage` |
+| Vault root `registerVaultCommands`, `VaultCliContext` | `@env-lane/vault/cli` |
+| Vault root crypto helpers | The Vault automation APIs; the crypto implementation is not a public key-management API |
+| `env-files`, `env-json` CLI aliases | `files`, `print` |
+| `plugins: []` manifest registration | Named root plugin fields with `enabled`, `configFile`, and `packageName` |
+| Vault exclude object/shorthand fields | `exclude: [{ files: [...], keys: [...] }]` |
 
-Vault crypto helpers currently include `encryptRecord`, `decryptRecord`, `deriveVaultKey`,
-`deriveVaultSyncKey`, `keyedDigest`, and `stableHash`.
+The first argument to `loadVaultConfig(configPath?, options?)` now always names a Vault config file. `options.vaultConfigFile` names it when the first argument is absent; passing both is an error. `vault.enabled` must be `true` for Vault commands and Node API calls. Vault can omit `packageName` because the built-in table supplies `@env-lane/vault`. Other plugin fields require it.
 
-## Planned breaking cleanup
+The Vault record store and sync-state formats are separate persisted-data contracts. v0/v1 record reads and legacy sync-state migration remain supported.
 
-The following cleanup belongs to a future intentionally breaking release, not 0.4.x. Its
-compatibility work is limited and explicit:
+## Plugin author API
 
-1. Remove the deprecated Core root exports listed above.
-2. Remove Vault-root CLI and crypto compatibility exports.
-
-Before that release, search consumer code for:
-
-~~~bash
-rg "from ['\"](@env-lane/core|@env-lane/vault)['\"]"
-~~~
-
-Then compare imported symbols with the table above. Imports from the `env-lane` convenience
-facade using the stable Core root API do not need to move.
-
-This cleanup does not imply a Vault record-format migration. Schema v1 uses portable
-Vault-config-relative paths; schema v0 record reads, absolute-path remapping, and legacy unkeyed
-sync-state rebasing are persisted-data compatibility paths and are not deprecated by the 0.4.0 API
-boundary work. Any future removal of persisted formats requires a separate migration plan and
-release note.
+Rust authors use `env-lane-plugin-api`; Node authors use `@env-lane/plugin-sdk`. Both use the same protocol version 1 and package `envLanePlugin` metadata. See [plugin packages and protocol](native-plugin-protocol.md).
 
 ## Published contract verification
 
-The release check builds and imports every stable entry in ESM and CommonJS, verifies declaration
-files, checks that feature entries do not leak unrelated APIs, and exercises the built CLI in child
-processes. Add new public entries to that contract test before publishing them.
+The build check imports every stable entry in ESM and CommonJS, verifies declarations and removed root exports, and exercises the native npm bin. Synthetic conformance covers a Rust Vault plugin and a JS plugin command/namespace. The frozen 0.4.2 oracle continues to guard stable Core and persisted Vault data behavior.

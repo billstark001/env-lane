@@ -40,8 +40,10 @@ pnpm add -D @env-lane/core
 Install Vault only when its library or CLI commands are needed:
 
 ~~~bash
-pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2 --allow-build=env-lane
+pnpm add -D env-lane@^0.5.0 @env-lane/vault@^0.5.0 --allow-build=env-lane
 ~~~
+
+Enable its plugin command in the main config with `"vault": { "enabled": true }`.
 
 ## Quick start
 

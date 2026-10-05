@@ -1,98 +1,85 @@
-# Native plugin protocol
+# Plugin packages and process protocol (0.5.0)
 
-Native plugins are separate executables. The host links `env-lane-plugin-api`, not the
-plugin's implementation or its dependencies. A plugin may link `env-lane-plugin-api` alone;
-Vault also links the domain crates it needs for its own work. The host starts a plugin only
-when an enabled capability is used. A native declarative config and a plain `run` therefore do
-not start Node or a plugin process.
+Core owns only its commands, the main configuration, package discovery, capability checks, and the process boundary. Vault is a plugin. A declarative Core command runs in Rust without starting Node or a plugin process. An enabled plugin starts only when a command, native API operation, or configured hook uses it.
 
-## Registration
+## Main configuration
 
-Put a JSON manifest beside the plugin executable:
+The reserved top-level fields are `selector`, `workspace`, `dotenv`, `output`, `sort`, `checks`, and `sync`. Every other field is a plugin registration. Invalid unknown fields fail validation.
 
 ```json
 {
-  "id": "example",
-  "executable": "./env-lane-plugin-example",
-  "capabilities": [
-    { "kind": "documentFilter" },
-    { "kind": "envSource" },
-    { "kind": "envGenerate" },
-    { "kind": "filePlan" },
-    { "kind": "command", "name": "example" }
-  ]
+  "vault": { "enabled": true, "configFile": "env-lane.vault.json" },
+  "example": {
+    "enabled": true,
+    "configFile": "env-lane.example.json",
+    "packageName": "@acme/env-lane-example"
+  }
 }
 ```
 
-Paths in a manifest are relative to its directory. Register it in the native main
-configuration:
+`enabled` is required and is a real gate. A disabled plugin is not resolved or started. Every nonbuilt-in plugin needs a nonempty `configFile` and `packageName`. Vault alone has table defaults: `@env-lane/vault` and `env-lane.vault`. `configFile` is relative to the project root. A plugin owns the schema of its own file. Its registration may enable `documentFilter`, `filterLookup`, `sourceKeys`, `generators`, `replaceFileValues`, and `settings`; the host validates those declared hook capabilities before use. The old `plugins: []` form is removed.
+
+## Package metadata
+
+The host finds `<packageName>/package.json` in the project's `node_modules` hierarchy. Standalone distributions put the same packages under `plugins/<packageName>/`. A test or custom distribution can set `ENV_LANE_PLUGIN_PACKAGE_ROOT` to a directory containing either layout. No package script is executed during discovery.
 
 ```json
 {
-  "plugins": [{
-    "manifest": "./example/plugin.json",
-    "documentFilter": true,
-    "filterLookup": ["FEATURE_FLAG"],
-    "sourceKeys": ["TOKEN"],
-    "generators": [{ "group": "paired", "keys": ["PAIR_A", "PAIR_B"] }],
-    "settings": { "profile": "development" }
-  }]
+  "name": "@acme/env-lane-example",
+  "version": "0.5.0",
+  "envLanePlugin": {
+    "protocolVersion": 1,
+    "id": "example",
+    "capabilities": [
+      { "kind": "command", "name": "example" },
+      { "kind": "nativeApi", "namespace": "example" }
+    ],
+    "entry": { "kind": "node", "path": "./plugin.mjs" }
+  }
 }
 ```
 
-The registration explicitly enables each hook; a manifest declaration alone does not run
-it. `sourceKeys`, generator keys, and filter lookups are finite allowlists. A source is
-queried only when its key is needed; a generator group is called once during resolution.
-Plugins can also expose a command, invoked as `env-lane example ...`. Vault remains the
-published `env-lane vault ...` command and is supplied by the optional
-`@env-lane/vault` package or a sibling native executable. Its Node package calls the same
-plugin executable through the existing Node API facade.
+A Rust plugin uses a native entry instead:
 
-## Process and wire boundary
+```json
+{
+  "kind": "native",
+  "platforms": {
+    "darwin-arm64": {
+      "package": "@acme/env-lane-example-darwin-arm64",
+      "path": "./plugin"
+    }
+  }
+}
+```
 
-The host binds a loopback socket and starts the executable with
-`ENV_LANE_PLUGIN_ADDRESS` and a random `ENV_LANE_PLUGIN_TOKEN`. The plugin connects and
-sends a hello containing the token, protocol version `1`, ID, and exact capabilities.
-The host verifies the hello against the manifest. Standard input, output, and error remain
-attached to the terminal, so interactive commands can prompt and print normally.
+The eight platform keys used by the release are `darwin-arm64`, `darwin-x64`, `linux-arm64-gnu`, `linux-arm64-musl`, `linux-x64-gnu`, `linux-x64-musl`, `win32-arm64-msvc`, and `win32-x64-msvc`. The native package should be an optional dependency of the main plugin package. Entry paths must resolve to files inside their packages. The protocol version, field/ID, and exact declared capabilities are checked before dispatch. Duplicate command names and native namespaces fail. A missing or malformed package uses `PLUGIN_*` errors. Unknown Node operations use `INVALID_NATIVE_OPERATION`.
 
-Each socket frame is a 4-byte little-endian length followed by a UTF-8 JSON object, at
-most 16 MiB. Requests and responses use JSON-RPC 2.0 fields (`jsonrpc`, `id`,
-`method`, `params`, `result`, `error`). The method payloads are typed Rust structs in
-`env-lane-plugin-api`; the codec is isolated behind its `Codec` trait. A future transport
-format can replace that implementation without changing capability handlers. The current
-client serializes typed parameters directly and the server borrows raw JSON parameters,
-avoiding an intermediate JSON value tree on the common request path.
+For npm/pnpm, install the plugin package and configure its root field. For a standalone archive, preserve `env-lane` and `plugins/` together. A JS plugin needs Node only when that plugin runs; a native plugin and declarative config do not.
 
-Methods are `command.invoke`, `native.invoke`, `document.filter`, `env.source`,
-`env.generate`, `file.plan`, and `plugin.shutdown`. A process lives for one host
-invocation and can answer multiple calls. An error keeps its code, message, and optional
-details. The host rejects an undeclared method, a mismatched handshake or response ID,
-an oversized frame, and invalid returned keys or line ranges.
+## Authoring
 
-## Resolution semantics
+Rust plugins depend on `env-lane-plugin-api` and implement `Handler`; call `process::serve(&manifest, &mut handler)`. The crate supplies typed messages, framing, handshake, and capability enforcement. The Vault implementation is a complete example in `crates/env-lane-plugin-vault/`.
 
-`document.filter` returns one-based inclusive line ranges to disable. The host masks the
-text while preserving line endings and line count, then parses it with the existing Rust
-dotenv parser. The plugin does not need to implement dotenv quoting or duplicate-key
-rules. The lookup input reveals only whether configured keys exist in earlier dotenv files,
-the process, or a registered source, never their values.
+A Node plugin depends on `@env-lane/plugin-sdk`:
 
-The host merges dotenv files in their configured order, then plugin source and generated
-values, then the process environment if enabled, and finally the build selector. By
-default a plugin fills missing file keys; `replaceFileValues` allows it to replace those
-keys. Process values and the selector retain their precedence. Plugins cannot provide the
-selector key. A returned value marked `sensitive` is redacted by `print` unless secrets
-are explicitly requested; `run` injects its actual value.
+```js
+import { servePlugin } from '@env-lane/plugin-sdk'
 
-`env.generate` receives a group and its requested keys together. This lets one invocation
-produce correlated values for several environment variables. `file.plan` is a planning
-capability: it returns patches for explicitly supplied files with expected SHA-256
-digests. The host validates the file allowlist, key/value syntax, duplicate patches,
-and digest syntax. No general CLI file-plan apply command is
-exposed yet; a future caller must recheck the digests and apply the reviewed plan.
+await servePlugin({
+  id: 'example',
+  capabilities: [{ kind: 'command', name: 'example' }],
+  async handle(method, params) {
+    if (method === 'command.invoke') return { exitCode: 0 }
+    throw new Error(`Unsupported method: ${method}`)
+  },
+})
+```
 
-Native config and native plugins need no Node runtime. Executable JS/TS config still
-uses the separately invoked compatibility compiler or runner. The published Node APIs
-retain their JavaScript facade and Node-API binding; Vault's native behavior now runs in
-the optional plugin process.
+The SDK launches through `node <entry path>` on Windows and Unix; a shebang is unnecessary. The package's `capabilities` must exactly match those passed to `servePlugin`. A command receives `arguments` (including its command name), common options, invocation cwd, project root, main config path, and plugin config path. The plugin parses its own options. `native.invoke` receives `{ operation, request }`; register a `nativeApi` namespace in the package metadata for this method. `createNativeClient` supplies a typed namespace caller for Node facades. `command.invoke`, `document.filter`, `env.source`, `env.generate`, and `file.plan` are capability guarded.
+
+## Wire format
+
+The host opens a loopback socket, starts the plugin with `ENV_LANE_PLUGIN_ADDRESS` and a random `ENV_LANE_PLUGIN_TOKEN`, and requires a hello containing that token, protocol version 1, ID, and exact capabilities. It then exchanges JSON-RPC 2.0 messages in frames with a four-byte little-endian length and at most 16 MiB of UTF-8 JSON. `plugin.shutdown` closes a successful session. Standard terminal streams are inherited for interactive commands. The [protocol schema](../crates/env-lane-plugin-api/schema/protocol.schema.json) and [package metadata schema](../crates/env-lane-plugin-api/schema/package.schema.json) are copied into the published npm SDK.
+
+For hooks, the host passes finite key allowlists and checks returned keys and line ranges. `document.filter` returns one-based inclusive ranges to mask before the Rust dotenv parser runs. `file.plan` only proposes patches; the host validates paths and digests, and an explicit caller must apply them. Sensitive values are redacted in `print` and injected in `run`.

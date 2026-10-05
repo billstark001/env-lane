@@ -9,8 +9,8 @@ implementation. The Node API's standard operations call the Rust binding. Intera
 decrypt selection uses redacted previews and requires a final confirmation before writing.
 
 Cross-language push/restore and CLI differential fixtures cover the implemented workflows. The
-npm bin on this branch installs the standalone native CLI; the Commander adapter remains for
-programmatic use and compatibility tests. Preserve backups and verify a restore plan before
+npm bin on this branch installs the standalone native CLI; the separate
+`@env-lane/vault/cli` Commander adapter remains for embedded integrations. Preserve backups and verify a restore plan before
 applying it in a real workspace.
 
 `@env-lane/vault` provides reversible encrypted dotenv record storage for development workflows.
@@ -24,11 +24,17 @@ production secrets.
 ## Install and configure
 
 ~~~bash
-pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
+pnpm add -D env-lane@^0.5.0 @env-lane/vault@^0.5.0
 ~~~
 
-Keep the optional CLI and Vault adapter on a compatible release line. Env-lane 0.4.2 declares
-`@env-lane/vault ^0.4.2` and validates the adapter API at runtime.
+Enable the plugin in the main `env-lane.config.*` file:
+
+~~~ts
+vault: { enabled: true, configFile: 'env-lane.vault' }
+~~~
+
+The CLI reads `@env-lane/vault` package metadata and starts its platform plugin executable only
+when Vault is invoked. Its `enabled` setting is an effective gate.
 
 The default file is `env-lane.vault`; TypeScript, JavaScript ESM/CJS, and JSON are supported.
 

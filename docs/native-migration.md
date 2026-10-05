@@ -1,69 +1,18 @@
-# Native rewrite migration and verification
+# Rust rewrite status (0.5.0)
 
-This branch is an implementation checkpoint against the frozen env-lane 0.4.2 contract. It is
-not a published release. Keep the existing 0.4.2 package as the rollback version until the
-platform package and package-manager installation gates have passed.
+The 0.5.0 branch uses a Rust CLI and Core engine, a Node-API binding for stable JS imports, and a process plugin boundary. The frozen 0.4.2 oracle remains a reference for stable Core behavior and Vault persisted data. The branch has not been published.
 
-## Configuration
+## Runtime paths
 
-The standalone Rust binary reads JSON, JSONC, JSON5, YAML, and TOML directly:
+- `env-lane` from npm runs the installed native binary. Its install script copies the platform binary to the npm bin path. Direct standalone binaries use the same native Core code. A standalone archive keeps its `plugins/` tree beside the executable.
+- JSON, JSONC, JSON5, YAML, and TOML main/Vault files are read and validated by Rust. They need no Node. JS/TS configuration uses `@env-lane/config-compat` to evaluate and cache source JSON; Rust performs schema validation. Dynamic sources need `env-lane-config run` for a fresh envelope.
+- The native CLI reads configured plugin package metadata. Vault is registered by `vault: { enabled: true }` and supplied by `@env-lane/vault`. The plugin process parses all Vault command options and owns its config schema. The host has no Vault command parser, peer check, or sibling-binary lookup.
+- Stable `@env-lane/core` and `@env-lane/vault` imports still use Node as their application runtime. Their business operations go through the native binding; Vault operations then use the same plugin package resolver and process protocol. `@env-lane/vault/cli` remains a separate, stable Commander adapter for embedding.
 
-~~~bash
-cargo run --locked -p env-lane-cli -- --cwd . packages
-~~~
+The old `plugins: []` registration, `env-files`/`env-json` command aliases, deprecated root exports, Vault config path guessing, and Vault exclude shorthand are removed. See [API migration](api.md) and [plugin protocol](native-plugin-protocol.md).
 
-An existing static TypeScript or JavaScript configuration can be compiled separately:
+## Verification
 
-~~~bash
-pnpm add -D @env-lane/config-compat
-pnpm exec env-lane-config compile --kind main --cwd .
-pnpm exec env-lane-config compile --kind vault --cwd .
-~~~
+`pnpm check` runs lint, TypeScript, synthetic Vitest coverage, package-entry smoke checks, and 0.5.0 plugin conformance. `pnpm rust:check` runs rustfmt, Clippy, Rust tests, and differential checks for the stable document, sort, Vault crypto/store/config contracts. The local npm layout test verifies package discovery and native Vault startup with no Node on `PATH`. Cross-platform release jobs build eight targets and package standalone archives with checksums. The 16 platform npm packages are generated from the target table and staged binaries during release; neither native nor Vault platform package directories are tracked.
 
-The resulting `.env-lane-cache/` envelope is reused while its source and local imports are
-unchanged. For a dynamic configuration, use `env-lane-config run --cwd . <command>`; this
-starts Node for each invocation. Neither route caches dotenv values or Vault keys; the envelope
-does contain the resolved configuration object. A declarative configuration is the simplest way
-to use the standalone binary without Node. The compiler accepts
-the existing Vault exclude aliases and shorthand, writing canonical `files`/`keys` arrays for
-Rust. Hand-written native configuration should use the canonical array form.
-
-## API and commands
-
-The public `env-lane`, `@env-lane/core`, and `@env-lane/vault` import names and ESM/CommonJS
-entries remain. Stable application operations call a Node-API Rust binding; JavaScript keeps
-configuration evaluation, diagnostics, Commander integration, types, and deprecated exports.
-The `@env-lane/core/env-document` facade also calls Rust for parsing, formatting, and patch
-planning while preserving its existing `Map` results and Node file-writing API.
-Vault restore callbacks are converted to decisions before native apply. Encrypt callbacks use a
-native candidate preview with frozen dotenv documents. JavaScript gathers callback decisions
-under the operation lock, then Rust applies those decisions to the frozen snapshot. A callback
-that edits a dotenv file cannot change the values committed by the current operation.
-The npm `env-lane` package installs the platform binary at its bin path; the source Commander
-entry remains for compatibility tests. Vault is an optional native plugin executable shipped by
-`@env-lane/vault`. The installer records the optional Vault peer state so native Vault commands
-keep the prior missing/version error codes. Under `node_modules`, the binary also checks the
-live peer manifest when Vault is installed later without rerunning the CLI install script.
-Native plugin registration and wire details are in
-[Native plugin protocol](native-plugin-protocol.md).
-On pnpm 12, approve this package's install script with
-`pnpm add -D env-lane --allow-build=env-lane` or an `allowBuilds: { env-lane: true }` entry in the
-consumer's `pnpm-workspace.yaml`. Installation without that approval is rejected by pnpm before
-the binary can be copied. The standalone binary requires no package-manager install script.
-
-## Verification and remaining release gates
-
-`pnpm check` exercises the JS tests, frozen fixtures, built package entries, and process
-checks. `pnpm rust:check` runs Rust lint/tests, cross-language differential suites, a POSIX Vault
-terminal test, and a simulated native npm installation. The
-release workflow builds eight native addon/CLI platform pairs, verifies package contents, and
-stages standalone release assets with a `SHA256SUMS` file.
-Cross-platform jobs, published platform-package installation across npm/pnpm/yarn, a new
-publishable version/tag, and downstream canaries still require
-validation. Disposable local npm/pnpm tarball installs exercised the direct bin using a local
-binary override; a separate simulation verified the optional Vault peer gates.
-No npm publication has occurred from this branch.
-
-The durable Vault record format remains schema v1 for new writes and supports v0/v1 reads.
-Therefore 0.4.2 can read native-written records; confirm this in a disposable copy before a
-real rollback. Do not place actual dotenv files, keys, or stores in fixtures or the cache.
+The Vault record format remains v1 for new writes and reads v0/v1. The 0.4.2 release remains the rollback package. Production dotenv values and keys are not used by these tests. The three downstream projects are inspected read-only; any writable canary belongs in a separate controlled environment.
