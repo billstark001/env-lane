@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -42,10 +42,30 @@ assert.equal(
 )
 const cli = path.join(
   root,
-  'packages/cli/dist',
+  'target/debug',
   process.platform === 'win32' ? 'env-lane.exe' : 'env-lane',
 )
-assert.ok(existsSync(cli), 'Native CLI missing from npm bin path')
+assert.ok(existsSync(cli), 'Native CLI missing')
+const packedBin = path.join(root, 'packages/cli/dist/env-lane')
+assert.ok(existsSync(packedBin), 'npm bin placeholder missing')
+const packedBinContent = readFileSync(packedBin, 'utf8')
+assert.ok(packedBinContent.length < 512)
+assert.match(packedBinContent, /native CLI was not installed/)
+const packed = spawnSync(
+  'npm',
+  ['pack', './packages/cli', '--dry-run', '--ignore-scripts', '--json'],
+  {
+    cwd: root,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  },
+)
+assert.equal(packed.status, 0, packed.stderr)
+const packedFiles = new Set(JSON.parse(packed.stdout)[0].files.map((file) => file.path))
+assert.ok(packedFiles.has('dist/env-lane'))
+assert.ok(packedFiles.has('dist/env-lane.cmd'))
+assert.ok(packedFiles.has('scripts/install-native.cjs'))
+assert.ok(!packedFiles.has('dist/env-lane.exe'))
 const version = spawnSync(cli, ['--version'], { encoding: 'utf8' })
 assert.equal(version.status, 0)
 assert.equal(version.stdout.trim(), metadata.version)

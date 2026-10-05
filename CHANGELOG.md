@@ -27,6 +27,9 @@ No changes yet.
   with GitHub OIDC trusted publishing, and attaches standalone archives and checksums to a GitHub
   release. Workspace packages are packed with pnpm and uploaded with npm so `workspace:*`
   dependencies become exact release versions without using a publish token.
+- The packed npm CLI now contains a failure stub until its install script selects the native
+  executable. Disabling install scripts fails explicitly instead of leaving the release runner's
+  binary at the command path.
 
 ### Changed
 
