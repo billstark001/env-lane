@@ -5,12 +5,13 @@ use env_lane_core::{
     document::{self, Patch, PatchOptions, TextDocument},
     error::{Error, Result},
     paths::resolve_path,
-    policy,
+    policy, redaction,
     resolve::{Context, Environment, Options},
-    sort, workspace,
+    sort, storage, variants, workspace,
 };
 use env_lane_plugin_api::{Capability, PluginError, package, process::Session};
 use napi_derive::napi;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -59,6 +60,19 @@ fn load_core(value: &Value) -> Result<LoadedConfig> {
 }
 fn core_document(operation: &str, value: &Value) -> Result<Value> {
     match operation {
+        "core.envDocument.loadFile" => {
+            let loaded = storage::load_document(Path::new(required(value, "filePath")?))?;
+            let parsed = loaded.parsed;
+            Ok(json!({
+                "exists": loaded.exists,
+                "document": parsed.document,
+                "parsedLines": parsed.parsed_lines,
+                "currentEntries": parsed.current_map.into_iter().collect::<Vec<_>>(),
+                "occurrenceEntries": parsed.occurrences_map.into_iter().collect::<Vec<_>>(),
+                "invalidLineCount": parsed.invalid_line_count,
+                "shadowedEntryCount": parsed.shadowed_entry_count,
+            }))
+        }
         "core.envDocument.create" => Ok(json!(TextDocument::parse(required(value, "content")?))),
         "core.envDocument.parseLine" => {
             Ok(json!(document::parse_line(required(value, "line")?, 1)))
@@ -110,7 +124,7 @@ fn core_document(operation: &str, value: &Value) -> Result<Value> {
         "core.envDocument.formatValue" => {
             Ok(json!(document::format_value(required(value, "value")?)?))
         }
-        "core.envDocument.patch" => {
+        "core.envDocument.patch" | "core.envDocument.patchFile" => {
             let patches: Vec<Patch> = serde_json::from_value(
                 value
                     .get("patches")
@@ -121,11 +135,19 @@ fn core_document(operation: &str, value: &Value) -> Result<Value> {
             let options: PatchOptions =
                 serde_json::from_value(value.get("options").cloned().unwrap_or_else(|| json!({})))
                     .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
-            Ok(json!(document::patch(
-                required(value, "content")?,
-                &patches,
-                &options,
-            )?))
+            if operation == "core.envDocument.patchFile" {
+                Ok(json!(storage::patch_file(
+                    Path::new(required(value, "filePath")?),
+                    &patches,
+                    &options,
+                )?))
+            } else {
+                Ok(json!(document::patch(
+                    required(value, "content")?,
+                    &patches,
+                    &options,
+                )?))
+            }
         }
         _ => Err(Error::new(
             "INVALID_NATIVE_OPERATION",
@@ -133,7 +155,121 @@ fn core_document(operation: &str, value: &Value) -> Result<Value> {
         )),
     }
 }
+
+#[derive(Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct RedactionRequestOptions {
+    show_secrets: Option<bool>,
+    redaction_text: Option<String>,
+    detect_values: Option<bool>,
+    min_redaction_length: Option<usize>,
+    min_entropy_length: Option<usize>,
+    entropy_threshold: Option<f64>,
+    min_character_classes: Option<usize>,
+    key_overrides: std::collections::HashMap<String, bool>,
+}
+
+fn redaction_options(value: &Value) -> Result<redaction::Options> {
+    let request: RedactionRequestOptions =
+        serde_json::from_value(value.get("options").cloned().unwrap_or_else(|| json!({})))
+            .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+    let mut options = redaction::Options::default();
+    if let Some(v) = request.show_secrets {
+        options.show_secrets = v;
+    }
+    if let Some(v) = request.redaction_text {
+        options.redaction_text = v;
+    }
+    if let Some(v) = request.detect_values {
+        options.detect_values = v;
+    }
+    if let Some(v) = request.min_redaction_length {
+        options.min_redaction_length = v;
+    }
+    if let Some(v) = request.min_entropy_length {
+        options.min_entropy_length = v;
+    }
+    if let Some(v) = request.entropy_threshold {
+        options.entropy_threshold = v;
+    }
+    if let Some(v) = request.min_character_classes {
+        options.min_character_classes = v;
+    }
+    options.key_overrides = request.key_overrides;
+    Ok(options)
+}
+
+fn core_redaction(operation: &str, value: &Value) -> Result<Value> {
+    let options = redaction_options(value)?;
+    let result = match operation {
+        "core.redaction.defaultMinRedactionLength" => {
+            json!(redaction::DEFAULT_MIN_REDACTION_LENGTH)
+        }
+        "core.redaction.inlineKeys" => {
+            json!(redaction::inline_assignment_keys(required(value, "value")?))
+        }
+        "core.redaction.isSecretLikeKey" => {
+            json!(redaction::is_secret_key(required(value, "key")?, &options))
+        }
+        "core.redaction.isSecretLikeValue" => json!(redaction::is_secret_value(
+            required(value, "value")?,
+            &options
+        )),
+        "core.redaction.isJwt" => json!(redaction::is_jwt(required(value, "value")?)),
+        "core.redaction.isPaseto" => json!(redaction::is_paseto(required(value, "value")?)),
+        "core.redaction.isHighEntropyString" => json!(redaction::is_high_entropy(
+            required(value, "value")?,
+            &options
+        )),
+        "core.redaction.shouldRedact" => json!(redaction::should_redact(
+            required(value, "key")?,
+            required(value, "value")?,
+            &options
+        )),
+        "core.redaction.redactValue" => json!(redaction::redact(
+            required(value, "key")?,
+            required(value, "value")?,
+            &options
+        )),
+        _ => {
+            return Err(Error::new(
+                "INVALID_NATIVE_OPERATION",
+                format!("Unknown operation: {operation}"),
+            ));
+        }
+    };
+    Ok(result)
+}
 fn core(operation: &str, value: &Value) -> Result<Value> {
+    if operation == "core.storage.writeFileAtomically" {
+        storage::write_atomically(
+            Path::new(required(value, "filePath")?),
+            required(value, "content")?,
+        )?;
+        return Ok(json!({"value":null,"diagnostics":[]}));
+    }
+    if operation == "core.storage.writeFile" {
+        return Ok(json!({"value":storage::write_if_changed(
+            Path::new(required(value, "filePath")?),
+            required(value, "content")?,
+        )?,"diagnostics":[]}));
+    }
+    if operation == "core.findWorkspaceRoot" {
+        let cwd = PathBuf::from(required(value, "cwd")?);
+        return Ok(json!({"value":env_lane_core::paths::find_root(&cwd),"diagnostics":[]}));
+    }
+    if operation == "core.normalizeEnvFileVariant" {
+        let normalized = variants::normalize_variant(
+            optional(value, "value"),
+            optional(value, "fallback").unwrap_or(""),
+            value
+                .get("allowAll")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            optional(value, "fieldName").unwrap_or("env file variant"),
+        )?;
+        return Ok(json!({"value":normalized,"diagnostics":[]}));
+    }
     if operation == "core.registeredPlugins" {
         let cwd = PathBuf::from(required(value, "cwd")?);
         let loaded = config::load(&cwd, path(value, "configFile", &cwd).as_deref())?;
@@ -157,6 +293,9 @@ fn core(operation: &str, value: &Value) -> Result<Value> {
     }
     if operation.starts_with("core.envDocument.") {
         return Ok(json!({"value":core_document(operation, value)?,"diagnostics":[]}));
+    }
+    if operation.starts_with("core.redaction.") {
+        return Ok(json!({"value":core_redaction(operation, value)?,"diagnostics":[]}));
     }
     if operation == "core.sortEnvFile" {
         let cwd = PathBuf::from(required(value, "cwd")?);

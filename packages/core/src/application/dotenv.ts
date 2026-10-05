@@ -1,8 +1,6 @@
 import { loadEnvLaneConfig } from '../adapters/config.js'
-import { emitDiagnostic } from '../adapters/logger.js'
 import { callNativeCore } from '../adapters/native.js'
 import { resolveInvocationCwd } from '../adapters/paths.js'
-import { EnvLaneError } from '../domain/errors.js'
 import type {
   EnvFileRef,
   ResolvedEnv,
@@ -10,36 +8,6 @@ import type {
   ResolveEnvOptions,
   WorkspacePackage,
 } from '../domain/types.js'
-
-export function resolveBuildName(
-  options: ResolveEnvOptions,
-  envKey: string,
-  defaultBuild: string,
-  validation: {
-    builds?: string[]
-    mode?: 'off' | 'warn' | 'error'
-  } = {},
-): string {
-  const raw = String(options.build ?? process.env[envKey] ?? defaultBuild).trim()
-  if (!raw) throw new EnvLaneError('INVALID_BUILD', 'Build name is empty.')
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(raw)) {
-    throw new EnvLaneError('INVALID_BUILD', `Invalid build name '${raw}'.`)
-  }
-  const builds = validation.builds ?? []
-  const mode = validation.mode ?? 'warn'
-  if (builds.length > 0 && !builds.includes(raw) && mode !== 'off') {
-    const message = `Build '${raw}' is not listed in selector.builds: ${builds.join(', ')}.`
-    if (mode === 'error') throw new EnvLaneError('UNLISTED_BUILD', message)
-    emitDiagnostic({
-      code: 'UNLISTED_BUILD',
-      level: 'warning',
-      scope: 'core',
-      message,
-      details: { build: raw, allowedBuilds: builds },
-    })
-  }
-  return raw
-}
 
 function nativeResolveRequest(options: ResolveEnvOptions, config: ResolvedEnvLaneConfig) {
   return {

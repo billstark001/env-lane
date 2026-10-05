@@ -7,6 +7,8 @@ use regex::Regex;
 use std::{collections::HashMap, sync::LazyLock};
 use url::Url;
 
+pub const DEFAULT_MIN_REDACTION_LENGTH: usize = 8;
+
 pub struct Options {
     pub show_secrets: bool,
     pub redaction_text: String,
@@ -17,6 +19,7 @@ pub struct Options {
     pub min_character_classes: usize,
     pub allow_keys: Vec<Regex>,
     pub deny_keys: Vec<Regex>,
+    pub key_overrides: HashMap<String, bool>,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -24,12 +27,13 @@ impl Default for Options {
             show_secrets: false,
             redaction_text: "<redacted>".into(),
             detect_values: true,
-            min_redaction_length: 8,
+            min_redaction_length: DEFAULT_MIN_REDACTION_LENGTH,
             min_entropy_length: 40,
             entropy_threshold: 4.0,
             min_character_classes: 3,
             allow_keys: Vec::new(),
             deny_keys: Vec::new(),
+            key_overrides: HashMap::new(),
         }
     }
 }
@@ -53,6 +57,9 @@ pub fn is_secret_key(key: &str, options: &Options) -> bool {
     let key = trim(key);
     if key.is_empty() {
         return false;
+    }
+    if let Some(value) = options.key_overrides.get(key) {
+        return *value;
     }
     if matches_any(&options.deny_keys, key) {
         return true;
@@ -212,6 +219,15 @@ fn has_inline_assignment(value: &str, options: &Options) -> bool {
     INLINE_KV_RE.captures_iter(value).any(|capture| {
         is_secret_key(&capture[1], options) || matches_any(&SECRET_VALUE_PATTERNS, &capture[2])
     })
+}
+
+/// Expose the parser's assignment keys so a JS API can resolve JavaScript
+/// RegExp allow/deny overrides before running the native value classifier.
+pub fn inline_assignment_keys(value: &str) -> Vec<String> {
+    INLINE_KV_RE
+        .captures_iter(value)
+        .map(|capture| capture[1].to_owned())
+        .collect()
 }
 
 fn is_safe_value(value: &str) -> bool {

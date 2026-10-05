@@ -1,16 +1,8 @@
 import { createHash } from 'node:crypto'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
+import native from '@env-lane/native'
 import { loadConfig } from 'c12'
-import { findUp } from 'find-up'
 
 export const CACHE_VERSION = 1
 export const BRIDGE_VERSION = JSON.parse(
@@ -48,45 +40,17 @@ function assertJson(value, at = '$', seen = new Set()) {
 }
 
 async function projectRoot(cwd) {
-  const marker = await findUp(['pnpm-workspace.yaml', 'package.json', '.git'], {
-    cwd,
-    type: 'file',
-  })
-  const [gitDirectory, gitFile] = await Promise.all([
-    findUp('.git', { cwd, type: 'directory' }),
-    findUp('.git', { cwd, type: 'file' }),
-  ])
-  const gitMarker = [gitDirectory, gitFile]
-    .filter(Boolean)
-    .sort((left, right) => right.length - left.length)[0]
-  const gitRoot = gitMarker ? path.dirname(gitMarker) : undefined
-  if (gitRoot) {
-    const relative = marker ? path.relative(path.dirname(marker), gitRoot) : undefined
-    if (
-      !marker ||
-      (relative !== undefined &&
-        relative !== '..' &&
-        !relative.startsWith(`..${path.sep}`) &&
-        !path.isAbsolute(relative))
-    ) {
-      return gitRoot
-    }
+  return invokeCore('core.findWorkspaceRoot', { cwd })
+}
+
+function invokeCore(operation, request) {
+  const response = JSON.parse(native.invoke(operation, JSON.stringify(request)))
+  if (!response.ok) {
+    const error = new Error(response.error?.message ?? 'Native operation failed.')
+    error.code = response.error?.code
+    throw error
   }
-  if (!marker) return cwd
-  const candidate = path.dirname(marker)
-  if (path.basename(marker) === 'package.json') {
-    const workspace = await findUp('pnpm-workspace.yaml', { cwd: candidate, type: 'file' })
-    if (!workspace) return candidate
-    const workspaceRoot = path.dirname(workspace)
-    if (gitRoot) {
-      const relative = path.relative(gitRoot, workspaceRoot)
-      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-        return candidate
-      }
-    }
-    return workspaceRoot
-  }
-  return candidate
+  return response.result.value
 }
 
 function localDependencyGraph(entry, packageName) {
@@ -203,15 +167,10 @@ function reusable(envelope, kind, source, root, graph) {
 }
 
 function atomicJson(file, value) {
-  mkdirSync(path.dirname(file), { recursive: true })
-  const temporary = `${file}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`
-  try {
-    writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
-    renameSync(temporary, file)
-  } catch (error) {
-    rmSync(temporary, { force: true })
-    throw error
-  }
+  invokeCore('core.storage.writeFile', {
+    filePath: file,
+    content: `${JSON.stringify(value, null, 2)}\n`,
+  })
 }
 
 export async function compileConfig({

@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { writeFileContentAtomically } from '../adapters/file-utils.js'
 import { callNativeCore } from '../adapters/native.js'
 
 export interface EnvTextDocument {
@@ -128,6 +126,10 @@ export function isEnvEntryLikeLine(line: EnvLine): line is EnvLine & {
 
 function parsedDocument(content: string, exists: boolean): LoadedEnvDocument {
   const parsed = callNativeCore<NativeParsedDocument>('core.envDocument.parse', { content })
+  return loadedDocument(parsed, exists)
+}
+
+function loadedDocument(parsed: NativeParsedDocument, exists: boolean): LoadedEnvDocument {
   return {
     exists,
     document: parsed.document,
@@ -146,8 +148,11 @@ export function parseEnvDocument(content: string): LoadedEnvDocument {
 
 /** Read an existing dotenv file, or return the shape of a missing empty file. */
 export function loadEnvDocument(filePath: string): LoadedEnvDocument {
-  const exists = existsSync(filePath)
-  return parsedDocument(exists ? readFileSync(filePath, 'utf8') : '', exists)
+  const loaded = callNativeCore<NativeParsedDocument & { exists: boolean }>(
+    'core.envDocument.loadFile',
+    { filePath },
+  )
+  return loadedDocument(loaded, loaded.exists)
 }
 
 /** Choose a dotenv spelling that preserves the supplied effective value. */
@@ -157,10 +162,12 @@ export function formatEnvValue(value: string): string {
 
 /** Write only when the destination's current UTF-8 content differs. */
 export function writeEnvDocumentContent(filePath: string, content: string): boolean {
-  const current = existsSync(filePath) ? readFileSync(filePath, 'utf8') : ''
-  if (current === content) return false
-  writeFileContentAtomically(filePath, content)
-  return true
+  return callNativeCore('core.storage.writeFile', { filePath, content })
+}
+
+/** Atomically replace content even when the bytes are unchanged. */
+export function writeEnvDocumentContentAtomically(filePath: string, content: string): void {
+  callNativeCore('core.storage.writeFileAtomically', { filePath, content })
 }
 
 export function writeEnvDocumentLines(
@@ -187,17 +194,16 @@ export function applyEnvDocumentPatches(
     eol?: 'auto' | 'lf' | 'crlf'
   } = {},
 ): EnvDocumentPatchResult {
-  const content = existsSync(filePath) ? readFileSync(filePath, 'utf8') : ''
   // Map keeps the first key position and the last requested operation, as the
   // established JS patch API does. Locale collation remains at this boundary.
   const desired = [...new Map([...patches].map((patch) => [patch.key, patch])).values()]
   if (options.sortAdditions) desired.sort((left, right) => left.key.localeCompare(right.key))
-  const result = callNativeCore<NativePatchResult>('core.envDocument.patch', {
-    content,
+  const result = callNativeCore<NativePatchResult>('core.envDocument.patchFile', {
+    filePath,
     patches: desired,
     options: { ...options, ignoredKeys: [...(options.ignoredKeys ?? [])] },
   })
-  const changed = result.changed && writeEnvDocumentContent(filePath, result.content)
+  const changed = result.changed
   if (!changed) {
     return {
       changed: false,

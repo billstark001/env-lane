@@ -1,3 +1,4 @@
+import { generateKeyPairSync, randomBytes } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -15,13 +16,17 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parse as parseDotenv } from 'dotenv'
 import { afterEach, describe, expect, it } from 'vitest'
-import { writeFileContentAtomically } from '../../src/adapters/file-utils.js'
 import { listEnvFilesForTarget } from '../../src/application/dotenv.js'
 import {
   listWorkspacePackagesForConfig,
   resolveTargetPackageFromList,
 } from '../../src/application/workspace.js'
-import { parseEnvDocument, parseEnvLine, setEnvDocumentValues } from '../../src/env-document.js'
+import {
+  parseEnvDocument,
+  parseEnvLine,
+  setEnvDocumentValues,
+  writeEnvDocumentContent,
+} from '../../src/env-document.js'
 import {
   checkDotenvSelector,
   type Diagnostic,
@@ -127,7 +132,7 @@ describe('@env-lane/core', () => {
     writeFileSync(filePath, 'before\n')
     if (process.platform !== 'win32') chmodSync(filePath, 0o640)
 
-    writeFileContentAtomically(filePath, 'after\n')
+    writeEnvDocumentContent(filePath, 'after\n')
 
     expect(readFileSync(filePath, 'utf8')).toBe('after\n')
     if (process.platform !== 'win32') expect(statSync(filePath).mode & 0o777).toBe(0o640)
@@ -144,7 +149,7 @@ describe('@env-lane/core', () => {
       writeFileSync(targetPath, 'before\n')
       symlinkSync(targetPath, linkPath)
 
-      writeFileContentAtomically(linkPath, 'after\n')
+      writeEnvDocumentContent(linkPath, 'after\n')
 
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(true)
       expect(readFileSync(targetPath, 'utf8')).toBe('after\n')
@@ -1158,6 +1163,21 @@ describe('@env-lane/core', () => {
       }
       expect(isSecretLikeKey('PUBLIC_KEY', { denyListKeys: [/^PUBLIC_KEY$/] })).toBe(true)
       expect(isSecretLikeKey('PASSWORD', { allowListKeys: [/^PASSWORD$/] })).toBe(false)
+      expect(isSecretLikeKey('PUBLIC_KEY', { denyListKeys: [/^(?!SECRET).*KEY$/] })).toBe(true)
+      expect(isSecretLikeKey('PASSWORD', { allowListKeys: [/^(PASS)WORD$/g] })).toBe(false)
+      expect(
+        isSecretLikeValue('CUSTOM_KEY=12345678', {
+          denyListKeys: [/^(?!SECRET)CUSTOM_KEY$/],
+        }),
+      ).toBe(true)
+      expect(
+        isSecretLikeValue('PASSWORD=abcdefgh', {
+          allowListKeys: [/^(PASS)WORD$/g],
+        }),
+      ).toBe(false)
+      expect(redactValue('PUBLIC_KEY', '12345678', { denyListKeys: [/^(?!SECRET).*KEY$/] })).toBe(
+        '<redacted>',
+      )
       for (const value of [
         'https://example.test/public',
         '1234567890123456789012345678901234567890',
@@ -1184,6 +1204,21 @@ describe('@env-lane/core', () => {
       expect(isPaseto(SYNTHETIC_CREDENTIALS.paseto.public)).toBe(true)
       expect(isJwt('one.two.three')).toBe(false)
       expect(isPaseto('v4.public.too-short')).toBe(false)
+    })
+
+    it('redacts disposable cryptographic material without revealing it in test output', () => {
+      const { privateKey, publicKey } = generateKeyPairSync('ed25519', {
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+      })
+      const opaque = randomBytes(48).toString('base64url')
+      const providerToken = `ghp_${randomBytes(32).toString('base64url')}`
+      expect(isSecretLikeValue(privateKey)).toBe(true)
+      expect(isSecretLikeValue(publicKey)).toBe(false)
+      expect(isSecretLikeValue(opaque)).toBe(true)
+      expect(isSecretLikeValue(providerToken)).toBe(true)
+      expect(redactValue('safe', privateKey)).toBe('<redacted>')
+      expect(redactValue('PUBLIC_KEY', publicKey)).toBe(publicKey)
     })
 
     it('supports stricter high-entropy classification for partial previews', () => {

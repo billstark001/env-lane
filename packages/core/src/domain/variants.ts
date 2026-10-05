@@ -1,4 +1,4 @@
-import { EnvLaneError } from './errors.js'
+import { callNativeCore } from '../adapters/native.js'
 
 export const DEFAULT_ENV_FILE_VARIANT = ''
 export const ALL_ENV_FILE_VARIANTS = 'all'
@@ -9,17 +9,12 @@ export function normalizeEnvFileVariant(
   value: string | undefined,
   options: { allowAll?: boolean; fallback?: string; fieldName?: string } = {},
 ): EnvFileVariant {
-  const fallback = options.fallback ?? DEFAULT_ENV_FILE_VARIANT
-  const normalized = String(value ?? fallback).trim()
-  if (!normalized) return fallback
-  if (options.allowAll && normalized === ALL_ENV_FILE_VARIANTS) return ALL_ENV_FILE_VARIANTS
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(normalized)) {
-    throw new EnvLaneError(
-      'INVALID_ENV_VARIANT',
-      `Invalid ${options.fieldName ?? 'env file variant'} '${value}'. Use values like production, staging, or default.`,
-    )
-  }
-  return normalized
+  return callNativeCore<EnvFileVariant>('core.normalizeEnvFileVariant', {
+    value,
+    fallback: options.fallback ?? DEFAULT_ENV_FILE_VARIANT,
+    allowAll: options.allowAll,
+    fieldName: options.fieldName,
+  })
 }
 
 export function formatEnvFileVariant(variant: EnvFileVariant): string {

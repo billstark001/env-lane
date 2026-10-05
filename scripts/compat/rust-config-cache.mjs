@@ -42,7 +42,7 @@ assert.deepEqual(
     '--cwd',
     '/tmp',
   ]),
-  { operation: 'vault', vaultConfig: 'custom.vault.ts', cwd: '/tmp' },
+  { operation: 'vault', cwd: '/tmp' },
 )
 assert.deepEqual(inspectRunnerArguments(['-cenv-lane.config.ts', 'packages']), {
   operation: 'packages',
@@ -112,6 +112,14 @@ try {
   cpSync(path.join(workspace, 'compat/fixtures/topologies/moment-landing'), temporary, {
     recursive: true,
   })
+  const mainSource = path.join(temporary, 'env-lane.config.ts')
+  writeFileSync(
+    mainSource,
+    readFileSync(mainSource, 'utf8').replace(
+      'export default {',
+      'export default { vault: { enabled: true },',
+    ),
+  )
   const before = packages()
   assert.equal(before.status, 1)
   assert.equal(before.output.error.code, 'CONFIG_COMPILATION_REQUIRED')
@@ -128,7 +136,7 @@ try {
     vaultSource,
     readFileSync(vaultSource, 'utf8').replace(
       '  disableUnsafeWarning: true,',
-      "  exclude: { '.env': 'SECRET*' },\n  disableUnsafeWarning: true,",
+      "  exclude: [{ files: ['.env'], keys: ['SECRET*'] }],\n  disableUnsafeWarning: true,",
     ),
   )
   const vault = compile('vault', 'env-lane.vault.ts')
@@ -141,6 +149,7 @@ try {
       vaultConfig: 'env-lane.vault.ts',
     },
   ])
+  assert.ok(!('error' in vaultConfig), `${vaultConfig.error}: ${vaultConfig.message}`)
   assert.equal(vaultConfig.envFiles.length, 4)
   assert.equal(vaultConfig.restore.redaction, 'partial')
   assert.deepEqual(vaultConfig.exclude, [{ files: ['.env'], keys: ['SECRET*'] }])

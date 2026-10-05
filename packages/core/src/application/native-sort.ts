@@ -4,7 +4,21 @@ import { loadEnvLaneConfig } from '../adapters/config.js'
 import { callNativeCore } from '../adapters/native.js'
 import { resolveInvocationCwd } from '../adapters/paths.js'
 import { EnvLaneError } from '../domain/errors.js'
-import type { EnvSortPlan } from './sort.js'
+
+type SortOperationAction =
+  | 'move'
+  | 'insert-commented'
+  | 'append-extra'
+  | 'append-duplicate'
+  | 'group-duplicate'
+
+interface SortSummary {
+  movedCount: number
+  insertedCommentedCount: number
+  appendedExtraCount: number
+  appendedDuplicateCount: number
+  groupedDuplicateCount: number
+}
 
 interface SortFileOptions {
   cwd?: string
@@ -17,12 +31,12 @@ interface SortFileOptions {
 
 type SortConfigOptions = Omit<SortFileOptions, 'unlistedVariablesComment'>
 
-export type SortFileResult = EnvSortPlan['summary'] & {
+export type SortFileResult = SortSummary & {
   applied: boolean
   changed: boolean
   filePath: string
   templateFilePath: string
-  operations: EnvSortPlan['operations']
+  operations: Array<{ action: SortOperationAction; key: string }>
 }
 
 export interface ConfiguredSortResult {
