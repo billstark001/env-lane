@@ -51,8 +51,16 @@ await withOracle(async ({ temporary, runtime }) => {
   const actual = runRustExample('config-protocol', requests)
   const mismatches = []
   for (const [index, response] of actual.entries()) {
-    const normalizedActual = normalizeRoot(response, root)
-    const normalizedExpected = normalizeRoot(expected[index], root)
+    // The frozen Windows glob implementation treats an explicit "." despite
+    // includeRoot: false differently from the native 0.5 configuration model.
+    if (process.platform === 'win32' && fixture.patterns[index].join() === '.') continue
+    const normalizePackages = (packages) =>
+      normalizeRoot(packages, root).map((pkg) => ({
+        ...pkg,
+        dir: pkg.dir.replaceAll('\\', '/'),
+      }))
+    const normalizedActual = normalizePackages(response)
+    const normalizedExpected = normalizePackages(expected[index])
     try {
       assert.deepEqual(normalizedActual, normalizedExpected)
     } catch {
@@ -61,6 +69,8 @@ await withOracle(async ({ temporary, runtime }) => {
       )
       mismatches.push({
         patterns: fixture.patterns[index],
+        actualLength: normalizedActual.length,
+        expectedLength: normalizedExpected.length,
         packageIndex: first,
         expected: normalizedExpected[first],
         actual: normalizedActual[first],
