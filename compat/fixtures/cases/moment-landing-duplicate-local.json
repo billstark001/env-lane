@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "id": "moment-landing-duplicate-local",
+  "area": "core-api",
+  "owner": "rust-core",
+  "topology": "moment-landing",
+  "environment": {
+    "unset": [
+      "LANE"
+    ]
+  },
+  "normalization": {
+    "root": true,
+    "pathSeparators": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "argv": [
+        "files",
+        "landing",
+        "--build",
+        "local",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--json"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "[\n  {\n    \"kind\": \"base\",\n    \"path\": \"$ROOT/.env\",\n    \"relativePath\": \".env\",\n    \"exists\": true,\n    \"required\": false,\n    \"order\": 0\n  },\n  {\n    \"kind\": \"override\",\n    \"path\": \"$ROOT/.env\",\n    \"relativePath\": \".env\",\n    \"exists\": true,\n    \"required\": false,\n    \"order\": 1\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.files",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "target": "landing",
+        "build": "local"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "[\n  {\n    \"kind\": \"base\",\n    \"path\": \"$ROOT/.env\",\n    \"relativePath\": \".env\",\n    \"exists\": true,\n    \"required\": false,\n    \"order\": 0\n  },\n  {\n    \"kind\": \"override\",\n    \"path\": \"$ROOT/.env\",\n    \"relativePath\": \".env\",\n    \"exists\": true,\n    \"required\": false,\n    \"order\": 1\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.resolve",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "target": "landing",
+        "build": "local"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"rootDir\": \"$ROOT\",\n  \"target\": {\n    \"name\": \"synthetic-landing\",\n    \"dir\": \"$ROOT\",\n    \"relativeDir\": \".\",\n    \"aliases\": [\n      \"root\",\n      \".\",\n      \"synthetic-landing\",\n      \"landing\"\n    ],\n    \"isRoot\": true\n  },\n  \"build\": \"local\",\n  \"selectorKey\": \"LANE\",\n  \"files\": [\n    {\n      \"kind\": \"base\",\n      \"path\": \"$ROOT/.env\",\n      \"relativePath\": \".env\",\n      \"exists\": true,\n      \"required\": false,\n      \"order\": 0\n    },\n    {\n      \"kind\": \"override\",\n      \"path\": \"$ROOT/.env\",\n      \"relativePath\": \".env\",\n      \"exists\": true,\n      \"required\": false,\n      \"order\": 1\n    }\n  ],\n  \"values\": {\n    \"PUBLIC_ORIGIN\": \"https://landing.example.invalid\",\n    \"SHARED\": \"local-root\",\n    \"SECRET_TOKEN\": \"synthetic-secret-value\",\n    \"LANE\": \"local\"\n  },\n  \"sources\": {\n    \"PUBLIC_ORIGIN\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/.env\",\n      \"relativeFile\": \".env\",\n      \"line\": 1\n    },\n    \"SHARED\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/.env\",\n      \"relativeFile\": \".env\",\n      \"line\": 2\n    },\n    \"SECRET_TOKEN\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/.env\",\n      \"relativeFile\": \".env\",\n      \"line\": 3\n    },\n    \"LANE\": {\n      \"source\": \"selector\",\n      \"shellOverride\": false\n    }\n  }\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "print",
+        "landing",
+        "--build",
+        "production",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--no-process-env",
+        "--format",
+        "dotenv"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "LANE=production\nPUBLIC_ORIGIN=https://www.example.invalid\nSECRET_TOKEN=<redacted>\nSHARED=production-root\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "check",
+        "--target",
+        "all",
+        "--build",
+        "local",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--json"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"ok\": true,\n  \"selectorKey\": \"LANE\",\n  \"violations\": [],\n  \"missingRequired\": []\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "files",
+        "landing",
+        "--build",
+        "staging",
+        "--cwd",
+        ".",
+        "--config",
+        "env-lane.config.json",
+        "--json"
+      ],
+      "expected": {
+        "status": 1,
+        "stdout": "{\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"UNLISTED_BUILD\",\n    \"message\": \"Build 'staging' is not listed in selector.builds: local, production.\"\n  }\n}\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "expectedFiles": {}
+}

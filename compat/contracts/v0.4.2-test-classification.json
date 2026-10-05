@@ -1,0 +1,1386 @@
+{
+  "schemaVersion": 1,
+  "baseline": "env-lane@0.4.2",
+  "total": 229,
+  "counts": {
+    "public-contract": 62,
+    "internal-implementation": 34,
+    "safety-regression": 133
+  },
+  "tests": [
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 1,
+      "fullName": "CLI context & commands normalizes merged cwd to an absolute invocation context",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 2,
+      "fullName": "CLI context & commands keeps payloads on stdout and structured diagnostics on stderr",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 3,
+      "fullName": "CLI context & commands throws on invalid format",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 4,
+      "fullName": "CLI context & commands preserves root --no-prefix when the subcommand has an implicit default",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 5,
+      "fullName": "CLI context & commands includes EnvLaneError details in JSON errors",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 6,
+      "fullName": "CLI context & commands runs packages command",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 7,
+      "fullName": "CLI context & commands runs resolve-target command",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 8,
+      "fullName": "CLI context & commands runs files command",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 9,
+      "fullName": "CLI context & commands runs print command",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 10,
+      "fullName": "CLI context & commands renders dotenv output that preserves escaped control characters",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 11,
+      "fullName": "CLI context & commands reads bootstrap options without consuming run child options",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 12,
+      "fullName": "CLI context & commands runs check command with validations and outputs",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 13,
+      "fullName": "CLI context & commands runs sync command",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 14,
+      "fullName": "CLI context & commands redacts sync mapping values in JSON unless --show-secrets is explicit",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 15,
+      "fullName": "CLI context & commands resolves relative Vault config, key, and store paths from --cwd",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 16,
+      "fullName": "CLI context & commands defaults missing Vault files to approved deletes and supports both opt-outs",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 17,
+      "fullName": "CLI context & commands passes conflicting child options through 'with an explicit -- boundary'",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 18,
+      "fullName": "CLI context & commands passes conflicting child options through 'from the child executable without --'",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 19,
+      "fullName": "CLI context & commands resolves a relative run cwd from --cwd",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 20,
+      "fullName": "CLI context & commands supports redacted Vault approval files and non-interactive partial apply",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/cli/test/presentation/cli.test.ts",
+      "ordinal": 21,
+      "fullName": "CLI context & commands runs sort commands",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 1,
+      "fullName": "@env-lane/core atomically replaces file content without leaving temporary files",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 2,
+      "fullName": "@env-lane/core atomically updates a symbolic-link target without replacing the link",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 3,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for KEY=value",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 4,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for KEY = value # trailing comment",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 5,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for KEY: value",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 6,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for export dotted.key: dotted-value",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 7,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for DASH-KEY=`value # in backticks` # trailing comment",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 8,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for SINGLE=' value # preserved '",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 9,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for DOUBLE=\"line\\nvalue # preserved\"",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 10,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for ESCAPED=\"quote \\\" and # value\" # trailing comment",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 11,
+      "fullName": "@env-lane/core dotenv line AST matches dotenv effective values for EMPTY= # trailing comment",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 12,
+      "fullName": "@env-lane/core dotenv line AST parses commented assignments without activating them",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 13,
+      "fullName": "@env-lane/core dotenv line AST rejects syntax that dotenv does not parse",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 14,
+      "fullName": "@env-lane/core dotenv line AST treats quotes as syntax only when they begin the value token",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 15,
+      "fullName": "@env-lane/core dotenv line AST uses document-level dotenv semantics for duplicates and multiline values",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 16,
+      "fullName": "@env-lane/core dotenv line AST preserves inline comments and activates a matching commented assignment",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 17,
+      "fullName": "@env-lane/core dotenv line AST replaces a multiline assignment without leaving continuation lines behind",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 18,
+      "fullName": "@env-lane/core uses the shared effective-value model across runtime, checks, sync, and sort",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 19,
+      "fullName": "@env-lane/core discovers workspace packages and aliases",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 20,
+      "fullName": "@env-lane/core falls back to root when there are no subpackages",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 21,
+      "fullName": "@env-lane/core rejects ambiguous workspace target aliases",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 22,
+      "fullName": "@env-lane/core lists files and resolves injected env in order",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 23,
+      "fullName": "@env-lane/core validates configured selector builds when strict mode is enabled",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 24,
+      "fullName": "@env-lane/core maps the local build to localOverrideFile for any build pattern",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 25,
+      "fullName": "@env-lane/core reports selector violations with target filtering and line numbers",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 26,
+      "fullName": "@env-lane/core reports missing override files during selector checks when required",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 27,
+      "fullName": "@env-lane/core sorts env file using template order",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 28,
+      "fullName": "@env-lane/core sorts env files while preserving comments, bom, newline style, and extras",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 29,
+      "fullName": "@env-lane/core labels variables missing from the template with a configured multiline comment",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 30,
+      "fullName": "@env-lane/core sorts env files from env-lane ts config sort section",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 31,
+      "fullName": "@env-lane/core sorts env files from env-lane mjs config sort section",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 32,
+      "fullName": "@env-lane/core sorts env files from env-lane cjs config sort section",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 33,
+      "fullName": "@env-lane/core sorts env files from env-lane js config sort section",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 34,
+      "fullName": "@env-lane/core sorts env files from env-lane json config sort section",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 35,
+      "fullName": "@env-lane/core infers sort targets from workspace packages and builds",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 36,
+      "fullName": "@env-lane/core fills missing file/template defaults in manual sort config",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 37,
+      "fullName": "@env-lane/core runs configured env checks and sync mappings",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 38,
+      "fullName": "@env-lane/core skips non-existent files when create is false in sort options",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 39,
+      "fullName": "@env-lane/core checks sort drift without changing or creating files",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 40,
+      "fullName": "@env-lane/core reports aggregate config sort drift in check mode without writing",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 41,
+      "fullName": "@env-lane/core deduplicates jobs to avoid sorting the same file multiple times",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 42,
+      "fullName": "@env-lane/core correctly deduplicates root package even if matched by workspace globs",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 43,
+      "fullName": "@env-lane/core resolves target from cwd when no target is specified",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 44,
+      "fullName": "@env-lane/core resolves an explicit relative config file from cwd",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 45,
+      "fullName": "@env-lane/core implicitly resolves and sorts env files from default config file",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 46,
+      "fullName": "@env-lane/core unhappy paths throws when build name is empty or invalid",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 47,
+      "fullName": "@env-lane/core unhappy paths warns when build name validation mode is warn and not listed",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 48,
+      "fullName": "@env-lane/core unhappy paths throws when target package resolution fails",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 49,
+      "fullName": "@env-lane/core unhappy paths throws when required dotenv file is missing",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 50,
+      "fullName": "@env-lane/core unhappy paths throws when selector key is present in dotenv file",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 51,
+      "fullName": "@env-lane/core unhappy paths sets env values and removes duplicate entries using setEnvDocumentValues",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 52,
+      "fullName": "@env-lane/core unhappy paths throws on invalid env file variant syntax during sync",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 53,
+      "fullName": "@env-lane/core unhappy paths throws when sort config or template does not exist",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 54,
+      "fullName": "@env-lane/core unhappy paths throws on unknown sort key selector",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 55,
+      "fullName": "@env-lane/core unhappy paths throws when sort files uses reserved word default",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 56,
+      "fullName": "@env-lane/core unhappy paths throws on unknown env check or sync names",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 57,
+      "fullName": "@env-lane/core unhappy paths throws when sync target has neither target nor file",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 58,
+      "fullName": "@env-lane/core normalizeEnvFileVariant without legacy alias mappings returns valid variants directly including default",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 59,
+      "fullName": "@env-lane/core normalizeEnvFileVariant without legacy alias mappings throws on invalid variant names containing dots or slashes",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 60,
+      "fullName": "@env-lane/core BOM and EOL configuration feature applies preserveBOM and eol configurations when patching documents",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 61,
+      "fullName": "@env-lane/core audited safety boundaries recognizes closing quotes preceded by an even number of backslashes",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 62,
+      "fullName": "@env-lane/core audited safety boundaries preserves whitespace when a sync mapping has no transform",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 63,
+      "fullName": "@env-lane/core audited safety boundaries uses the already loaded custom config for target-backed sources",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 64,
+      "fullName": "@env-lane/core audited safety boundaries emits one build diagnostic per environment resolution",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 65,
+      "fullName": "@env-lane/core audited safety boundaries directly redacts secret keys, secret values, and nested objects",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 66,
+      "fullName": "@env-lane/core audited safety boundaries never redacts values below the configurable minimum length",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 67,
+      "fullName": "@env-lane/core audited safety boundaries covers redaction key allowlists and denylists",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 68,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'OpenAI project API key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 69,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'OpenAI service-account API key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 70,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Supabase secret key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 71,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Supabase service-role JWT' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 72,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Supabase anon JWT' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 73,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Upstash REST token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 74,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Upstash REST query token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 75,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Upstash ACL REST token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 76,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Upstash Redis URL' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 77,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Ethereum private key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 78,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Ethereum mnemonic' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 79,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Cloudflare user token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 80,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'GitHub personal access token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 81,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Stripe live secret key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 82,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Anthropic API key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 83,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'PASETO local token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 84,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'PASETO public token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 85,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Bearer authorization value' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 86,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'inline client-secret assignment' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 87,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'Ed25519 private key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 88,
+      "fullName": "@env-lane/core audited safety boundaries redacts the locally generated 'unlabeled high-entropy value' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 89,
+      "fullName": "@env-lane/core audited safety boundaries recognizes JWT and PASETO independently of their provider",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 90,
+      "fullName": "@env-lane/core audited safety boundaries supports stricter high-entropy classification for partial previews",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 91,
+      "fullName": "@env-lane/core audited safety boundaries preserves the locally generated/public 'Supabase publishable key' fixture",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 92,
+      "fullName": "@env-lane/core audited safety boundaries preserves the locally generated/public 'Supabase project URL' fixture",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 93,
+      "fullName": "@env-lane/core audited safety boundaries preserves the locally generated/public 'Upstash REST URL' fixture",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 94,
+      "fullName": "@env-lane/core audited safety boundaries preserves the locally generated/public 'Ethereum address' fixture",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 95,
+      "fullName": "@env-lane/core audited safety boundaries preserves the locally generated/public 'Ed25519 public key' fixture",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 96,
+      "fullName": "@env-lane/core audited safety boundaries preserves the locally generated/public 'OAuth provider list' fixture",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 97,
+      "fullName": "@env-lane/core audited safety boundaries honors redaction options across records, values, arrays, and circular objects",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/core/test/application/core.test.ts",
+      "ordinal": 98,
+      "fullName": "@env-lane/core audited safety boundaries rejects sources that specify both target and file",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/adapters/record-path.test.ts",
+      "ordinal": 1,
+      "fullName": "Vault record paths stores the same portable config-relative path on POSIX and Windows",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/adapters/record-path.test.ts",
+      "ordinal": 2,
+      "fullName": "Vault record paths resolves a macOS-produced record path in a Windows checkout",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/adapters/record-path.test.ts",
+      "ordinal": 3,
+      "fullName": "Vault record paths rejects absolute or platform-specific version 1 record paths",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/push.test.ts",
+      "ordinal": 1,
+      "fullName": "@env-lane/vault push previews a first push without creating a store, sync state, or output directories",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/push.test.ts",
+      "ordinal": 2,
+      "fullName": "@env-lane/vault push does not modify an existing store or sync state during dry-run",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/push.test.ts",
+      "ordinal": 3,
+      "fullName": "@env-lane/vault push treats a missing managed file exactly like an empty file without changing file existence",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/push.test.ts",
+      "ordinal": 4,
+      "fullName": "@env-lane/vault push can explicitly skip a missing managed file",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/push.test.ts",
+      "ordinal": 5,
+      "fullName": "@env-lane/vault push shares dotenv effective-value semantics and preserves local inline comments",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/push.test.ts",
+      "ordinal": 6,
+      "fullName": "@env-lane/vault push does not partially append records when conflict resolution aborts",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 1,
+      "fullName": "@env-lane/vault restore restores dotenv files without rewriting unmanaged content",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 2,
+      "fullName": "@env-lane/vault restore restores version 1 records in another checkout without absolute-path remapping",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 3,
+      "fullName": "@env-lane/vault restore builds redacted plans and applies only explicitly selected entries",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 4,
+      "fullName": "@env-lane/vault restore applies delete entries by default and preserves the resulting empty file",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 5,
+      "fullName": "@env-lane/vault restore uses configured partial and unredacted restore previews",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 6,
+      "fullName": "@env-lane/vault restore rejects stale approval plans before writing any file",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 7,
+      "fullName": "@env-lane/vault restore rejects incomplete approval documents",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 8,
+      "fullName": "@env-lane/vault restore New Features: autoRemapPaths and allowUnmanaged behaves correctly under autoRemapPaths and allowUnmanaged controls",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 9,
+      "fullName": "@env-lane/vault restore rejects an approval that removes both a plan entry and its decision",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/restore.test.ts",
+      "ordinal": 10,
+      "fullName": "@env-lane/vault restore fails closed when an explicit decision map misses a current entry",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 1,
+      "fullName": "@env-lane/vault storage keeps stale-looking locks owned by live processes and removes abandoned locks",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 2,
+      "fullName": "@env-lane/vault storage does not remove a lock file whose ownership token changed",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 3,
+      "fullName": "@env-lane/vault storage reads unversioned vault records as version 0 raw values",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 4,
+      "fullName": "@env-lane/vault storage loads object-style exclude rules, de-dupes env files, and rejects store overlap",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 5,
+      "fullName": "@env-lane/vault storage loads vault ts config files",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 6,
+      "fullName": "@env-lane/vault storage loads vault mjs config files",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 7,
+      "fullName": "@env-lane/vault storage loads vault cjs config files",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 8,
+      "fullName": "@env-lane/vault storage loads vault js config files",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 9,
+      "fullName": "@env-lane/vault storage loads vault json config files",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 10,
+      "fullName": "@env-lane/vault storage rejects unsafe restore reveal override ranges",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 11,
+      "fullName": "@env-lane/vault storage fails closed until excluded historical records are sanitized",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 12,
+      "fullName": "@env-lane/vault storage fails closed on unreadable vault records unless explicitly ignored",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 13,
+      "fullName": "@env-lane/vault storage prunes vault history by recent count and age while preserving latest records",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 14,
+      "fullName": "@env-lane/vault storage implicitly resolves vault config from main config or default location",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 15,
+      "fullName": "@env-lane/vault storage implicitly resolves vault config in different formats: ts",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 16,
+      "fullName": "@env-lane/vault storage implicitly resolves vault config in different formats: js",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 17,
+      "fullName": "@env-lane/vault storage implicitly resolves vault config in different formats: json",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 18,
+      "fullName": "@env-lane/vault storage throws when key file does not exist or is empty",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 19,
+      "fullName": "@env-lane/vault storage throws when encrypted record is too short or decryption fails",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 20,
+      "fullName": "@env-lane/vault storage throws when loading non-existent vault config file",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 21,
+      "fullName": "@env-lane/vault storage throws when loading invalid exclude configuration format",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 22,
+      "fullName": "@env-lane/vault storage throws when prune parameters are missing or invalid",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 23,
+      "fullName": "@env-lane/vault storage serializes concurrent appends without losing either update",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 24,
+      "fullName": "@env-lane/vault storage rejects a prune apply when the store changed after its preview",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 25,
+      "fullName": "@env-lane/vault storage preserves corrupt lines when pruning readable history",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/storage.test.ts",
+      "ordinal": 26,
+      "fullName": "@env-lane/vault storage does not swallow syntax errors from an explicit Vault config",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 1,
+      "fullName": "@env-lane/vault sync uses explicit sync state to detect restore and push conflicts",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 2,
+      "fullName": "@env-lane/vault sync migrates legacy unkeyed sync state version undefined as schema v0 into keyed schema v1",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 3,
+      "fullName": "@env-lane/vault sync migrates legacy unkeyed sync state version 0 as schema v0 into keyed schema v1",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 4,
+      "fullName": "@env-lane/vault sync migrates legacy unkeyed sync state version 1 as schema v0 into keyed schema v1",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 5,
+      "fullName": "@env-lane/vault sync treats a differing first sync as unbased and never uses file mtime",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 6,
+      "fullName": "@env-lane/vault sync resolves an unbased missing-file deletion once and leaves the file missing",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 7,
+      "fullName": "@env-lane/vault sync throws when sync state file is invalid or unsupported JSON",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 8,
+      "fullName": "@env-lane/vault sync keeps library conflict resolution independent from terminal state",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/sync.test.ts",
+      "ordinal": 9,
+      "fullName": "@env-lane/vault sync serializes the store and sync-state transaction before reading the next snapshot",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/application/vault.test.ts",
+      "ordinal": 1,
+      "fullName": "@env-lane/vault public API emits an unsafe warning unless explicitly disabled",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/application/vault.test.ts",
+      "ordinal": 2,
+      "fullName": "@env-lane/vault public API encrypts and decrypts dotenv files",
+      "category": "public-contract"
+    },
+    {
+      "file": "packages/vault/test/cli/prompts.test.ts",
+      "ordinal": 1,
+      "fullName": "Vault interactive prompts checks deletes by default and maps manually unselected conflicts to keep-local",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/cli/prompts.test.ts",
+      "ordinal": 2,
+      "fullName": "Vault interactive prompts handles an empty plan without inventing decisions",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/cli/prompts.test.ts",
+      "ordinal": 3,
+      "fullName": "Vault interactive prompts reduces the ten-line page size when the terminal is too short",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/cli/prompts.test.ts",
+      "ordinal": 4,
+      "fullName": "Vault interactive prompts truncates displayed keys to 64 characters without changing their entry ids",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/cli/prompts.test.ts",
+      "ordinal": 5,
+      "fullName": "Vault interactive prompts allows q to cancel selection without Ctrl+C",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/cli/prompts.test.ts",
+      "ordinal": 6,
+      "fullName": "Vault interactive prompts allows escape to cancel selection without Ctrl+C",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/cli/prompts.test.ts",
+      "ordinal": 7,
+      "fullName": "Vault interactive prompts turns prompt cancellation into a stable Vault cancellation error",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 1,
+      "fullName": "Vault selection and fail-on policies matches an entry using --file independently",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 2,
+      "fullName": "Vault selection and fail-on policies matches an entry using --key independently",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 3,
+      "fullName": "Vault selection and fail-on policies matches an entry using --include independently",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 4,
+      "fullName": "Vault selection and fail-on policies matches an entry using --exclude non-match independently",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 5,
+      "fullName": "Vault selection and fail-on policies matches an entry using --only independently",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 6,
+      "fullName": "Vault selection and fail-on policies applies negative filters and rejects invalid --only values",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 7,
+      "fullName": "Vault selection and fail-on policies selects deletes by default and supports an explicit opt-out",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 8,
+      "fullName": "Vault selection and fail-on policies projects plans and summaries to the selected entries",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 9,
+      "fullName": "Vault selection and fail-on policies projects applied plans from explicit decisions instead of editable summaries",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-policy.test.ts",
+      "ordinal": 10,
+      "fullName": "Vault selection and fail-on policies evaluates every --fail-on condition and validates input",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 1,
+      "fullName": "Vault restore previews partially redacts API_URL without hiding safe URL structure",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 2,
+      "fullName": "Vault restore previews partially redacts DATABASE_URL without hiding safe URL structure",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 3,
+      "fullName": "Vault restore previews partially redacts CALLBACK_URL without hiding safe URL structure",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 4,
+      "fullName": "Vault restore previews partially redacts RPC_URL without hiding safe URL structure",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 5,
+      "fullName": "Vault restore previews partially redacts RPC_URL without hiding safe URL structure",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 6,
+      "fullName": "Vault restore previews partially redacts RPC_URL without hiding safe URL structure",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 7,
+      "fullName": "Vault restore previews keeps full redaction safe and makes unredacted output explicit",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 8,
+      "fullName": "Vault restore previews never redacts values or URL components shorter than eight characters",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 9,
+      "fullName": "Vault restore previews optionally reveals configured leading and trailing characters",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 10,
+      "fullName": "Vault restore previews partially redacts the shared 'OpenAI project API key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 11,
+      "fullName": "Vault restore previews partially redacts the shared 'OpenAI service-account API key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 12,
+      "fullName": "Vault restore previews partially redacts the shared 'Supabase secret key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 13,
+      "fullName": "Vault restore previews partially redacts the shared 'Supabase service-role JWT' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 14,
+      "fullName": "Vault restore previews partially redacts the shared 'Supabase anon JWT' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 15,
+      "fullName": "Vault restore previews partially redacts the shared 'Upstash REST token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 16,
+      "fullName": "Vault restore previews partially redacts the shared 'Upstash REST query token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 17,
+      "fullName": "Vault restore previews partially redacts the shared 'Upstash ACL REST token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 18,
+      "fullName": "Vault restore previews partially redacts the shared 'Upstash Redis URL' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 19,
+      "fullName": "Vault restore previews partially redacts the shared 'Ethereum private key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 20,
+      "fullName": "Vault restore previews partially redacts the shared 'Ethereum mnemonic' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 21,
+      "fullName": "Vault restore previews partially redacts the shared 'Cloudflare user token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 22,
+      "fullName": "Vault restore previews partially redacts the shared 'GitHub personal access token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 23,
+      "fullName": "Vault restore previews partially redacts the shared 'Stripe live secret key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 24,
+      "fullName": "Vault restore previews partially redacts the shared 'Anthropic API key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 25,
+      "fullName": "Vault restore previews partially redacts the shared 'PASETO local token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 26,
+      "fullName": "Vault restore previews partially redacts the shared 'PASETO public token' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 27,
+      "fullName": "Vault restore previews partially redacts the shared 'Bearer authorization value' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 28,
+      "fullName": "Vault restore previews partially redacts the shared 'inline client-secret assignment' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 29,
+      "fullName": "Vault restore previews partially redacts the shared 'Ed25519 private key' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 30,
+      "fullName": "Vault restore previews partially redacts the shared 'unlabeled high-entropy value' fixture",
+      "category": "safety-regression"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 31,
+      "fullName": "Vault restore previews preserves the shared public 'Supabase publishable key' fixture",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 32,
+      "fullName": "Vault restore previews preserves the shared public 'Supabase project URL' fixture",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 33,
+      "fullName": "Vault restore previews preserves the shared public 'Upstash REST URL' fixture",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 34,
+      "fullName": "Vault restore previews preserves the shared public 'Ethereum address' fixture",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 35,
+      "fullName": "Vault restore previews preserves the shared public 'Ed25519 public key' fixture",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 36,
+      "fullName": "Vault restore previews preserves the shared public 'OAuth provider list' fixture",
+      "category": "internal-implementation"
+    },
+    {
+      "file": "packages/vault/test/domain/restore-preview.test.ts",
+      "ordinal": 37,
+      "fullName": "Vault restore previews heuristically masks high-entropy URL components with optional human-readable hints",
+      "category": "safety-regression"
+    }
+  ]
+}

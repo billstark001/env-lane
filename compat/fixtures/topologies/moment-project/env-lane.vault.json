@@ -1,0 +1,33 @@
+{
+  "envFiles": [
+    "apps/api/.env",
+    "apps/api/.env.local",
+    "apps/api/.env.development",
+    "apps/api/.env.production",
+    "apps/web/.env",
+    "apps/web/.env.local",
+    "apps/web/.env.development",
+    "apps/web/.env.production",
+    "apps/worker/.env",
+    "apps/worker/.env.local",
+    "apps/worker/.env.development",
+    "apps/worker/.env.production",
+    "packages/db/.env",
+    "packages/db/.env.local",
+    "packages/db/.env.development",
+    "packages/db/.env.production",
+    "packages/shared/.env",
+    "packages/shared/.env.local",
+    "packages/shared/.env.production",
+    "packages/config/.env",
+    "packages/config/.env.local",
+    "packages/config/.env.development",
+    "packages/config/.env.production"
+  ],
+  "outputDir": ".env-lane-vault",
+  "outputFile": "store.dat",
+  "trackDeletions": true,
+  "restore": { "redaction": "partial", "reveal": { "start": 2, "end": 2 } },
+  "exclude": [{ "files": ["apps/web/**"], "keys": ["LOCAL_ONLY_*"] }],
+  "disableUnsafeWarning": true
+}

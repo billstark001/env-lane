@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "seed": 420042,
+  "cases": 300,
+  "keys": ["KEY", "UNDER_SCORE", "dotted.key", "DASH-KEY"],
+  "quotes": ["none", "single", "double", "backtick"],
+  "escapes": ["none", "backslash", "escaped-double-quote", "escaped-newline"],
+  "comments": ["none", "inline", "inside-quote"],
+  "duplicateEvery": 7,
+  "futureRust": "Mirror this seed and dimensions in proptest; every minimized mismatch becomes a regression case."
+}

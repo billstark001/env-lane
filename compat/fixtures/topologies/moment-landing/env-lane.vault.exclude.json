@@ -1,0 +1,7 @@
+{
+  "envFiles": [".env", ".env.production", "server/.env", "server/.env.production"],
+  "outputDir": ".env-lane-vault",
+  "outputFile": "store.dat",
+  "exclude": [{ "files": [".env"], "keys": ["SECRET_TOKEN"] }],
+  "disableUnsafeWarning": true
+}

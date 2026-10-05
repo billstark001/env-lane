@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "id": "moment-project-core-api",
+  "area": "core-api",
+  "owner": "rust-core",
+  "topology": "moment-project",
+  "environment": {
+    "unset": [
+      "LANE"
+    ]
+  },
+  "normalization": {
+    "root": true,
+    "pathSeparators": true
+  },
+  "steps": [
+    {
+      "kind": "api",
+      "operation": "core.load-config",
+      "input": {
+        "configFile": "env-lane.config.json"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"rootDir\": \"$ROOT\",\n  \"selector\": {\n    \"envKey\": \"LANE\",\n    \"defaultBuild\": \"local\",\n    \"builds\": [\n      \"local\",\n      \"development\",\n      \"production\"\n    ],\n    \"buildValidation\": \"error\",\n    \"forbidInDotenv\": true\n  },\n  \"workspace\": {\n    \"packageGlobs\": [\n      \"apps/*\",\n      \"packages/*\"\n    ],\n    \"aliases\": {\n      \"backend\": \"@synthetic/api\",\n      \"frontend\": \"@synthetic/web\",\n      \"jobs\": \"apps/worker\",\n      \"database\": \"@synthetic/db\"\n    },\n    \"defaultTarget\": \"@synthetic/api\",\n    \"includeRoot\": false\n  },\n  \"dotenv\": {\n    \"order\": [\n      \".env\",\n      \".env.{build}\"\n    ],\n    \"localBuildName\": \"local\",\n    \"localOverrideFile\": \".env.local\",\n    \"requireOverride\": false,\n    \"includeProcessEnv\": false,\n    \"preserveBOM\": true,\n    \"eol\": \"auto\"\n  },\n  \"vault\": {\n    \"enabled\": true,\n    \"disableUnsafeWarning\": true,\n    \"configFile\": \"env-lane.vault.json\"\n  },\n  \"output\": {\n    \"format\": \"text\",\n    \"prefix\": true\n  },\n  \"sort\": {\n    \"api\": {\n      \"baseDir\": \"$ROOT/apps/api\",\n      \"file\": \".env\",\n      \"template\": \".env.example\"\n    }\n  },\n  \"checks\": {\n    \"deploy\": {\n      \"sources\": {\n        \"api\": {\n          \"target\": \"backend\",\n          \"includeProcessEnv\": false\n        },\n        \"web\": {\n          \"target\": \"frontend\",\n          \"includeProcessEnv\": false\n        }\n      },\n      \"rules\": [\n        {\n          \"type\": \"required\",\n          \"source\": \"api\",\n          \"key\": \"DATABASE_URL\"\n        },\n        {\n          \"type\": \"required\",\n          \"source\": \"web\",\n          \"key\": \"PUBLIC_API_URL\"\n        }\n      ]\n    }\n  },\n  \"sync\": {\n    \"web-to-worker\": {\n      \"from\": {\n        \"target\": \"frontend\",\n        \"includeProcessEnv\": false\n      },\n      \"to\": {\n        \"target\": \"jobs\"\n      },\n      \"mappings\": [\n        {\n          \"from\": \"PUBLIC_API_URL\",\n          \"to\": \"API_URL\",\n          \"transform\": \"url-base\"\n        }\n      ]\n    }\n  }\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.packages",
+      "input": {
+        "configFile": "env-lane.config.json"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "[\n  {\n    \"name\": \"@synthetic/api\",\n    \"dir\": \"$ROOT/apps/api\",\n    \"relativeDir\": \"apps/api\",\n    \"aliases\": [\n      \"@synthetic/api\",\n      \"api\",\n      \"apps/api\",\n      \"backend\"\n    ],\n    \"isRoot\": false\n  },\n  {\n    \"name\": \"@synthetic/web\",\n    \"dir\": \"$ROOT/apps/web\",\n    \"relativeDir\": \"apps/web\",\n    \"aliases\": [\n      \"@synthetic/web\",\n      \"web\",\n      \"apps/web\",\n      \"frontend\"\n    ],\n    \"isRoot\": false\n  },\n  {\n    \"name\": \"@synthetic/worker\",\n    \"dir\": \"$ROOT/apps/worker\",\n    \"relativeDir\": \"apps/worker\",\n    \"aliases\": [\n      \"@synthetic/worker\",\n      \"worker\",\n      \"apps/worker\",\n      \"jobs\"\n    ],\n    \"isRoot\": false\n  },\n  {\n    \"name\": \"@synthetic/config\",\n    \"dir\": \"$ROOT/packages/config\",\n    \"relativeDir\": \"packages/config\",\n    \"aliases\": [\n      \"@synthetic/config\",\n      \"config\",\n      \"packages/config\"\n    ],\n    \"isRoot\": false\n  },\n  {\n    \"name\": \"@synthetic/db\",\n    \"dir\": \"$ROOT/packages/db\",\n    \"relativeDir\": \"packages/db\",\n    \"aliases\": [\n      \"@synthetic/db\",\n      \"db\",\n      \"packages/db\",\n      \"database\"\n    ],\n    \"isRoot\": false\n  },\n  {\n    \"name\": \"@synthetic/shared\",\n    \"dir\": \"$ROOT/packages/shared\",\n    \"relativeDir\": \"packages/shared\",\n    \"aliases\": [\n      \"@synthetic/shared\",\n      \"shared\",\n      \"packages/shared\"\n    ],\n    \"isRoot\": false\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.resolve-target",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "target": "database"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"name\": \"@synthetic/db\",\n  \"dir\": \"$ROOT/packages/db\",\n  \"relativeDir\": \"packages/db\",\n  \"aliases\": [\n    \"@synthetic/db\",\n    \"db\",\n    \"packages/db\",\n    \"database\"\n  ],\n  \"isRoot\": false\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.files",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "target": "backend",
+        "build": "local"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "[\n  {\n    \"kind\": \"base\",\n    \"path\": \"$ROOT/apps/api/.env\",\n    \"relativePath\": \"apps/api/.env\",\n    \"exists\": true,\n    \"required\": false,\n    \"order\": 0\n  },\n  {\n    \"kind\": \"override\",\n    \"path\": \"$ROOT/apps/api/.env.local\",\n    \"relativePath\": \"apps/api/.env.local\",\n    \"exists\": true,\n    \"required\": false,\n    \"order\": 1\n  }\n]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.resolve",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "target": "backend",
+        "build": "local"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"rootDir\": \"$ROOT\",\n  \"target\": {\n    \"name\": \"@synthetic/api\",\n    \"dir\": \"$ROOT/apps/api\",\n    \"relativeDir\": \"apps/api\",\n    \"aliases\": [\n      \"@synthetic/api\",\n      \"api\",\n      \"apps/api\",\n      \"backend\"\n    ],\n    \"isRoot\": false\n  },\n  \"build\": \"local\",\n  \"selectorKey\": \"LANE\",\n  \"files\": [\n    {\n      \"kind\": \"base\",\n      \"path\": \"$ROOT/apps/api/.env\",\n      \"relativePath\": \"apps/api/.env\",\n      \"exists\": true,\n      \"required\": false,\n      \"order\": 0\n    },\n    {\n      \"kind\": \"override\",\n      \"path\": \"$ROOT/apps/api/.env.local\",\n      \"relativePath\": \"apps/api/.env.local\",\n      \"exists\": true,\n      \"required\": false,\n      \"order\": 1\n    }\n  ],\n  \"values\": {\n    \"UNSORTED\": \"value\",\n    \"SHARED\": \"api-local\",\n    \"DATABASE_URL\": \"postgres://local.example.invalid/app\",\n    \"LANE\": \"local\"\n  },\n  \"sources\": {\n    \"UNSORTED\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/apps/api/.env\",\n      \"relativeFile\": \"apps/api/.env\",\n      \"line\": 1\n    },\n    \"SHARED\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/apps/api/.env.local\",\n      \"relativeFile\": \"apps/api/.env.local\",\n      \"line\": 2\n    },\n    \"DATABASE_URL\": {\n      \"source\": \"dotenv\",\n      \"file\": \"$ROOT/apps/api/.env.local\",\n      \"relativeFile\": \"apps/api/.env.local\",\n      \"line\": 1\n    },\n    \"LANE\": {\n      \"source\": \"selector\",\n      \"shellOverride\": false\n    }\n  }\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.selector-check",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "target": "all",
+        "build": "production"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"ok\": true,\n  \"selectorKey\": \"LANE\",\n  \"violations\": [],\n  \"missingRequired\": []\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.policy-check",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "name": "deploy",
+        "build": "production"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"ok\": true,\n  \"check\": \"deploy\",\n  \"build\": \"production\",\n  \"findings\": [\n    {\n      \"ok\": true,\n      \"severity\": \"error\",\n      \"type\": \"required\",\n      \"label\": \"api.DATABASE_URL required\",\n      \"message\": \"api has DATABASE_URL\"\n    },\n    {\n      \"ok\": true,\n      \"severity\": \"error\",\n      \"type\": \"required\",\n      \"label\": \"web.PUBLIC_API_URL required\",\n      \"message\": \"web has PUBLIC_API_URL\"\n    }\n  ],\n  \"summary\": {\n    \"ok\": 2,\n    \"warnings\": 0,\n    \"errors\": 0\n  }\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "core.sync",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "name": "web-to-worker",
+        "build": "local",
+        "dryRun": true
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"sync\": \"web-to-worker\",\n  \"build\": \"local\",\n  \"targetFile\": \"$ROOT/apps/worker/.env.local\",\n  \"changed\": false,\n  \"dryRun\": true,\n  \"mappings\": [\n    {\n      \"from\": \"PUBLIC_API_URL\",\n      \"to\": \"API_URL\",\n      \"value\": \"https://api.example.invalid/local/path\",\n      \"skipped\": false\n    }\n  ]\n}\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "expectedFiles": {}
+}

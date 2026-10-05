@@ -1,0 +1,38 @@
+{
+  "name": "@env-lane/plugin-sdk",
+  "version": "0.5.0",
+  "type": "module",
+  "description": "Node.js runtime and types for env-lane JSON-RPC plugins",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billstark001/env-lane.git",
+    "directory": "packages/plugin-sdk"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./protocol.schema.json": "./protocol.schema.json",
+    "./package.schema.json": "./package.schema.json"
+  },
+  "files": [
+    "dist",
+    "protocol.schema.json",
+    "package.schema.json",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs && tsup src/index.ts --format esm --clean && tsc -p tsconfig.json --emitDeclarationOnly",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

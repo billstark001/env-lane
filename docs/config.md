@@ -1,8 +1,45 @@
 # Configuration reference
 
-Env-lane loads `env-lane.config.ts`, JavaScript ESM/CJS, or JSON through its config loader.
+## Native configuration and executable compatibility
+
+The Rust CLI reads `env-lane.config.json`, `.yaml`, `.yml`, `.jsonc`, `.json5`, and `.toml`
+directly. Vault accepts the same native extensions for `env-lane.vault`. Native configuration
+needs no Node runtime. JSON, JSONC, and JSON5 use one JSON5 decoder and the same schema;
+TOML dates become strings. Non-finite numbers are rejected. If several default config files
+exist, discovery checks them in the order listed above before executable files. For existing
+executable configuration (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`), use the separate
+`@env-lane/config-compat` package:
+
+~~~bash
+pnpm add -D @env-lane/config-compat
+env-lane-config compile --kind main --cwd .
+env-lane-config compile --kind vault --package-name @env-lane/vault --cwd .
+~~~
+
+Compilation uses the existing c12 loader and writes a versioned JSON envelope under
+`.env-lane-cache/`. It records the original source directory and hashes local imports. Static
+configurations are reused while those hashes remain valid; the Rust reader checks the hashes
+before use. Keep `.env-lane-cache/` out of Git because it includes local absolute paths and the
+resolved configuration object. Dynamic configuration output is also written there on each runner
+invocation, so avoid putting secret values directly into configuration. A missing or stale envelope
+produces `CONFIG_COMPILATION_REQUIRED`. The kind is a root plugin field such as `vault` or
+`example`; the runner obtains enabled registrations from Rust and compiles each executable
+plugin config with the same cache mechanism.
+
+For a configuration that reads live environment values or other dynamic inputs, invoke
+`env-lane-config run <env-lane arguments>`. The runner evaluates it for each invocation and passes
+the fresh envelope to the native executable. This path starts Node and has different startup cost
+from direct native execution. The Rust executable itself never evaluates JavaScript.
+The runner reads `--cwd` and `--config` from env-lane's arguments. Plugin-specific config flags
+belong to the plugin. Flags after the child command in `run <target> <child command>` belong to
+that child. Use `--` to mark the child boundary explicitly when needed.
+
+The Node API still loads executable configuration through c12. The native CLI reads all six
+declarative formats directly and requires the compatibility compiler for executable formats.
 Use `--config <file>` or the API `configFile` option for a non-default name. Relative paths are
-resolved from `--cwd`; default config discovery still searches the discovered project root.
+resolved from `--cwd`; default config discovery searches the discovered project root. A `.git`
+directory or worktree file can mark that root even when it has no `package.json`. A nested Git
+repository does not inherit a `pnpm-workspace.yaml` from an unrelated parent repository.
 
 ~~~ts
 import { defineConfig } from '@env-lane/core';
@@ -80,8 +117,7 @@ export default defineConfig({
   },
   vault: {
     enabled: false,
-    configFile: 'env-lane.vault',
-    disableUnsafeWarning: false
+    configFile: 'env-lane.vault'
   }
 });
 ~~~
@@ -156,9 +192,24 @@ the original effective value, including meaningful leading or trailing spaces.
 supported only where a command has a dotenv renderer. `output.prefix` controls diagnostic
 prefixes, not final payloads.
 
-## Vault handoff
+## Plugin registrations
 
-The main config only enables the optional CLI integration, controls the unsafe warning, and points
-to a dedicated Vault config. See [Vault](vault.md) for the separate schema.
+The reserved root fields are `selector`, `workspace`, `dotenv`, `output`, `sort`, `checks`, and
+`sync`. Every other root field must be a plugin registration. Its `enabled` boolean is required.
+An enabled plugin loads its `configFile` relative to the project root and resolves `packageName`
+to a package whose `package.json` declares `envLanePlugin`. Disabled plugins are not started.
+Vault is pre-registered as `@env-lane/vault` with `env-lane.vault` as its default config file, so
+its registration may omit `packageName` and `configFile`:
 
-`cli.aliases` is no longer a valid field. It was introduced in 0.3.0 and removed in 0.4.0.
+~~~ts
+vault: { enabled: true },
+example: {
+  enabled: true,
+  configFile: 'env-lane.example.json',
+  packageName: '@acme/env-lane-example'
+}
+~~~
+
+Plugin-specific settings belong in the plugin config file. The established Vault
+`disableUnsafeWarning` registration option remains available. See [Vault](vault.md) and the
+[plugin protocol](native-plugin-protocol.md).

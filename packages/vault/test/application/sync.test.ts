@@ -11,18 +11,19 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  buildRestorePlan,
-  decryptEnvFiles,
-  deriveVaultKey,
-  deriveVaultSyncKey,
-  encryptEnvFiles,
-} from '../../src/index.js'
+import { resolveConflict } from '../../src/application/sync.js'
+import type { RestorePlanEntry } from '../../src/domain/types.js'
+import { buildRestorePlan, decryptEnvFiles, encryptEnvFiles } from '../../src/index.js'
+import { deriveVaultKey, deriveVaultSyncKey } from '../helpers/crypto.js'
 
 const testDirectories = new Set<string>()
 
 function testDirectory(prefix: string): string {
   const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  writeFileSync(
+    path.join(root, 'env-lane.config.json'),
+    JSON.stringify({ vault: { enabled: true } }),
+  )
   testDirectories.add(root)
   return root
 }
@@ -38,6 +39,13 @@ function storeLineCount(root: string): number {
 }
 
 describe('@env-lane/vault sync', () => {
+  it('rejects invalid choices returned by a conflict callback', async () => {
+    const entry = { entryId: 'synthetic-entry', filePath: '.env', key: 'A' } as RestorePlanEntry
+    await expect(
+      resolveConflict('abort', entry, async () => 'invalid' as 'keep-local'),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_DECISION' })
+  })
+
   it('uses explicit sync state to detect restore and push conflicts', async () => {
     const root = testDirectory(`env-lane-vault-sync`)
     const syncDir = path.join(root, '.sync-state')
@@ -64,7 +72,7 @@ describe('@env-lane/vault sync', () => {
     expect(syncState).toMatchObject({ version: 1, fingerprint: 'hmac-sha256' })
     expect(syncEntry).toMatchObject({ valueFingerprint: expectedFingerprint })
     expect(syncEntry).not.toHaveProperty('valueHash')
-    expect(statSync(syncStatePath).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(syncStatePath).mode & 0o777).toBe(0o600)
     writeFileSync(path.join(root, '.env'), 'A=2\n')
     await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {})
     writeFileSync(path.join(root, '.env'), 'A=3\n')

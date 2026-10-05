@@ -1,0 +1,638 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "version": "0.4.2",
+    "commit": "bdd0e9f4881b433063629e3caed04cd102444e44",
+    "tag": "v0.4.2",
+    "node": ["22.x", "24.x"],
+    "pnpm": "11.x",
+    "dotenv": "17.4.2",
+    "tests": { "files": 11, "assertions": 229 }
+  },
+  "entrypoints": {
+    "env-lane": {
+      "formats": ["esm", "commonjs", "types"],
+      "owner": "node-compat",
+      "runtimeExportsSameAs": "@env-lane/core",
+      "typeExportsSameAs": "@env-lane/core"
+    },
+    "@env-lane/core": {
+      "formats": ["esm", "commonjs", "types"],
+      "owner": "node-compat",
+      "typeExports": [
+        "CheckResult",
+        "Diagnostic",
+        "DiagnosticFormatOptions",
+        "DiagnosticLevel",
+        "DiagnosticLogger",
+        "DiagnosticScope",
+        "EnvCheckConfig",
+        "EnvCheckFinding",
+        "EnvCheckResult",
+        "EnvCheckRuleConfig",
+        "EnvCheckSeverity",
+        "EnvDocumentPatch",
+        "EnvDocumentPatchResult",
+        "EnvDocumentWriteResult",
+        "EnvFileRef",
+        "EnvFileVariant",
+        "EnvLaneConfig",
+        "EnvLaneContext",
+        "EnvLaneOutputFormat",
+        "EnvLine",
+        "EnvLineData",
+        "EnvSortPlan",
+        "EnvSortTargetConfig",
+        "EnvSource",
+        "EnvSyncConfig",
+        "EnvSyncMappingConfig",
+        "EnvSyncResult",
+        "EnvTextDocument",
+        "EnvValueSourceConfig",
+        "EnvValueTargetConfig",
+        "EnvValueTransform",
+        "LoadConfigOptionsWithC12",
+        "LoadedEnvDocument",
+        "RedactOptions",
+        "ResolveEnvOptions",
+        "ResolvedEnv",
+        "ResolvedEnvLaneConfig",
+        "SortOperationAction",
+        "WorkspacePackage"
+      ],
+      "runtimeExports": [
+        "ALL_ENV_FILE_VARIANTS",
+        "DEFAULT_ENV_FILE_VARIANT",
+        "DEFAULT_MIN_REDACTION_LENGTH",
+        "EnvLaneError",
+        "applyEnvDocumentPatches",
+        "buildEnvSortPlan",
+        "checkDotenvSelector",
+        "createEnvTextDocument",
+        "defineConfig",
+        "defineEnvCheck",
+        "defineEnvSync",
+        "emitDiagnostic",
+        "errorCode",
+        "findWorkspaceRoot",
+        "formatDiagnostic",
+        "formatEnvFileVariant",
+        "formatEnvValue",
+        "isEnvEntryLikeLine",
+        "isEnvEntryLine",
+        "isHighEntropyString",
+        "isJwt",
+        "isPaseto",
+        "isSecretLikeKey",
+        "isSecretLikeValue",
+        "listEnvFiles",
+        "listEnvFilesForTarget",
+        "listWorkspacePackages",
+        "listWorkspacePackagesForConfig",
+        "loadConfigWithC12",
+        "loadEnvDocument",
+        "loadEnvLaneConfig",
+        "normalizeEnvFileVariant",
+        "parseEnvDocument",
+        "parseEnvLine",
+        "readPnpmWorkspaceGlobs",
+        "redactObject",
+        "redactRecord",
+        "redactValue",
+        "renderEnvTextDocument",
+        "resolveBuildName",
+        "resolveInjectedEnv",
+        "resolveTargetPackage",
+        "resolveTargetPackageFromList",
+        "runEnvCheck",
+        "runEnvSync",
+        "runWithInjectedEnv",
+        "setEnvDocumentValues",
+        "shouldRedact",
+        "sortEnvFile",
+        "sortEnvFilesFromConfig",
+        "withEnvLaneContext",
+        "writeEnvDocumentContent",
+        "writeEnvDocumentLines",
+        "writeFileContentAtomically"
+      ]
+    },
+    "@env-lane/core/env-document": {
+      "formats": ["esm", "commonjs", "types"],
+      "owner": "node-compat",
+      "typeExports": [
+        "EnvDocumentPatch",
+        "EnvDocumentPatchResult",
+        "EnvDocumentWriteResult",
+        "EnvLine",
+        "EnvLineData",
+        "EnvTextDocument",
+        "LoadedEnvDocument"
+      ],
+      "runtimeExports": [
+        "applyEnvDocumentPatches",
+        "createEnvTextDocument",
+        "formatEnvValue",
+        "isEnvEntryLikeLine",
+        "isEnvEntryLine",
+        "loadEnvDocument",
+        "parseEnvDocument",
+        "parseEnvLine",
+        "renderEnvTextDocument",
+        "setEnvDocumentValues",
+        "writeEnvDocumentContent",
+        "writeEnvDocumentLines"
+      ]
+    },
+    "@env-lane/vault": {
+      "formats": ["esm", "commonjs", "types"],
+      "owner": "node-compat",
+      "typeExports": [
+        "ApprovalDocument",
+        "EncryptOptions",
+        "RestoreAction",
+        "RestoreDecision",
+        "RestoreDecisionChoice",
+        "RestorePlan",
+        "RestorePlanEntry",
+        "RestorePlanFile",
+        "VaultCliContext",
+        "VaultConfig",
+        "VaultConflictStrategy",
+        "VaultFailCondition",
+        "VaultMissingFileStrategy",
+        "VaultOperation",
+        "VaultRecord",
+        "VaultRestoreRedaction",
+        "VaultRestoreReveal",
+        "VaultSelectionOptions"
+      ],
+      "runtimeExports": [
+        "VAULT_UNSAFE_WARNING",
+        "applyRestorePlan",
+        "buildDefaultRestoreDecisions",
+        "buildRestorePlan",
+        "createApprovalDocument",
+        "decryptEnvFiles",
+        "decryptRecord",
+        "defineVaultConfig",
+        "deriveVaultKey",
+        "deriveVaultSyncKey",
+        "encryptEnvFiles",
+        "encryptRecord",
+        "hasUnresolvedSelectedConflict",
+        "keyedDigest",
+        "loadVaultConfig",
+        "matchesVaultPushSelection",
+        "matchesVaultSelection",
+        "parseVaultFailCondition",
+        "pruneVaultHistory",
+        "readApprovalDocument",
+        "registerVaultCommands",
+        "restorePlanMatchesFailCondition",
+        "sanitizeVaultHistory",
+        "selectRestorePlan",
+        "selectRestorePlanByDecisions",
+        "stableHash",
+        "warnUnsafeVault",
+        "writeApprovalDocument"
+      ]
+    },
+    "@env-lane/vault/cli": {
+      "formats": ["esm", "commonjs", "types"],
+      "owner": "node-compat",
+      "typeExports": ["VaultCliContext"],
+      "runtimeExports": ["VAULT_CLI_API_VERSION", "registerVaultCommands"],
+      "apiVersion": 1
+    }
+  },
+  "apiOwnership": {
+    "rustCore": [
+      "workspace discovery and target resolution",
+      "dotenv document parse/render/patch and effective values",
+      "resolve/check/policy/sync/sort application behavior",
+      "redaction classification used by CLI and Vault previews",
+      "Vault crypto, records, path mapping, sync, restore, history, locks, and atomic writes"
+    ],
+    "nativeCli": [
+      "argv acceptance and run child boundary",
+      "stdout/stderr rendering, JSON envelopes, exit status, and signals",
+      "TTY Vault selection and non-interactive behavior"
+    ],
+    "nodeCompat": [
+      "defineConfig/defineVaultConfig/defineEnvCheck/defineEnvSync identity and TypeScript inference",
+      "c12 JavaScript/TypeScript/ESM/CommonJS config evaluation and cache compilation",
+      "Promise, callback, Buffer, object, and error conversion at Node-API",
+      "AsyncLocalStorage diagnostic isolation and Commander command registration",
+      "ESM/CommonJS/declaration exports and all 0.4.x deprecated exports"
+    ]
+  },
+  "deprecatedRuntimeExports": {
+    "@env-lane/core": [
+      "findWorkspaceRoot",
+      "loadConfigWithC12",
+      "readPnpmWorkspaceGlobs",
+      "listEnvFilesForTarget",
+      "resolveBuildName",
+      "applyEnvDocumentPatches",
+      "createEnvTextDocument",
+      "formatEnvValue",
+      "isEnvEntryLikeLine",
+      "isEnvEntryLine",
+      "loadEnvDocument",
+      "parseEnvDocument",
+      "parseEnvLine",
+      "renderEnvTextDocument",
+      "setEnvDocumentValues",
+      "writeEnvDocumentContent",
+      "writeEnvDocumentLines",
+      "writeFileContentAtomically",
+      "buildEnvSortPlan",
+      "listWorkspacePackagesForConfig",
+      "resolveTargetPackageFromList"
+    ],
+    "@env-lane/vault": [
+      "registerVaultCommands",
+      "decryptRecord",
+      "deriveVaultKey",
+      "deriveVaultSyncKey",
+      "encryptRecord",
+      "keyedDigest",
+      "stableHash"
+    ],
+    "migrationRule": "Preserve in the Node facade for the documented 0.4.x window; do not add Rust public surface solely for these names. A Rust primitive may exist only when needed by a stable workflow or persisted protocol."
+  },
+  "cli": {
+    "binary": "env-lane",
+    "globalOptions": [
+      "-V, --version",
+      "-c, --config <file>",
+      "-b, --build <name>",
+      "--cwd <dir>",
+      "--format <format>",
+      "--json",
+      "--non-interactive",
+      "--no-prefix",
+      "-h, --help"
+    ],
+    "commands": [
+      { "name": "packages", "owner": "native-cli", "args": [], "options": [] },
+      { "name": "resolve-target", "owner": "native-cli", "args": ["<target>"], "options": [] },
+      {
+        "name": "files",
+        "aliases": ["env-files"],
+        "owner": "native-cli",
+        "args": ["[target]"],
+        "options": ["--require-override"]
+      },
+      {
+        "name": "print",
+        "aliases": ["env-json"],
+        "owner": "native-cli",
+        "args": ["<target>"],
+        "options": ["--show-secrets", "--include-shell", "--no-process-env"]
+      },
+      {
+        "name": "run",
+        "owner": "native-cli",
+        "args": ["<target>", "<command...>"],
+        "options": ["--run-cwd <target|root|path>", "--quiet"],
+        "childBoundary": "explicit -- or first non-option after target; all later child options are opaque"
+      },
+      {
+        "name": "check",
+        "owner": "native-cli",
+        "args": [],
+        "options": ["--policy <name>", "--target <target>", "--require-override"]
+      },
+      {
+        "name": "sync",
+        "owner": "native-cli",
+        "args": ["<name>"],
+        "options": ["--dry-run", "--show-secrets"]
+      },
+      {
+        "name": "sort-file",
+        "owner": "native-cli",
+        "args": ["<envFile>", "<templateFile>"],
+        "options": ["--check", "--eol <format>", "--no-preserve-bom"]
+      },
+      {
+        "name": "sort",
+        "owner": "native-cli",
+        "args": ["[key]", "[envSuffix]"],
+        "defaults": ["all", "all"],
+        "options": ["--check", "--eol <format>", "--no-preserve-bom"]
+      },
+      {
+        "name": "vault encrypt",
+        "owner": "native-cli",
+        "args": ["<keyFile>"],
+        "options": [
+          "--dry-run",
+          "--sync-dir <dir>",
+          "--vault-config <file>",
+          "--no-auto-remap",
+          "--missing-files <mode>",
+          "--conflicts <mode>",
+          "--file <glob>",
+          "--key <glob>",
+          "--include <glob>",
+          "--exclude <glob>",
+          "--only <actions>",
+          "--approve-deletes",
+          "--no-approve-deletes",
+          "--fail-on <condition>"
+        ]
+      },
+      {
+        "name": "vault plan",
+        "owner": "native-cli",
+        "args": ["<keyFile>"],
+        "options": [
+          "--output <file>",
+          "--sync-dir <dir>",
+          "--vault-config <file>",
+          "--no-auto-remap",
+          "--allow-unmanaged",
+          "--redaction <mode>",
+          "--reveal <start:end>",
+          "--no-reveal",
+          "--file <glob>",
+          "--key <glob>",
+          "--include <glob>",
+          "--exclude <glob>",
+          "--only <actions>",
+          "--approve-deletes",
+          "--no-approve-deletes",
+          "--fail-on <condition>"
+        ]
+      },
+      {
+        "name": "vault decrypt",
+        "owner": "native-cli",
+        "args": ["<keyFile>"],
+        "options": [
+          "--dry-run",
+          "-y, --yes",
+          "--sync-dir <dir>",
+          "--vault-config <file>",
+          "--no-auto-remap",
+          "--allow-unmanaged",
+          "--prompt-loop",
+          "--no-prompt-loop",
+          "--conflicts <mode>",
+          "--redaction <mode>",
+          "--reveal <start:end>",
+          "--no-reveal",
+          "--file <glob>",
+          "--key <glob>",
+          "--include <glob>",
+          "--exclude <glob>",
+          "--only <actions>",
+          "--approve-deletes",
+          "--no-approve-deletes",
+          "--fail-on <condition>"
+        ]
+      },
+      {
+        "name": "vault apply",
+        "owner": "native-cli",
+        "args": ["<keyFile>"],
+        "options": [
+          "--plan <file>",
+          "-y, --yes",
+          "--sync-dir <dir>",
+          "--vault-config <file>",
+          "--no-auto-remap",
+          "--allow-unmanaged",
+          "--redaction <mode>",
+          "--reveal <start:end>",
+          "--no-reveal"
+        ]
+      },
+      {
+        "name": "vault sanitize",
+        "owner": "native-cli",
+        "args": ["<keyFile>"],
+        "options": ["--excluded", "--dry-run", "-y, --yes", "--vault-config <file>"]
+      },
+      {
+        "name": "vault prune",
+        "owner": "native-cli",
+        "args": ["<keyFile>"],
+        "options": [
+          "--file <path>",
+          "--key <name>",
+          "--older-than-days <days>",
+          "--keep-recent <count>",
+          "--no-preserve-latest",
+          "--dry-run",
+          "-y, --yes",
+          "--vault-config <file>"
+        ]
+      }
+    ],
+    "exitStatus": {
+      "success": 0,
+      "ordinaryError": 1,
+      "sortDrift": 1,
+      "vaultFailOn": 2,
+      "run": {
+        "childExitCode": "passed through unchanged",
+        "childSignal": 1,
+        "note": "0.4.2 execa results have no numeric exitCode when the child is signal-terminated"
+      }
+    },
+    "streams": {
+      "payload": "stdout",
+      "diagnostics": "stderr",
+      "jsonErrors": "stdout as one JSON document"
+    },
+    "processSignals": {
+      "childSelfSignalExitStatus": 1,
+      "parentSIGINT": { "cliTermination": "SIGINT", "childCleanupSignal": "SIGTERM" },
+      "parentSIGTERM": { "cliTermination": "SIGTERM", "childCleanupSignal": "SIGTERM" }
+    }
+  },
+  "legacyConfigDiscovery": {
+    "owner": "node-compat",
+    "loader": "c12@3.3.4",
+    "mainBaseName": "env-lane.config",
+    "vaultDefaultBaseName": "env-lane.vault",
+    "extensionPriority": [
+      ".js",
+      ".ts",
+      ".mjs",
+      ".cjs",
+      ".mts",
+      ".cts",
+      ".json",
+      ".jsonc",
+      ".json5",
+      ".yaml",
+      ".yml",
+      ".toml"
+    ],
+    "perExtensionLocationPriority": [
+      "<root>/<base><extension>",
+      "<root>/.config/<base><extension>",
+      "<root>/.config/<base-without-.config><extension>"
+    ],
+    "disabledC12Sources": ["package.json", "dotenv", "rc file", "global rc"],
+    "nativeMigration": {
+      "rustFormats": [".json", ".yaml", ".yml"],
+      "allOtherFormats": "compile or migrate in the Node compatibility package",
+      "rule": "Rust must not embed c12, Jiti, or a JavaScript runtime"
+    }
+  },
+  "defaults": {
+    "mainConfig": {
+      "selector": {
+        "envKey": "ENV_BUILD",
+        "defaultBuild": "local",
+        "builds": [],
+        "buildValidation": "warn",
+        "forbidInDotenv": true
+      },
+      "workspace": {
+        "packageGlobs": ["packages/*", "apps/*"],
+        "aliases": {},
+        "defaultTarget": "",
+        "includeRoot": true
+      },
+      "dotenv": {
+        "order": [".env", ".env.{build}"],
+        "localBuildName": "local",
+        "localOverrideFile": ".env.local",
+        "requireOverride": false,
+        "includeProcessEnv": true,
+        "preserveBOM": true,
+        "eol": "auto"
+      },
+      "vault": {
+        "enabled": false,
+        "disableUnsafeWarning": false,
+        "configFile": "env-lane.vault"
+      },
+      "output": { "format": "text", "prefix": true }
+    },
+    "vaultConfig": {
+      "outputDir": ".env-lane-vault",
+      "outputFile": "store.dat",
+      "trackDeletions": true,
+      "autoRemapPaths": true,
+      "allowUnmanaged": false,
+      "restore": { "redaction": "full", "reveal": false, "promptLoop": false },
+      "exclude": []
+    }
+  },
+  "errors": [
+    "AMBIGUOUS_TARGET",
+    "CLI_ARGUMENT_ERROR",
+    "CONFIG_LOAD_FAILED",
+    "ENV_LANE_ERROR",
+    "INVALID_BUILD",
+    "INVALID_CHECK_SELECTION",
+    "INVALID_ENV_SOURCE",
+    "INVALID_ENV_SYNC_TARGET",
+    "INVALID_ENV_VARIANT",
+    "INVALID_OUTPUT_FORMAT",
+    "MISSING_CHECK_SELECTION",
+    "MISSING_COMMAND",
+    "MISSING_REQUIRED_ENV_FILE",
+    "MISSING_TARGET",
+    "NON_INTERACTIVE_INPUT",
+    "SELECTOR_IN_DOTENV",
+    "SORT_CONFIG_NOT_FOUND",
+    "SORT_INVALID_CONFIG",
+    "SORT_TEMPLATE_NOT_FOUND",
+    "SORT_UNKNOWN_KEY",
+    "UNKNOWN_ENV_CHECK",
+    "UNKNOWN_ENV_CHECK_SOURCE",
+    "UNKNOWN_ENV_SYNC",
+    "UNKNOWN_TARGET",
+    "UNLISTED_BUILD",
+    "UNREPRESENTABLE_ENV_VALUE",
+    "UNSUPPORTED_OUTPUT_FORMAT",
+    "VAULT_CANCELLED",
+    "VAULT_CONFIG_LOAD_FAILED",
+    "VAULT_CONFIG_NOT_FOUND",
+    "VAULT_CONFIRMATION_REQUIRED",
+    "VAULT_CONFLICT_DECISION_REQUIRED",
+    "VAULT_CORRUPT_STORE",
+    "VAULT_EXCLUDED_HISTORY",
+    "VAULT_EXCLUDE_AUDIT_FAILED",
+    "VAULT_INVALID_CONFIG",
+    "VAULT_INVALID_CONFLICT_STRATEGY",
+    "VAULT_INVALID_DECISION",
+    "VAULT_INVALID_FAIL_ON",
+    "VAULT_INVALID_FILTER",
+    "VAULT_INVALID_MISSING_FILE_STRATEGY",
+    "VAULT_INVALID_PLAN_FILE",
+    "VAULT_INVALID_PRUNE_OPTIONS",
+    "VAULT_INVALID_RECORD",
+    "VAULT_INVALID_REDACTION",
+    "VAULT_INVALID_REVEAL",
+    "VAULT_INVALID_SYNC_STATE",
+    "VAULT_KEY_EMPTY",
+    "VAULT_KEY_NOT_FOUND",
+    "VAULT_LOCK_TIMEOUT",
+    "VAULT_MISSING_DECISIONS",
+    "VAULT_NOT_INSTALLED",
+    "VAULT_NO_READABLE_RECORDS",
+    "VAULT_PLAN_REQUIRED",
+    "VAULT_PLAN_STALE",
+    "VAULT_SANITIZE_SCOPE_REQUIRED",
+    "VAULT_STORE_CHANGED",
+    "VAULT_STORE_NOT_FOUND",
+    "VAULT_STORE_OVERLAP",
+    "VAULT_SYNC_STATE_CHANGED",
+    "VAULT_UNKNOWN_ENTRY_ID",
+    "VAULT_UNSUPPORTED_SYNC_STATE",
+    "VAULT_VERSION_UNSUPPORTED"
+  ],
+  "diagnostics": [
+    "RUN_SUMMARY",
+    "SELECTOR_IN_DOTENV",
+    "UNLISTED_BUILD",
+    "VAULT_PATHS_REMAPPED",
+    "VAULT_UNMANAGED_FILES_IGNORED",
+    "VAULT_UNREADABLE_RECORDS_SKIPPED",
+    "VAULT_UNSAFE_FOR_PRODUCTION"
+  ],
+  "persistence": {
+    "owner": "shared-protocol",
+    "vaultRecord": {
+      "readVersions": [0, 1],
+      "writeVersion": 1,
+      "fields": ["version", "f", "k", "t", "op", "v"],
+      "version0": "absolute file path and raw dotenv value",
+      "version1": "config-relative portable path and effective value"
+    },
+    "ciphertext": {
+      "algorithm": "AES-256-GCM",
+      "layout": "base64(12-byte IV || 16-byte tag || ciphertext)",
+      "kdf": "scrypt",
+      "scrypt": { "N": 16384, "r": 8, "p": 1, "length": 32 },
+      "saltUtf8": "env-store-v1-kdf-salt"
+    },
+    "syncState": {
+      "readVersions": [0, 1],
+      "writeVersion": 1,
+      "fingerprint": "hmac-sha256",
+      "hkdf": {
+        "hash": "sha256",
+        "saltUtf8": "env-lane-vault-sync-state-v1",
+        "infoUtf8": "value-fingerprint",
+        "length": 32
+      }
+    },
+    "approvalDocument": {
+      "version": 1,
+      "requiredFields": ["version", "plan", "decisions"],
+      "staleChecks": ["plan digest", "store digest", "entry id completeness"]
+    }
+  },
+  "compatibilityExceptions": []
+}

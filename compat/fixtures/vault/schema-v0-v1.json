@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "producer": "env-lane@0.4.2 Node crypto",
+  "keyMaterialUtf8": "synthetic-vault-key-v0-v1",
+  "derivedKeyHex": "b043e6d540712aa9fce0487936dfb7fcd5cd405b374f3982505c969d8ef5e868",
+  "derivedSyncKeyHex": "9a61a93d5662500e2e6595ab13f91b468e322051c5540f774dabdc9e938d7c1a",
+  "fingerprintInput": "set\u0000modern # effective",
+  "fingerprintHex": "ce4a4d179d005e843748b964814c0513b3bd55ef67db79355dee7159d8a4824a",
+  "records": [
+    {
+      "version": 0,
+      "ivHex": "000102030405060708090a0b",
+      "plaintext": "{\"f\":\"/legacy/checkout/project/.env\",\"k\":\"LEGACY\",\"t\":1700000000000,\"v\":\"\\\"legacy # raw\\\"\"}",
+      "ciphertext": "AAECAwQFBgcICQoLkSfe5hVbaLiPDMCIbzjUGCDGAMq0gasxR2pkRvw+U3tTB7bN6N3WE7k7mjmiwxY/IoFJ57PB8pYenzzNJLsF3r3UhHFYzM8kdkSsaq838s5viU+TcpfW5oEGi6bez1lmpRe/XiIhrUnErpE=",
+      "expected": {
+        "key": "LEGACY",
+        "operation": "set",
+        "effectiveValue": "legacy # raw",
+        "portableAfterRemap": ".env"
+      }
+    },
+    {
+      "version": 1,
+      "ivHex": "0c0d0e0f1011121314151617",
+      "plaintext": "{\"version\":1,\"f\":\".env\",\"k\":\"MODERN\",\"t\":1700000001000,\"op\":\"set\",\"v\":\"modern # effective\"}",
+      "ciphertext": "DA0ODxAREhMUFRYX1VJO2dUAD7xZDPNfKvq3ihmWzzyOatxgJadErRMWQ9pvo2bEH3YBeuDHIjVgiCpc4ClZIVoC72TUrjnVYpyleCTDhWltein7IVOZiw9OB+Q1GJ1BBxn1OS7bn75cVYgbcD/IdjYdxk7CLaY=",
+      "expected": {
+        "key": "MODERN",
+        "operation": "set",
+        "effectiveValue": "modern # effective",
+        "portableAfterRemap": ".env"
+      }
+    }
+  ],
+  "layout": {
+    "algorithm": "aes-256-gcm",
+    "ivBytes": 12,
+    "tagBytes": 16,
+    "encoded": "base64(iv || tag || ciphertext)",
+    "scrypt": { "N": 16384, "r": 8, "p": 1, "length": 32 },
+    "saltUtf8": "env-store-v1-kdf-salt"
+  }
+}

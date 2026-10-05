@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "id": "env-document-protocol",
+  "area": "env-document",
+  "owner": "shared-protocol",
+  "topology": "document-lab",
+  "normalization": {
+    "root": true,
+    "pathSeparators": true
+  },
+  "steps": [
+    {
+      "kind": "api",
+      "operation": "env.parse",
+      "input": {
+        "content": "﻿export dotted.key: dotted-value\r\nDUP=first\r\nDUP=second # last\r\nMULTI=\"line one\r\nline two\"\r\n# COMMENTED = old # note\r\nINVALID LINE"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"exists\": true,\n  \"document\": {\n    \"hasBom\": true,\n    \"eol\": \"\\r\\n\",\n    \"hasFinalNewline\": false,\n    \"lines\": [\n      \"export dotted.key: dotted-value\",\n      \"DUP=first\",\n      \"DUP=second # last\",\n      \"MULTI=\\\"line one\",\n      \"line two\\\"\",\n      \"# COMMENTED = old # note\",\n      \"INVALID LINE\"\n    ]\n  },\n  \"parsedLines\": [\n    {\n      \"lineNumber\": 1,\n      \"kind\": \"entry\",\n      \"rawLine\": \"export dotted.key: dotted-value\",\n      \"key\": \"dotted.key\",\n      \"prefix\": \"export dotted.key: \",\n      \"separator\": \":\",\n      \"valueToken\": \"dotted-value\",\n      \"suffix\": \"\",\n      \"effectiveValue\": \"dotted-value\"\n    },\n    {\n      \"lineNumber\": 2,\n      \"kind\": \"entry\",\n      \"rawLine\": \"DUP=first\",\n      \"key\": \"DUP\",\n      \"prefix\": \"DUP=\",\n      \"separator\": \"=\",\n      \"valueToken\": \"first\",\n      \"suffix\": \"\",\n      \"effectiveValue\": \"first\"\n    },\n    {\n      \"lineNumber\": 3,\n      \"kind\": \"entry\",\n      \"rawLine\": \"DUP=second # last\",\n      \"key\": \"DUP\",\n      \"prefix\": \"DUP=\",\n      \"separator\": \"=\",\n      \"valueToken\": \"second\",\n      \"suffix\": \" # last\",\n      \"effectiveValue\": \"second\"\n    },\n    {\n      \"lineNumber\": 4,\n      \"kind\": \"entry\",\n      \"rawLine\": \"MULTI=\\\"line one\",\n      \"key\": \"MULTI\",\n      \"prefix\": \"MULTI=\",\n      \"separator\": \"=\",\n      \"valueToken\": \"\\\"line one\",\n      \"suffix\": \"\",\n      \"effectiveValue\": \"line one\\nline two\"\n    },\n    {\n      \"kind\": \"continuation\",\n      \"rawLine\": \"line two\\\"\",\n      \"lineNumber\": 5,\n      \"entryLineNumber\": 4\n    },\n    {\n      \"lineNumber\": 6,\n      \"kind\": \"commented-entry\",\n      \"rawLine\": \"# COMMENTED = old # note\",\n      \"key\": \"COMMENTED\",\n      \"prefix\": \"# COMMENTED = \",\n      \"separator\": \"=\",\n      \"valueToken\": \"old\",\n      \"suffix\": \" # note\",\n      \"effectiveValue\": \"old\",\n      \"activePrefix\": \"COMMENTED = \"\n    },\n    {\n      \"lineNumber\": 7,\n      \"kind\": \"invalid\",\n      \"rawLine\": \"INVALID LINE\",\n      \"reason\": \"not valid dotenv assignment syntax\"\n    }\n  ],\n  \"currentMap\": {\n    \"dotted.key\": {\n      \"effectiveValue\": \"dotted-value\",\n      \"lineNumber\": 1\n    },\n    \"DUP\": {\n      \"effectiveValue\": \"second\",\n      \"lineNumber\": 3\n    },\n    \"MULTI\": {\n      \"effectiveValue\": \"line one\\nline two\",\n      \"lineNumber\": 4\n    }\n  },\n  \"occurrencesMap\": {\n    \"dotted.key\": [\n      {\n        \"effectiveValue\": \"dotted-value\",\n        \"prefix\": \"export dotted.key: \",\n        \"lineNumber\": 1\n      }\n    ],\n    \"DUP\": [\n      {\n        \"effectiveValue\": \"first\",\n        \"prefix\": \"DUP=\",\n        \"lineNumber\": 2\n      },\n      {\n        \"effectiveValue\": \"second\",\n        \"prefix\": \"DUP=\",\n        \"lineNumber\": 3\n      }\n    ],\n    \"MULTI\": [\n      {\n        \"effectiveValue\": \"line one\\nline two\",\n        \"prefix\": \"MULTI=\",\n        \"lineNumber\": 4\n      }\n    ]\n  },\n  \"invalidLineCount\": 1,\n  \"shadowedEntryCount\": 1\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "env.format",
+      "input": {
+        "value": "line one\nline two"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"formatted\": \"\\\"line one\\\\nline two\\\"\"\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "env.patch",
+      "input": {
+        "file": "patch.env",
+        "patches": [
+          {
+            "op": "set",
+            "key": "DUP",
+            "value": "updated"
+          },
+          {
+            "op": "set",
+            "key": "RESTORE",
+            "value": "active"
+          },
+          {
+            "op": "delete",
+            "key": "MULTI"
+          },
+          {
+            "op": "set",
+            "key": "ADDED",
+            "value": "new value # literal"
+          }
+        ],
+        "options": {
+          "update": "last",
+          "matchCommented": true,
+          "removeDuplicateEntries": true,
+          "sortAdditions": true
+        }
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"changed\": true,\n  \"filePath\": \"$ROOT/patch.env\",\n  \"writtenKeys\": [\n    \"DUP\",\n    \"RESTORE\",\n    \"ADDED\"\n  ],\n  \"addedKeys\": [\n    \"ADDED\"\n  ],\n  \"deletedKeys\": [\n    \"MULTI\"\n  ],\n  \"removedDuplicateKeys\": [\n    \"DUP\"\n  ],\n  \"restoredCommentedKeys\": [\n    \"RESTORE\"\n  ]\n}\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "observeFiles": [
+    "patch.env"
+  ],
+  "expectedFiles": {
+    "patch.env": "# heading\nDUP=updated # keep\nRESTORE = active # note\nTAIL=value\n\nADDED=\"new value # literal\"\n"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://env-lane.dev/schema/plugin-protocol-v1.json",
+  "title": "env-lane plugin protocol v1",
+  "$defs": {
+    "capability": {
+      "oneOf": [
+        { "type": "object", "required": ["kind", "name"], "properties": { "kind": { "const": "command" }, "name": { "type": "string", "minLength": 1 } }, "additionalProperties": false },
+        { "type": "object", "required": ["kind", "namespace"], "properties": { "kind": { "const": "nativeApi" }, "namespace": { "type": "string", "minLength": 1 } }, "additionalProperties": false },
+        { "type": "object", "required": ["kind"], "properties": { "kind": { "enum": ["documentFilter", "envSource", "envGenerate", "filePlan"] } }, "additionalProperties": false }
+      ]
+    },
+    "hello": { "type": "object", "required": ["token", "protocol", "pluginId", "capabilities"], "properties": { "token": { "type": "string" }, "protocol": { "const": 1 }, "pluginId": { "type": "string" }, "capabilities": { "type": "array", "items": { "$ref": "#/$defs/capability" } } }, "additionalProperties": false },
+    "request": { "type": "object", "required": ["jsonrpc", "id", "method", "params"], "properties": { "jsonrpc": { "const": "2.0" }, "id": { "type": "integer", "minimum": 0 }, "method": { "type": "string" }, "params": {} }, "additionalProperties": false },
+    "response": { "type": "object", "required": ["jsonrpc", "id"], "properties": { "jsonrpc": { "const": "2.0" }, "id": { "type": "integer", "minimum": 0 }, "result": {}, "error": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "details": {} }, "additionalProperties": false } }, "oneOf": [{ "required": ["result"] }, { "required": ["error"] }], "additionalProperties": false }
+  }
+}

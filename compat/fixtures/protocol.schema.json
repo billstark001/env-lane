@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://env-lane.dev/compat/fixture-v1.schema.json",
+  "title": "env-lane compatibility fixture",
+  "type": "object",
+  "required": ["schemaVersion", "id", "area", "owner", "topology", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "area": {
+      "enum": ["cli", "core-api", "env-document", "vault-api", "vault-cli", "config-compat"]
+    },
+    "owner": { "enum": ["rust-core", "native-cli", "node-compat", "shared-protocol"] },
+    "topology": { "type": "string" },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "set": { "type": "object", "additionalProperties": { "type": "string" } },
+        "unset": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "normalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root": { "type": "boolean" },
+        "pathSeparators": { "type": "boolean" },
+        "timestamps": { "type": "boolean" },
+        "randomCiphertext": { "enum": ["preserve", "vault-semantic"] }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["kind"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "enum": ["cli", "api"] },
+          "argv": { "type": "array", "items": { "type": "string" } },
+          "operation": { "type": "string" },
+          "input": {},
+          "cwd": { "type": "string" },
+          "stdin": { "type": "string" },
+          "expected": { "$ref": "#/$defs/stepObservation" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "kind": { "const": "cli" } } },
+            "then": { "required": ["argv"] }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "api" } } },
+            "then": { "required": ["operation"] }
+          }
+        ]
+      }
+    },
+    "observeFiles": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "expectedFiles": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [{ "type": "string" }, { "type": "null" }]
+      }
+    }
+  },
+  "$defs": {
+    "stepObservation": {
+      "type": "object",
+      "required": ["status", "stdout", "stderr"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "integer" },
+        "stdout": { "type": "string" },
+        "stderr": { "type": "string" }
+      }
+    }
+  }
+}

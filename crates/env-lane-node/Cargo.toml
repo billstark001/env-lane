@@ -1,0 +1,21 @@
+[package]
+name = "env-lane-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = "3"
+napi-derive = "3"
+env-lane-core = { path = "../env-lane-core" }
+env-lane-plugin-api = { path = "../env-lane-plugin-api" }
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+
+[build-dependencies]
+napi-build = "2"

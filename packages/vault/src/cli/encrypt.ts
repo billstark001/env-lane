@@ -1,6 +1,6 @@
 import type { Command } from 'commander'
 import { encryptEnvFiles } from '../application/push.js'
-import { matchesVaultPushSelection } from '../application/restore.js'
+import { createVaultPushSelectionMatcher } from '../application/restore.js'
 import { emitUnsafeWarning } from './common.js'
 import {
   addFailOnOption,
@@ -26,6 +26,7 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
       assertVaultFormat(format)
       validateFailOnOption(allOpts.failOn)
       const resolvedConfig = await emitUnsafeWarning(allOpts)
+      const selectEntry = createVaultPushSelectionMatcher(allOpts)
       const result = await encryptEnvFiles(allOpts.config, keyFile, {
         cwd: allOpts.cwd,
         dryRun: allOpts.dryRun,
@@ -34,7 +35,7 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
         conflictStrategy: parseVaultConflictStrategy(allOpts.conflicts),
         missingFiles: parseVaultMissingFileStrategy(allOpts.missingFiles),
         autoRemapPaths: allOpts.autoRemap,
-        selectEntry: (entry) => matchesVaultPushSelection(entry, allOpts),
+        selectEntry,
         resolvedConfig,
       })
       ctx.formatAndLog(result, {

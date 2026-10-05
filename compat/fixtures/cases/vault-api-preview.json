@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "id": "vault-api-preview",
+  "area": "vault-api",
+  "owner": "rust-core",
+  "topology": "moment-landing",
+  "normalization": {
+    "root": true,
+    "pathSeparators": true,
+    "timestamps": true,
+    "randomCiphertext": "vault-semantic"
+  },
+  "steps": [
+    {
+      "kind": "api",
+      "operation": "vault.load-config",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "vaultConfigFile": "env-lane.vault.json"
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"baseDir\": \"$ROOT\",\n  \"envFiles\": [\n    \"$ROOT/.env\",\n    \"$ROOT/.env.production\",\n    \"$ROOT/server/.env\",\n    \"$ROOT/server/.env.production\"\n  ],\n  \"outputDir\": \"$ROOT/.env-lane-vault\",\n  \"outputFile\": \"store.dat\",\n  \"storePath\": \"$ROOT/.env-lane-vault/store.dat\",\n  \"trackDeletions\": true,\n  \"autoRemapPaths\": true,\n  \"allowUnmanaged\": false,\n  \"restore\": {\n    \"redaction\": \"partial\",\n    \"reveal\": {\n      \"start\": 3,\n      \"end\": 2\n    },\n    \"promptLoop\": false\n  },\n  \"exclude\": [],\n  \"disableUnsafeWarning\": true\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "vault.encrypt",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "keyFile": "key.txt",
+        "options": {
+          "vaultConfigFile": "env-lane.vault.json",
+          "dryRun": true
+        }
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"applied\": false,\n  \"dryRun\": true,\n  \"storePath\": \"$ROOT/.env-lane-vault/store.dat\",\n  \"setRecordsWritten\": 9,\n  \"deleteRecordsWritten\": 0,\n  \"skippedUnchanged\": 0,\n  \"localOnlyEntriesSkipped\": 0,\n  \"missingFilesSkipped\": 0,\n  \"missingFilesTreatedAsEmpty\": 0,\n  \"invalidLinesIgnored\": 0,\n  \"shadowedEntriesIgnored\": 0,\n  \"selectionSkipped\": 0,\n  \"rawRecords\": 0,\n  \"parsedRecords\": 0,\n  \"failedRecords\": 0,\n  \"aliasedRecords\": 0,\n  \"conflicts\": 0,\n  \"conflictsKeptLocal\": 0,\n  \"conflictsTookVault\": 0,\n  \"changes\": [\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env\",\n      \"key\": \"PUBLIC_ORIGIN\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env\",\n      \"key\": \"SHARED\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env\",\n      \"key\": \"SECRET_TOKEN\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env.production\",\n      \"key\": \"PUBLIC_ORIGIN\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env.production\",\n      \"key\": \"SHARED\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env\",\n      \"key\": \"PORT\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env\",\n      \"key\": \"SHARED\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env.production\",\n      \"key\": \"PORT\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env.production\",\n      \"key\": \"SHARED\"\n    }\n  ],\n  \"syncStateMigratedFromVersion0\": false\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "vault.encrypt",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "keyFile": "key.txt",
+        "options": {
+          "vaultConfigFile": "env-lane.vault.json",
+          "dryRun": false
+        }
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"applied\": true,\n  \"dryRun\": false,\n  \"storePath\": \"$ROOT/.env-lane-vault/store.dat\",\n  \"setRecordsWritten\": 9,\n  \"deleteRecordsWritten\": 0,\n  \"skippedUnchanged\": 0,\n  \"localOnlyEntriesSkipped\": 0,\n  \"missingFilesSkipped\": 0,\n  \"missingFilesTreatedAsEmpty\": 0,\n  \"invalidLinesIgnored\": 0,\n  \"shadowedEntriesIgnored\": 0,\n  \"selectionSkipped\": 0,\n  \"rawRecords\": 0,\n  \"parsedRecords\": 0,\n  \"failedRecords\": 0,\n  \"aliasedRecords\": 0,\n  \"conflicts\": 0,\n  \"conflictsKeptLocal\": 0,\n  \"conflictsTookVault\": 0,\n  \"changes\": [\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env\",\n      \"key\": \"PUBLIC_ORIGIN\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env\",\n      \"key\": \"SHARED\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env\",\n      \"key\": \"SECRET_TOKEN\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env.production\",\n      \"key\": \"PUBLIC_ORIGIN\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/.env.production\",\n      \"key\": \"SHARED\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env\",\n      \"key\": \"PORT\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env\",\n      \"key\": \"SHARED\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env.production\",\n      \"key\": \"PORT\"\n    },\n    {\n      \"action\": \"set\",\n      \"filePath\": \"$ROOT/server/.env.production\",\n      \"key\": \"SHARED\"\n    }\n  ],\n  \"syncStateMigratedFromVersion0\": false\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "vault.plan",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "keyFile": "key.txt",
+        "options": {
+          "vaultConfigFile": "env-lane.vault.json"
+        }
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"version\": 1,\n  \"createdAt\": $TIMESTAMP,\n  \"planDigest\": \"$PLANDIGEST\",\n  \"storeDigest\": \"$STOREDIGEST\",\n  \"storePath\": \"$ROOT/.env-lane-vault/store.dat\",\n  \"files\": [\n    {\n      \"filePath\": \"$ROOT/.env\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env\",\n          \"key\": \"PUBLIC_ORIGIN\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"https://landing.example.invalid\",\n            \"vault\": \"https://landing.example.invalid\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env\",\n          \"key\": \"SECRET_TOKEN\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"<redacted:syn......ue>\",\n            \"vault\": \"<redacted:syn......ue>\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"local-root\",\n            \"vault\": \"local-root\"\n          }\n        }\n      ],\n      \"changed\": false\n    },\n    {\n      \"filePath\": \"$ROOT/.env.production\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env.production\",\n          \"key\": \"PUBLIC_ORIGIN\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"https://www.example.invalid\",\n            \"vault\": \"https://www.example.invalid\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env.production\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"production-root\",\n            \"vault\": \"production-root\"\n          }\n        }\n      ],\n      \"changed\": false\n    },\n    {\n      \"filePath\": \"$ROOT/server/.env\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env\",\n          \"key\": \"PORT\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"3000\",\n            \"vault\": \"3000\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"local-server\",\n            \"vault\": \"local-server\"\n          }\n        }\n      ],\n      \"changed\": false\n    },\n    {\n      \"filePath\": \"$ROOT/server/.env.production\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env.production\",\n          \"key\": \"PORT\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"8080\",\n            \"vault\": \"8080\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env.production\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"<redacted:pro......er>\",\n            \"vault\": \"<redacted:pro......er>\"\n          }\n        }\n      ],\n      \"changed\": false\n    }\n  ],\n  \"summary\": {\n    \"add\": 0,\n    \"modify\": 0,\n    \"delete\": 0,\n    \"identical\": 9,\n    \"conflict\": 0,\n    \"filesWithChanges\": 0\n  },\n  \"failedRecords\": 0,\n  \"parsedRecords\": 9,\n  \"rawRecords\": 9,\n  \"aliasedRecords\": 0,\n  \"unmanagedStoreFiles\": []\n}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "api",
+      "operation": "vault.decrypt",
+      "input": {
+        "configFile": "env-lane.config.json",
+        "keyFile": "key.txt",
+        "options": {
+          "vaultConfigFile": "env-lane.vault.json",
+          "dryRun": true
+        }
+      },
+      "expected": {
+        "status": 0,
+        "stdout": "{\n  \"version\": 1,\n  \"createdAt\": $TIMESTAMP,\n  \"planDigest\": \"$PLANDIGEST\",\n  \"storeDigest\": \"$STOREDIGEST\",\n  \"storePath\": \"$ROOT/.env-lane-vault/store.dat\",\n  \"files\": [\n    {\n      \"filePath\": \"$ROOT/.env\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env\",\n          \"key\": \"PUBLIC_ORIGIN\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"https://landing.example.invalid\",\n            \"vault\": \"https://landing.example.invalid\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env\",\n          \"key\": \"SECRET_TOKEN\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"<redacted:syn......ue>\",\n            \"vault\": \"<redacted:syn......ue>\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"local-root\",\n            \"vault\": \"local-root\"\n          }\n        }\n      ],\n      \"changed\": false\n    },\n    {\n      \"filePath\": \"$ROOT/.env.production\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env.production\",\n          \"key\": \"PUBLIC_ORIGIN\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"https://www.example.invalid\",\n            \"vault\": \"https://www.example.invalid\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/.env.production\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"production-root\",\n            \"vault\": \"production-root\"\n          }\n        }\n      ],\n      \"changed\": false\n    },\n    {\n      \"filePath\": \"$ROOT/server/.env\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env\",\n          \"key\": \"PORT\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"3000\",\n            \"vault\": \"3000\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"local-server\",\n            \"vault\": \"local-server\"\n          }\n        }\n      ],\n      \"changed\": false\n    },\n    {\n      \"filePath\": \"$ROOT/server/.env.production\",\n      \"entries\": [\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env.production\",\n          \"key\": \"PORT\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"8080\",\n            \"vault\": \"8080\"\n          }\n        },\n        {\n          \"entryId\": \"$ENTRYID\",\n          \"filePath\": \"$ROOT/server/.env.production\",\n          \"key\": \"SHARED\",\n          \"action\": \"identical\",\n          \"occurrenceCount\": 1,\n          \"conflict\": false,\n          \"vaultAction\": \"identical\",\n          \"preview\": {\n            \"current\": \"<redacted:pro......er>\",\n            \"vault\": \"<redacted:pro......er>\"\n          }\n        }\n      ],\n      \"changed\": false\n    }\n  ],\n  \"summary\": {\n    \"add\": 0,\n    \"modify\": 0,\n    \"delete\": 0,\n    \"identical\": 9,\n    \"conflict\": 0,\n    \"filesWithChanges\": 0\n  },\n  \"failedRecords\": 0,\n  \"parsedRecords\": 9,\n  \"rawRecords\": 9,\n  \"aliasedRecords\": 0,\n  \"unmanagedStoreFiles\": [],\n  \"applied\": false,\n  \"filesWritten\": 0,\n  \"results\": []\n}\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "observeFiles": [
+    ".env-lane-vault/store.dat"
+  ],
+  "expectedFiles": {
+    ".env-lane-vault/store.dat": "$VAULT_CIPHERTEXT_LINES:9\n"
+  }
+}

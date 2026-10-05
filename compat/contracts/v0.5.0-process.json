@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.0",
+  "scope": ["env-lane run", "env-lane-config run run", "@env-lane/core runWithInjectedEnv"],
+  "cli": {
+    "stdio": "The child inherits stdin, stdout and stderr as byte streams; the runner does not decode or buffer them.",
+    "stdout": "Reserved for child output, including when config or spawn fails.",
+    "diagnostics": "Runner diagnostics, including --json run errors, go to stderr. --quiet suppresses the run summary.",
+    "normalExit": "Return the child's numeric exit status unchanged.",
+    "spawnFailure": {
+      "missingExecutable": { "status": 127, "code": "RUN_COMMAND_NOT_FOUND" },
+      "otherFailure": { "status": 126, "code": "RUN_SPAWN_FAILED" }
+    },
+    "posixChildSignal": "Terminate the runner with the same signal, preserving signal identity for its parent.",
+    "posixParentSignal": "Forward SIGINT or SIGTERM to the child, then terminate the runner with that same signal; non-TTY children run in a separate process group so the signal reaches descendants.",
+    "windows": "Return the available numeric child status; POSIX signal identity and process groups do not apply. Batch files use the Windows command processor."
+  },
+  "nodeApi": {
+    "runWithInjectedEnv": "Promise<number>: normal status unchanged, spawn failure 126/127, signal termination 128 plus the platform signal number.",
+    "runWithInjectedEnvDetailed": "Promise<{ exitCode: number | null, signal: NodeJS.Signals | null, spawnError?: { code: string, message: string, exitStatus: 126 | 127 } }>.",
+    "spawnWithInjectedEnv": "Returns the child process and its completion promise. stdio defaults to inherit; pipe makes stdin, stdout and stderr available to the caller."
+  },
+  "intentionalChangesFrom0.4.2": [
+    {
+      "case": "Child exits on a POSIX signal",
+      "old": "CLI status 1; Node numeric API status 1",
+      "new": "CLI terminates with the same signal; Node numeric API returns 128 + signal number",
+      "reason": "Preserve termination identity for shells and process supervisors",
+      "migration": "Consumers that previously expected 1 must handle the signal or 128 + signal number"
+    },
+    {
+      "case": "Parent receives SIGINT",
+      "old": "Child cleanup receives SIGTERM",
+      "new": "Child receives SIGINT; parent exits on SIGINT",
+      "reason": "Keep interrupt semantics through wrappers",
+      "migration": "Child signal handlers should listen for SIGINT as well as SIGTERM"
+    },
+    {
+      "case": "Child command cannot start",
+      "old": "Unspecified process error status and rendering",
+      "new": "Missing executable is 127, other spawn failures are 126, and the CLI emits one stderr diagnostic",
+      "reason": "Make automation failures distinguishable and keep child stdout clean",
+      "migration": "Check 126/127 and stderr instead of assuming status 1 or a JSON stdout error"
+    },
+    {
+      "case": "Windows direct executable through Node API",
+      "old": "Always invoked through cmd.exe",
+      "new": "Direct executables bypass cmd.exe; only discovered batch files use it",
+      "reason": "Preserve argv and detect missing executables reliably",
+      "migration": "Call a shell explicitly when shell expansion is required"
+    }
+  ]
+}

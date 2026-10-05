@@ -1,3 +1,4 @@
+import { generateKeyPairSync, randomBytes } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -15,6 +16,17 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parse as parseDotenv } from 'dotenv'
 import { afterEach, describe, expect, it } from 'vitest'
+import { listEnvFilesForTarget } from '../../src/application/dotenv.js'
+import {
+  listWorkspacePackagesForConfig,
+  resolveTargetPackageFromList,
+} from '../../src/application/workspace.js'
+import {
+  parseEnvDocument,
+  parseEnvLine,
+  setEnvDocumentValues,
+  writeEnvDocumentContent,
+} from '../../src/env-document.js'
 import {
   checkDotenvSelector,
   type Diagnostic,
@@ -27,8 +39,6 @@ import {
   listWorkspacePackages,
   loadEnvLaneConfig,
   normalizeEnvFileVariant,
-  parseEnvDocument,
-  parseEnvLine,
   redactObject,
   redactRecord,
   redactValue,
@@ -36,12 +46,13 @@ import {
   resolveTargetPackage,
   runEnvCheck,
   runEnvSync,
-  setEnvDocumentValues,
+  runWithInjectedEnv,
+  runWithInjectedEnvDetailed,
   shouldRedact,
   sortEnvFile,
   sortEnvFilesFromConfig,
+  spawnWithInjectedEnv,
   withEnvLaneContext,
-  writeFileContentAtomically,
 } from '../../src/index.js'
 import {
   SYNTHETIC_CREDENTIALS,
@@ -60,6 +71,38 @@ function testDirectory(prefix: string): string {
 afterEach(() => {
   for (const root of testDirectories) rmSync(root, { recursive: true, force: true })
   testDirectories.clear()
+})
+
+it('discovers a Git directory root without a package manifest', async () => {
+  const outer = testDirectory('env-lane-git-root')
+  const root = path.join(outer, 'repo')
+  const nested = path.join(root, 'nested', 'work')
+  writeFileSync(path.join(outer, 'package.json'), '{}')
+  mkdirSync(root)
+  mkdirSync(path.join(root, '.git'))
+  mkdirSync(nested, { recursive: true })
+  writeFileSync(path.join(root, 'env-lane.config.json'), '{"selector":{"envKey":"FROM_ROOT"}}')
+  const config = await loadEnvLaneConfig({ cwd: nested })
+  expect(config.rootDir).toBe(root)
+  expect(config.selector.envKey).toBe('FROM_ROOT')
+})
+
+it('keeps a nested Git repository separate from an outer pnpm workspace', async () => {
+  const outer = testDirectory('env-lane-nested-git-root')
+  const root = path.join(outer, 'repo')
+  const nested = path.join(root, 'nested', 'work')
+  writeFileSync(path.join(outer, 'pnpm-workspace.yaml'), 'packages: [apps/*]\n')
+  mkdirSync(path.join(root, '.git'), { recursive: true })
+  mkdirSync(nested, { recursive: true })
+  writeFileSync(path.join(root, 'package.json'), '{}')
+  writeFileSync(path.join(root, 'env-lane.config.json'), '{"selector":{"envKey":"INNER"}}')
+  expect((await loadEnvLaneConfig({ cwd: nested })).rootDir).toBe(root)
+
+  rmSync(path.join(root, '.git'), { recursive: true })
+  writeFileSync(path.join(root, '.git'), 'gitdir: elsewhere\n')
+  expect((await loadEnvLaneConfig({ cwd: nested })).rootDir).toBe(root)
+  writeFileSync(path.join(nested, 'package.json'), '{}')
+  expect((await loadEnvLaneConfig({ cwd: nested })).rootDir).toBe(nested)
 })
 
 function fixture(): string {
@@ -85,6 +128,67 @@ function configSource(ext: string, config: unknown): string {
 }
 
 describe('@env-lane/core', () => {
+  describe('child process contract', () => {
+    it('exposes piped byte streams and the numeric child exit', async () => {
+      const root = fixture()
+      const { child, completed } = await spawnWithInjectedEnv({
+        cwd: root,
+        target: 'api',
+        stdio: 'pipe',
+        command: [
+          process.execPath,
+          '-e',
+          "const fs=require('node:fs');const ok=fs.readFileSync(0).equals(Buffer.from('ping'));process.stdout.write(Buffer.from([0,255,10]));process.stderr.write(Buffer.from([1,254,13]));process.exitCode=ok?7:9",
+        ],
+      })
+      const stdout: Buffer[] = []
+      const stderr: Buffer[] = []
+      child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
+      child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+      child.stdin?.end('ping')
+      expect(await completed).toEqual({ exitCode: 7, signal: null })
+      expect(Buffer.concat(stdout)).toEqual(Buffer.from([0, 255, 10]))
+      expect(Buffer.concat(stderr)).toEqual(Buffer.from([1, 254, 13]))
+    })
+
+    it('distinguishes missing commands from an invalid child directory', async () => {
+      const root = fixture()
+      const missingCommand = {
+        cwd: root,
+        target: 'api',
+        command: ['env-lane-synthetic-missing-command'],
+      }
+      expect(await runWithInjectedEnv(missingCommand)).toBe(127)
+      expect(await runWithInjectedEnvDetailed(missingCommand)).toMatchObject({
+        exitCode: null,
+        signal: null,
+        spawnError: { code: 'ENOENT', exitStatus: 127 },
+      })
+      expect(
+        await runWithInjectedEnv({
+          cwd: root,
+          target: 'api',
+          runCwd: 'missing-directory',
+          command: [process.execPath, '-e', 'process.exit(0)'],
+        }),
+      ).toBe(126)
+    })
+
+    it.skipIf(process.platform === 'win32')('retains a child termination signal', async () => {
+      const root = fixture()
+      const options = {
+        cwd: root,
+        target: 'api',
+        command: [process.execPath, '-e', "process.kill(process.pid, 'SIGTERM')"],
+      }
+      expect(await runWithInjectedEnvDetailed(options)).toEqual({
+        exitCode: null,
+        signal: 'SIGTERM',
+      })
+      expect(await runWithInjectedEnv(options)).toBe(143)
+    })
+  })
+
   it('atomically replaces file content without leaving temporary files', () => {
     const root = testDirectory(`env-lane-file-utils`)
     const filePath = path.join(root, 'nested', '.env')
@@ -92,7 +196,7 @@ describe('@env-lane/core', () => {
     writeFileSync(filePath, 'before\n')
     if (process.platform !== 'win32') chmodSync(filePath, 0o640)
 
-    writeFileContentAtomically(filePath, 'after\n')
+    writeEnvDocumentContent(filePath, 'after\n')
 
     expect(readFileSync(filePath, 'utf8')).toBe('after\n')
     if (process.platform !== 'win32') expect(statSync(filePath).mode & 0o777).toBe(0o640)
@@ -109,7 +213,7 @@ describe('@env-lane/core', () => {
       writeFileSync(targetPath, 'before\n')
       symlinkSync(targetPath, linkPath)
 
-      writeFileContentAtomically(linkPath, 'after\n')
+      writeEnvDocumentContent(linkPath, 'after\n')
 
       expect(lstatSync(linkPath).isSymbolicLink()).toBe(true)
       expect(readFileSync(targetPath, 'utf8')).toBe('after\n')
@@ -262,6 +366,22 @@ describe('@env-lane/core', () => {
     const root = fixture()
     const packages = await listWorkspacePackages({ cwd: root })
     expect(packages.some((pkg) => pkg.name === '@acme/api')).toBe(true)
+    const config = await loadEnvLaneConfig({ cwd: root })
+    expect(await listWorkspacePackagesForConfig(config)).toEqual(packages)
+    const api = packages.find((pkg) => pkg.name === '@acme/api')!
+    expect(listEnvFilesForTarget(config, api, { build: 'production' })).toEqual(
+      await listEnvFiles({ cwd: root, target: 'api', build: 'production' }),
+    )
+    expect(listEnvFilesForTarget(config, api, {}, 'production')).toEqual(
+      await listEnvFiles({ cwd: root, target: 'api', build: 'production' }),
+    )
+    expect(resolveTargetPackageFromList('api', config, packages).name).toBe('@acme/api')
+    expect(resolveTargetPackageFromList(undefined, config, packages, { cwd: root }).isRoot).toBe(
+      true,
+    )
+    expect(() => resolveTargetPackageFromList(undefined, config, packages)).toThrow(
+      /Missing target/,
+    )
     await expect(resolveTargetPackage('api', { cwd: root })).resolves.toMatchObject({
       name: '@acme/api',
     })
@@ -309,6 +429,14 @@ describe('@env-lane/core', () => {
     expect(resolved.values.A).toBe('2')
     expect(resolved.values.B).toBe('3')
     expect(resolved.values.ENV_BUILD).toBe('production')
+    const guarded = await resolveInjectedEnv({
+      cwd: root,
+      target: 'api',
+      build: 'production',
+      includeProcessEnv: false,
+      packages: 'not a public option',
+    } as Parameters<typeof resolveInjectedEnv>[0])
+    expect(guarded.values.A).toBe('2')
   })
 
   it('validates configured selector builds when strict mode is enabled', async () => {
@@ -1099,6 +1227,21 @@ describe('@env-lane/core', () => {
       }
       expect(isSecretLikeKey('PUBLIC_KEY', { denyListKeys: [/^PUBLIC_KEY$/] })).toBe(true)
       expect(isSecretLikeKey('PASSWORD', { allowListKeys: [/^PASSWORD$/] })).toBe(false)
+      expect(isSecretLikeKey('PUBLIC_KEY', { denyListKeys: [/^(?!SECRET).*KEY$/] })).toBe(true)
+      expect(isSecretLikeKey('PASSWORD', { allowListKeys: [/^(PASS)WORD$/g] })).toBe(false)
+      expect(
+        isSecretLikeValue('CUSTOM_KEY=12345678', {
+          denyListKeys: [/^(?!SECRET)CUSTOM_KEY$/],
+        }),
+      ).toBe(true)
+      expect(
+        isSecretLikeValue('PASSWORD=abcdefgh', {
+          allowListKeys: [/^(PASS)WORD$/g],
+        }),
+      ).toBe(false)
+      expect(redactValue('PUBLIC_KEY', '12345678', { denyListKeys: [/^(?!SECRET).*KEY$/] })).toBe(
+        '<redacted>',
+      )
       for (const value of [
         'https://example.test/public',
         '1234567890123456789012345678901234567890',
@@ -1125,6 +1268,21 @@ describe('@env-lane/core', () => {
       expect(isPaseto(SYNTHETIC_CREDENTIALS.paseto.public)).toBe(true)
       expect(isJwt('one.two.three')).toBe(false)
       expect(isPaseto('v4.public.too-short')).toBe(false)
+    })
+
+    it('redacts disposable cryptographic material without revealing it in test output', () => {
+      const { privateKey, publicKey } = generateKeyPairSync('ed25519', {
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+      })
+      const opaque = randomBytes(48).toString('base64url')
+      const providerToken = `ghp_${randomBytes(32).toString('base64url')}`
+      expect(isSecretLikeValue(privateKey)).toBe(true)
+      expect(isSecretLikeValue(publicKey)).toBe(false)
+      expect(isSecretLikeValue(opaque)).toBe(true)
+      expect(isSecretLikeValue(providerToken)).toBe(true)
+      expect(redactValue('safe', privateKey)).toBe('<redacted>')
+      expect(redactValue('PUBLIC_KEY', publicKey)).toBe(publicKey)
     })
 
     it('supports stricter high-entropy classification for partial previews', () => {
@@ -1159,6 +1317,9 @@ describe('@env-lane/core', () => {
 
     it('honors redaction options across records, values, arrays, and circular objects', () => {
       expect(shouldRedact('safe', 'https://user:password@example.test')).toBe(true)
+      expect(shouldRedact('safe', 'https://x.test/#access_token=12345678')).toBe(true)
+      expect(shouldRedact('safe', 'https://x.test/#/route?token=12345678')).toBe(true)
+      expect(shouldRedact('safe', 'https://x.test/#section=12345678')).toBe(false)
       expect(
         shouldRedact('safe', 'https://user:password@example.test', { detectValues: false }),
       ).toBe(false)
@@ -1177,6 +1338,11 @@ describe('@env-lane/core', () => {
       const circular: { safe: string; self?: unknown } = { safe: 'visible' }
       circular.self = circular
       expect(redactObject(circular)).toEqual({ safe: 'visible', self: '[Circular]' })
+      const repeated = { safe: 'visible' }
+      expect(redactObject({ first: repeated, second: repeated })).toEqual({
+        first: { safe: 'visible' },
+        second: { safe: 'visible' },
+      })
       expect(redactObject({ PASSWORD: 'secret-value' }, true)).toEqual({
         PASSWORD: 'secret-value',
       })

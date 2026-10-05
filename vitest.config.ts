@@ -14,5 +14,6 @@ export default defineConfig({
     include: ['packages/*/test/**/*.test.ts'],
     globals: false,
     restoreMocks: true,
+    testTimeout: 30_000,
   },
 })

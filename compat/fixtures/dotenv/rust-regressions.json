@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "unicode-line-separator-starts-effective-assignment",
+      "content": "invalid\u2028A=one",
+      "values": { "A": "one" },
+      "invalidLineCount": 1,
+      "lineKinds": ["invalid"]
+    },
+    {
+      "id": "unicode-line-separator-prevents-commented-assignment",
+      "content": "# A=one\u2028",
+      "values": {},
+      "invalidLineCount": 0,
+      "lineKinds": ["comment"]
+    },
+    {
+      "id": "quote-stripping-uses-multiline-anchors",
+      "content": "A=\"\u2028`two`",
+      "values": { "A": "\"\u2028two" },
+      "invalidLineCount": 0,
+      "lineKinds": ["entry"]
+    },
+    {
+      "id": "ecmascript-whitespace-excludes-nel",
+      "content": "\u0085A=one\nB=\u0085two",
+      "values": { "B": "\u0085two" },
+      "invalidLineCount": 1,
+      "lineKinds": ["invalid", "entry"]
+    }
+  ]
+}

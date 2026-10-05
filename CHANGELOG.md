@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.5.0] - 2026-10-05
+
+### Added
+
+- Added a native Core CLI, a Node-API binding, generic plugin package discovery and process
+  protocol, and the `@env-lane/plugin-sdk` JavaScript runtime. Rust and JavaScript plugins use
+  the same package manifest and JSON-RPC protocol.
+- Added native JSON, YAML, JSONC, JSON5, and TOML configuration parsing. The separate
+  `@env-lane/config-compat` compiler caches executable JS/TS configuration for the native CLI.
+- Added platform-native npm binaries and standalone archives with matching plugin manifests.
+  All native and Vault platform packages are derived during release from the target table and
+  staged binaries; their manifests are no longer tracked as source files.
+- Added a tag-triggered release workflow that builds eight native targets, publishes npm packages
+  with GitHub OIDC trusted publishing, and attaches standalone archives and checksums to a GitHub
+  release. Workspace packages are packed with pnpm and uploaded with npm so `workspace:*`
+  dependencies become exact release versions without using a publish token.
+
+### Changed
+
+- The main config reserves Core fields and treats every other root field as a plugin
+  registration with a required `enabled` boolean. Vault is pre-registered as
+  `@env-lane/vault`; `vault: { enabled: true }` is required to use it.
+- Vault command parsing and execution run in the Vault plugin process. Node API calls use an
+  enabled plugin namespace; unknown namespaces fail instead of routing to Vault.
+- Rust now validates main and Vault configuration. JavaScript adapters only evaluate JS/TS
+  source and pass its raw result to Rust.
+- `run` now inherits all child streams without buffering, preserves normal exit codes and POSIX
+  signal identity, forwards the parent's INT/TERM signal, and uses 127/126 for startup failures.
+  Run diagnostics use stderr even when JSON output was requested.
+- The Core Node API adds `runWithInjectedEnvDetailed` and `spawnWithInjectedEnv` for structured
+  completion results and optional pipe streams. Its numeric API now maps signals to 128 plus the
+  signal number and startup failures to 127/126. Windows direct executables bypass `cmd.exe`;
+  direct child arguments retain shell metacharacters, while discovered batch files still use it.
+- Stable Core and Vault application calls reach Rust while preserving the Vault v0/v1 store and
+  sync data formats. The separate `@env-lane/vault/cli` Commander adapter remains public.
+
+### Removed
+
+- Removed the old Node/Commander `env-lane` CLI source, `env-files` and `env-json` aliases,
+  the `plugins: []` config form, deprecated Core and Vault root re-exports, and Vault exclude
+  compatibility aliases.
+- Removed Vault-only package lookup, peer version checks, and installer copying. Missing or
+  invalid plugin packages now report generic `PLUGIN_*` errors.
+
+### Migration
+
+| 0.4.2 | 0.5.0 |
+| --- | --- |
+| `vault` omitted or `enabled: false` while invoking Vault | Set `vault: { enabled: true }` in the main config. |
+| `plugins: [{ ... }]` | Register each plugin by its root field with `enabled`, `configFile`, and `packageName`. |
+| `env-files`, `env-json` | Use `files`, `print`. |
+| Vault-root `registerVaultCommands` | Import from `@env-lane/vault/cli`. |
+| Deprecated Core root document helpers | Import from `@env-lane/core/env-document`. |
+| Vault config path guessed from `loadVaultConfig()` first argument | Pass the Vault file as the first argument or `options.vaultConfigFile`; do not pass both. |
+| A signal-terminated child produced status 1; parent SIGINT cleaned up with SIGTERM | Handle the child's original signal, or use the Node API's structured result. Parent SIGINT now reaches the child as SIGINT. |
+
 ## [0.4.2] - 2026-08-04
 
 ### Changed

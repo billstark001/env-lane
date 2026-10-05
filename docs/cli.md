@@ -1,9 +1,27 @@
 # CLI reference
 
+## Native executable on the rewrite branch
+
+`cargo run --locked -p env-lane-cli -- <command>` exercises the standalone Rust CLI. It implements
+the Core commands below and `vault encrypt|plan|decrypt|apply|sanitize|prune`. Native declarative
+configuration runs without Node. For executable JS/TS configuration, compile a cache first or use
+`env-lane-config run <command>` for dynamic configuration; see [configuration](config.md).
+
+Vault `decrypt` offers a terminal selection list when `--yes` is omitted. Arrow keys move, Space
+toggles a row, `a` selects all, `i` inverts, Enter proceeds to confirmation, and Esc or `q`
+cancels. `--prompt-loop` and `--no-prompt-loop` control wrapping. Use `--yes` with an explicit
+`--conflicts keep-local|take-vault` policy for non-interactive restores. The native CLI writes
+prompts and diagnostics to stderr and structured results to stdout.
+
+The npm `env-lane` package installs the platform binary at its bin path. Installation uses Node
+to select the binary; invoking the command executes Rust directly. Plugins are resolved from
+enabled root config registrations and their package `envLanePlugin` metadata. Vault uses the same
+resolver as other plugins.
+
 Install the executable package:
 
 ~~~bash
-pnpm add -D env-lane
+pnpm add -D env-lane --allow-build=env-lane
 ~~~
 
 ## Global options
@@ -20,9 +38,10 @@ Global options may be placed before or after a subcommand:
 | `--non-interactive` | Disable prompts and require explicit decisions. |
 | `--no-prefix` | Remove diagnostic scope prefixes. |
 
-Final payloads use stdout. Diagnostics, warnings, progress, and prompts use stderr. JSON mode emits
-exactly one JSON document on stdout, including for errors. Expected public failures expose stable
-`error.code` values and may include structured `error.details`.
+Final payloads use stdout. Diagnostics, warnings, progress, and prompts use stderr. Except for
+`run`, JSON mode emits exactly one JSON document on stdout, including for errors. `run` reserves
+stdout for its child and reports its own errors on stderr, even if `--json` is requested. Expected
+public failures expose stable `error.code` values and may include structured `error.details`.
 
 Secret-like values from `print` and `sync` are redacted by default. Use `--show-secrets` only
 when the destination is trusted.
@@ -60,6 +79,14 @@ part of the child command. A path passed to `--run-cwd` is resolved from `--cwd`
 default) and `root` select the resolved package directory and workspace root respectively.
 `--run-cwd` changes only the child working directory, while `--cwd` controls config discovery and
 all caller-relative CLI paths.
+
+The child inherits stdin, stdout, and stderr without text conversion or buffering. `--quiet`
+suppresses the run summary. A normal child exit code passes through unchanged. A missing executable
+exits 127 (`RUN_COMMAND_NOT_FOUND`); another startup failure exits 126
+(`RUN_SPAWN_FAILED`). On POSIX, a child signal terminates the runner with the same signal. When the
+runner receives SIGINT or SIGTERM, it forwards that signal to the child before terminating itself;
+non-TTY runs use a child process group so descendants receive it too. See the
+[0.5.0 process contract](../compat/contracts/v0.5.0-process.json).
 
 `check` requires exactly one of `--target` or `--policy`.
 
@@ -99,11 +126,11 @@ A missing template is always an error.
 Vault commands require `@env-lane/vault`:
 
 ~~~bash
-pnpm add -D env-lane@^0.4.2 @env-lane/vault@^0.4.2
+pnpm add -D env-lane@^0.5.0 @env-lane/vault@^0.5.0
 ~~~
 
-The CLI and Vault adapter must use a compatible release line. Env-lane 0.4.2 requires
-`@env-lane/vault ^0.4.2` and reports `VAULT_VERSION_UNSUPPORTED` for a forced incompatible peer.
+Enable Vault in the main configuration with `vault: { enabled: true }`. The package is read via
+its `envLanePlugin` manifest and its command parser runs inside the plugin process.
 
 | Command | Purpose |
 | --- | --- |
@@ -146,8 +173,5 @@ condition. Ordinary command errors return status 1.
 
 See [Vault](vault.md) for the full workflow and safety model.
 
-## Configured command aliases
-
-The former `cli.aliases` config feature was introduced in 0.3.0 and removed in 0.4.0. Use package
-scripts or a dedicated shell/Node script for parameterized command macros. Built-in `env-files`
-and `env-json` aliases remain available for `files` and `print`.
+Plugin command names are their root config field names. The `env-files` and `env-json` aliases
+were removed in 0.5.0; use `files` and `print`.

@@ -1,6 +1,6 @@
 import { EnvLaneError } from '@env-lane/core'
 import { checkbox, confirm, Separator } from '@inquirer/prompts'
-import { matchesVaultSelection, type VaultSelectionOptions } from '../application/restore.js'
+import { createVaultSelectionMatcher, type VaultSelectionOptions } from '../application/restore.js'
 import type {
   RestoreDecision,
   RestorePlan,
@@ -54,9 +54,10 @@ export async function promptRestoreDecisions(
     reveal?: VaultRestoreReveal | false
   } = {},
 ): Promise<RestoreDecision[]> {
+  const selected = createVaultSelectionMatcher(options)
   const entries = plan.files
     .flatMap((file) => file.entries)
-    .filter((entry) => entry.action !== 'identical' && matchesVaultSelection(entry, options))
+    .filter((entry) => entry.action !== 'identical' && selected(entry))
   if (entries.length === 0) return []
   assertInteractive()
   const choices: Array<

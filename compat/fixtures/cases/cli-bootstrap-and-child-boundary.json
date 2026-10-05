@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "id": "cli-bootstrap-and-child-boundary",
+  "area": "cli",
+  "owner": "native-cli",
+  "topology": "moment-landing",
+  "environment": {
+    "unset": [
+      "LANE"
+    ]
+  },
+  "normalization": {
+    "root": true,
+    "pathSeparators": true
+  },
+  "steps": [
+    {
+      "kind": "cli",
+      "argv": [
+        "--version"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "0.4.2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "--help"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "Usage: env-lane [options] [command]\n\nWorkspace-aware dotenv injection and development vault tooling.\n\nOptions:\n  -V, --version                                 output the version number\n  -c, --config <file>                           env-lane config file\n  -b, --build <name>                            build selector value\n  --cwd <dir>                                   base directory for config discovery and relative CLI paths\n  --format <format>                             output format (text, json, dotenv)\n  --json                                        use json output format (shorthand for --format json)\n  --non-interactive                             disable prompts and require every decision explicitly\n  --no-prefix                                   do not include diagnostic scope prefixes\n  -h, --help                                    display help for command\n\nCommands:\n  packages [options]                            List discovered workspace packages. Falls back to root in single-package projects.\n  resolve-target [options] <target>             Resolve a target alias/name/path to a package.\n  files|env-files [options] [target]            List dotenv files in injection order.\n  print|env-json [options] <target>             Print final injected environment for a target.\n  run [options] <target> <command...>           Run a command with injected dotenv environment.\n  check [options]                               Run a configured env policy check or target dotenv selector check.\n  sync [options] <name>                         Run a configured env value sync.\n  sort-file [options] <envFile> <templateFile>  Sort one env file using a template env file.\n  sort [options] [key] [envSuffix]              Sort env files using an env-lane config sort section.\n  vault                                         Optional unsafe development vault helpers. Requires @env-lane/vault.\n  help [command]                                display help for command\n",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "run",
+        "landing",
+        "--cwd=.",
+        "--config=env-lane.config.json",
+        "--build=local",
+        "--quiet",
+        "node",
+        "child-argv.mjs",
+        "--json",
+        "--format",
+        "child-format",
+        "--quiet",
+        "--help"
+      ],
+      "expected": {
+        "status": 0,
+        "stdout": "--json|--format|child-format|--quiet|--help",
+        "stderr": ""
+      }
+    },
+    {
+      "kind": "cli",
+      "argv": [
+        "files",
+        "landing",
+        "--cwd",
+        ".",
+        "--config",
+        "missing.config.ts",
+        "--json"
+      ],
+      "expected": {
+        "status": 1,
+        "stdout": "{\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"UNKNOWN_TARGET\",\n    \"message\": \"Unknown target 'landing'. Available targets: root, ., synthetic-landing, synthetic-landing-server, server\"\n  }\n}\n",
+        "stderr": ""
+      }
+    }
+  ],
+  "expectedFiles": {}
+}

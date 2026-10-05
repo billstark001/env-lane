@@ -1,26 +1,33 @@
 {
   "name": "env-lane-workspace",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "engines": {
     "node": ">=22",
-    "pnpm": ">=11 <12"
+    "pnpm": ">=12 <13"
   },
   "scripts": {
-    "build": "pnpm -r build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:build",
+    "build": "node scripts/verify-workspace-metadata.mjs && pnpm -r build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test:build && pnpm test",
+    "compat:classify": "node scripts/compat/classify-tests.mjs",
+    "compat:fixtures": "node scripts/compat/run-fixtures.mjs",
+    "compat:oracle:capture": "node scripts/compat/capture-oracle.mjs",
+    "compat:oracle:verify": "node scripts/compat/verify-oracle.mjs",
+    "compat:verify": "pnpm --filter @env-lane/plugin-sdk build && pnpm compat:oracle:verify && node scripts/compat/v05-node-api.mjs && node scripts/compat/v05-js-plugin.mjs && node scripts/compat/rust-native-install.mjs && node scripts/compat/platform-packages.mjs",
     "dev": "pnpm --filter env-lane dev",
-    "pack:dry-run": "pnpm -r --filter './packages/*' pack --dry-run",
-    "release:dry-run": "pnpm -r --filter './packages/*' publish --dry-run --access public --no-git-checks",
+    "pack:dry-run": "pnpm -r --filter './packages/*' --filter '!@env-lane/compat-test' pack --dry-run",
+    "release:dry-run": "pnpm -r --filter './packages/*' --filter '!@env-lane/compat-test' publish --dry-run --access public --no-git-checks",
     "release:verify": "node scripts/verify-release.mjs",
-    "release": "pnpm release:verify && pnpm check && pnpm pack:dry-run && pnpm -r --filter './packages/*' publish --access public",
-    "test": "vitest run",
-    "test:build": "pnpm build && node scripts/test-build.mjs",
+    "release": "node scripts/publish-release.mjs",
+    "test": "cargo build --locked -p env-lane-cli -p env-lane-plugin-vault && node scripts/stage-local-plugins.mjs && pnpm --filter @env-lane/native build && node scripts/run-vitest.mjs && pnpm compat:verify",
+    "test:build": "cargo build --locked -p env-lane-cli -p env-lane-plugin-vault && pnpm build && node scripts/test-build.mjs && node scripts/compat/v05-core-bridge.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
-    "format": "biome check --write ."
+    "format": "biome check --write .",
+    "rust:check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && cargo test -p env-lane-cli --features plugin-fixture --locked && pnpm compat:rust",
+    "compat:rust": "node scripts/compat/rust-document.mjs && node scripts/compat/rust-sort.mjs && node scripts/compat/rust-vault-crypto.mjs && node scripts/compat/rust-vault-store.mjs && node scripts/compat/rust-vault-config.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

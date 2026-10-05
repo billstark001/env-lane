@@ -8,40 +8,120 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: npm
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
-          version: 11
-
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+          version: 12
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - run: pnpm release:verify
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm rust:check
 
-      - name: Verify release metadata
-        run: pnpm release:verify
+  native:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, target: aarch64-apple-darwin, suffix: darwin-arm64 }
+          - { runner: macos-15-intel, target: x86_64-apple-darwin, suffix: darwin-x64 }
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, suffix: linux-x64-gnu }
+          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, suffix: linux-arm64-gnu }
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-musl, suffix: linux-x64-musl }
+          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, suffix: linux-arm64-musl }
+          - { runner: windows-2025, target: x86_64-pc-windows-msvc, suffix: win32-x64-msvc }
+          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc, suffix: win32-arm64-msvc }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 12
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: rustup target add ${{ matrix.target }}
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: pnpm --filter @env-lane/native exec napi build --cwd . --manifest-path ../../Cargo.toml --package env-lane-node --platform --release --target ${{ matrix.target }} --output-dir .
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p env-lane-cli
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p env-lane-plugin-vault
+      - run: node scripts/native-release.mjs stage ${{ matrix.target }}
+      - run: node scripts/verify-native-artifact.mjs ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.suffix }}
+          path: native-artifacts/native-${{ matrix.suffix }}/
+          if-no-files-found: error
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
+  publish:
+    needs: [verify, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 12
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - run: pnpm release:verify
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: native-artifacts
+      - run: node scripts/native-release.mjs prepare
+      - run: npm pack ./packages/native --dry-run --ignore-scripts
+      - run: node scripts/verify-native-packages.mjs
+      - run: pnpm release
 
-      - name: Publish
-        run: pnpm release
+  standalone-release:
+    needs: [verify, native]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: native-artifacts
+      - run: node scripts/prepare-standalone-release.mjs
+      - run: sha256sum -c SHA256SUMS
+        working-directory: release-files
+      - run: gh release create "$GITHUB_REF_NAME" release-files/* --verify-tag --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

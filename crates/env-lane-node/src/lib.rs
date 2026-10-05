@@ -1,0 +1,540 @@
+//! Node-API transport and registered plugin namespace routing.
+use env_lane_core::{
+    check,
+    config::{self, LoadedConfig},
+    document::{self, Patch, PatchOptions, TextDocument},
+    error::{Error, Result},
+    paths::resolve_path,
+    policy, redaction,
+    resolve::{Context, Environment, Options},
+    sort, storage, variants, workspace,
+};
+use env_lane_plugin_api::{Capability, PluginError, package, process::Session};
+use napi_derive::napi;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+fn required<'a>(value: &'a Value, field: &str) -> Result<&'a str> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", format!("Missing {field}.")))
+}
+fn optional<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
+    value.get(field).and_then(Value::as_str)
+}
+fn path(value: &Value, field: &str, base: &Path) -> Option<PathBuf> {
+    optional(value, field).map(|value| resolve_path(base, Path::new(value)))
+}
+fn load_core(value: &Value) -> Result<LoadedConfig> {
+    let cwd = PathBuf::from(required(value, "cwd")?);
+    let Some(config) = value.get("config") else {
+        return config::load(&cwd, path(value, "configFile", &cwd).as_deref());
+    };
+    let root = PathBuf::from(required(config, "rootDir")?);
+    // A resolved JS config already contains defaults and has passed the public
+    // c12/Zod validation. The raw-config validator rejects empty defaults that
+    // are legal in this resolved form (for example defaultTarget: "").
+    let mut config = config.clone();
+    config
+        .as_object_mut()
+        .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", "config must be an object."))?
+        .remove("rootDir");
+    let parsed: config::Config = serde_json::from_value(config)
+        .map_err(|error| Error::new("CONFIG_LOAD_FAILED", error.to_string()))?;
+    let config_file = path(value, "configFile", &cwd);
+    let config_dir = config_file
+        .as_ref()
+        .and_then(|file| file.parent())
+        .unwrap_or(&root)
+        .to_path_buf();
+    Ok(LoadedConfig {
+        config: parsed,
+        invocation_cwd: cwd,
+        project_root: root,
+        config_file,
+        config_dir,
+    })
+}
+fn core_document(operation: &str, value: &Value) -> Result<Value> {
+    match operation {
+        "core.envDocument.loadFile" => {
+            let loaded = storage::load_document(Path::new(required(value, "filePath")?))?;
+            let parsed = loaded.parsed;
+            Ok(json!({
+                "exists": loaded.exists,
+                "document": parsed.document,
+                "parsedLines": parsed.parsed_lines,
+                "currentEntries": parsed.current_map.into_iter().collect::<Vec<_>>(),
+                "occurrenceEntries": parsed.occurrences_map.into_iter().collect::<Vec<_>>(),
+                "invalidLineCount": parsed.invalid_line_count,
+                "shadowedEntryCount": parsed.shadowed_entry_count,
+            }))
+        }
+        "core.envDocument.create" => Ok(json!(TextDocument::parse(required(value, "content")?))),
+        "core.envDocument.parseLine" => {
+            Ok(json!(document::parse_line(required(value, "line")?, 1)))
+        }
+        "core.envDocument.parse" => {
+            let parsed = document::Document::parse(required(value, "content")?);
+            Ok(json!({
+                "document": parsed.document,
+                "parsedLines": parsed.parsed_lines,
+                "currentEntries": parsed.current_map.into_iter().collect::<Vec<_>>(),
+                "occurrenceEntries": parsed.occurrences_map.into_iter().collect::<Vec<_>>(),
+                "invalidLineCount": parsed.invalid_line_count,
+                "shadowedEntryCount": parsed.shadowed_entry_count,
+            }))
+        }
+        "core.envDocument.render" => {
+            let text: TextDocument = serde_json::from_value(
+                value
+                    .get("document")
+                    .cloned()
+                    .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", "Missing document."))?,
+            )
+            .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+            let lines: Vec<String> = serde_json::from_value(
+                value
+                    .get("lines")
+                    .cloned()
+                    .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", "Missing lines."))?,
+            )
+            .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+            let eol = value
+                .get("eol")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?
+                .unwrap_or_default();
+            Ok(json!(
+                text.render(
+                    &lines,
+                    value
+                        .get("preserveBOM")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true),
+                    eol,
+                )
+            ))
+        }
+        "core.envDocument.formatValue" => {
+            Ok(json!(document::format_value(required(value, "value")?)?))
+        }
+        "core.envDocument.patch" | "core.envDocument.patchFile" => {
+            let patches: Vec<Patch> = serde_json::from_value(
+                value
+                    .get("patches")
+                    .cloned()
+                    .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", "Missing patches."))?,
+            )
+            .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+            let options: PatchOptions =
+                serde_json::from_value(value.get("options").cloned().unwrap_or_else(|| json!({})))
+                    .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+            if operation == "core.envDocument.patchFile" {
+                Ok(json!(storage::patch_file(
+                    Path::new(required(value, "filePath")?),
+                    &patches,
+                    &options,
+                )?))
+            } else {
+                Ok(json!(document::patch(
+                    required(value, "content")?,
+                    &patches,
+                    &options,
+                )?))
+            }
+        }
+        _ => Err(Error::new(
+            "INVALID_NATIVE_OPERATION",
+            format!("Unknown operation: {operation}"),
+        )),
+    }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct RedactionRequestOptions {
+    show_secrets: Option<bool>,
+    redaction_text: Option<String>,
+    detect_values: Option<bool>,
+    min_redaction_length: Option<usize>,
+    min_entropy_length: Option<usize>,
+    entropy_threshold: Option<f64>,
+    min_character_classes: Option<usize>,
+    key_overrides: std::collections::HashMap<String, bool>,
+}
+
+fn redaction_options(value: &Value) -> Result<redaction::Options> {
+    let request: RedactionRequestOptions =
+        serde_json::from_value(value.get("options").cloned().unwrap_or_else(|| json!({})))
+            .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+    let mut options = redaction::Options::default();
+    if let Some(v) = request.show_secrets {
+        options.show_secrets = v;
+    }
+    if let Some(v) = request.redaction_text {
+        options.redaction_text = v;
+    }
+    if let Some(v) = request.detect_values {
+        options.detect_values = v;
+    }
+    if let Some(v) = request.min_redaction_length {
+        options.min_redaction_length = v;
+    }
+    if let Some(v) = request.min_entropy_length {
+        options.min_entropy_length = v;
+    }
+    if let Some(v) = request.entropy_threshold {
+        options.entropy_threshold = v;
+    }
+    if let Some(v) = request.min_character_classes {
+        options.min_character_classes = v;
+    }
+    options.key_overrides = request.key_overrides;
+    Ok(options)
+}
+
+fn core_redaction(operation: &str, value: &Value) -> Result<Value> {
+    let options = redaction_options(value)?;
+    let result = match operation {
+        "core.redaction.defaultMinRedactionLength" => {
+            json!(redaction::DEFAULT_MIN_REDACTION_LENGTH)
+        }
+        "core.redaction.inlineKeys" => {
+            json!(redaction::inline_assignment_keys(required(value, "value")?))
+        }
+        "core.redaction.isSecretLikeKey" => {
+            json!(redaction::is_secret_key(required(value, "key")?, &options))
+        }
+        "core.redaction.isSecretLikeValue" => json!(redaction::is_secret_value(
+            required(value, "value")?,
+            &options
+        )),
+        "core.redaction.isJwt" => json!(redaction::is_jwt(required(value, "value")?)),
+        "core.redaction.isPaseto" => json!(redaction::is_paseto(required(value, "value")?)),
+        "core.redaction.isHighEntropyString" => json!(redaction::is_high_entropy(
+            required(value, "value")?,
+            &options
+        )),
+        "core.redaction.shouldRedact" => json!(redaction::should_redact(
+            required(value, "key")?,
+            required(value, "value")?,
+            &options
+        )),
+        "core.redaction.redactValue" => json!(redaction::redact(
+            required(value, "key")?,
+            required(value, "value")?,
+            &options
+        )),
+        _ => {
+            return Err(Error::new(
+                "INVALID_NATIVE_OPERATION",
+                format!("Unknown operation: {operation}"),
+            ));
+        }
+    };
+    Ok(result)
+}
+fn core(operation: &str, value: &Value) -> Result<Value> {
+    if operation == "core.storage.writeFileAtomically" {
+        storage::write_atomically(
+            Path::new(required(value, "filePath")?),
+            required(value, "content")?,
+        )?;
+        return Ok(json!({"value":null,"diagnostics":[]}));
+    }
+    if operation == "core.storage.writeFile" {
+        return Ok(json!({"value":storage::write_if_changed(
+            Path::new(required(value, "filePath")?),
+            required(value, "content")?,
+        )?,"diagnostics":[]}));
+    }
+    if operation == "core.findWorkspaceRoot" {
+        let cwd = PathBuf::from(required(value, "cwd")?);
+        return Ok(json!({"value":env_lane_core::paths::find_root(&cwd),"diagnostics":[]}));
+    }
+    if operation == "core.normalizeEnvFileVariant" {
+        let normalized = variants::normalize_variant(
+            optional(value, "value"),
+            optional(value, "fallback").unwrap_or(""),
+            value
+                .get("allowAll")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            optional(value, "fieldName").unwrap_or("env file variant"),
+        )?;
+        return Ok(json!({"value":normalized,"diagnostics":[]}));
+    }
+    if operation == "core.registeredPlugins" {
+        let cwd = PathBuf::from(required(value, "cwd")?);
+        let loaded = config::load(&cwd, path(value, "configFile", &cwd).as_deref())?;
+        let plugins = loaded.config.plugins.iter().filter(|(_, registration)| registration.enabled)
+            .map(|(name, registration)| json!({"name":name,"configFile":registration.config_file(name),"packageName":registration.package_name(name)}))
+            .collect::<Vec<_>>();
+        return Ok(
+            json!({"value":{"projectRoot":loaded.project_root,"plugins":plugins},"diagnostics":[]}),
+        );
+    }
+    if operation == "core.resolveConfig" {
+        let cwd = PathBuf::from(required(value, "cwd")?);
+        let root = PathBuf::from(required(value, "rootDir")?);
+        let raw = value.get("rawConfig").cloned().unwrap_or_else(|| json!({}));
+        let file = path(value, "configFile", &cwd);
+        let loaded = config::resolve_value(cwd, root.clone(), file, raw)?;
+        let mut resolved = serde_json::to_value(loaded.config)
+            .map_err(|error| Error::new("CONFIG_LOAD_FAILED", error.to_string()))?;
+        resolved["rootDir"] = json!(root);
+        return Ok(json!({"value":resolved,"diagnostics":[]}));
+    }
+    if operation.starts_with("core.envDocument.") {
+        return Ok(json!({"value":core_document(operation, value)?,"diagnostics":[]}));
+    }
+    if operation.starts_with("core.redaction.") {
+        return Ok(json!({"value":core_redaction(operation, value)?,"diagnostics":[]}));
+    }
+    if operation == "core.sortEnvFile" {
+        let cwd = PathBuf::from(required(value, "cwd")?);
+        let file = resolve_path(&cwd, Path::new(required(value, "file")?));
+        let template = resolve_path(&cwd, Path::new(required(value, "template")?));
+        let options: sort::SortOptions =
+            serde_json::from_value(value.get("options").cloned().unwrap_or_else(|| json!({})))
+                .map_err(|error| Error::new("INVALID_SORT_OPTIONS", error.to_string()))?;
+        return Ok(json!({"value":sort::sort_file(&file, &template, &options)?,"diagnostics":[]}));
+    }
+    let loaded = load_core(value)?;
+    if operation == "core.listEnvFilesForTarget" {
+        let target: workspace::Package = serde_json::from_value(
+            value
+                .get("targetPackage")
+                .cloned()
+                .ok_or_else(|| Error::new("INVALID_NATIVE_REQUEST", "Missing targetPackage."))?,
+        )
+        .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+        let environment: Environment = value
+            .get("processEnv")
+            .cloned()
+            .map(|value| serde_json::from_value(value).unwrap_or_default())
+            .unwrap_or_default();
+        let mut diagnostics = Vec::new();
+        let build = match optional(value, "resolvedBuild") {
+            Some(build) => build.to_owned(),
+            None => env_lane_core::resolve::select_build(
+                optional(value, "build"),
+                &loaded.config.selector,
+                &environment,
+                &mut diagnostics,
+            )?,
+        };
+        let context = Context {
+            loaded: &loaded,
+            packages: &[],
+            process_env: &environment,
+        };
+        return Ok(json!({
+            "value":context.files_for_target(
+                &target,
+                &build,
+                value.get("requireOverride").and_then(Value::as_bool)
+            ),
+            "diagnostics":diagnostics
+        }));
+    }
+    let packages: Vec<workspace::Package> = match value.get("packages") {
+        Some(packages) => serde_json::from_value(packages.clone())
+            .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?,
+        None => workspace::list_packages(&loaded)?,
+    };
+    let environment: Environment = value
+        .get("processEnv")
+        .cloned()
+        .map(|value| serde_json::from_value(value).unwrap_or_default())
+        .unwrap_or_default();
+    let context = Context {
+        loaded: &loaded,
+        packages: &packages,
+        process_env: &environment,
+    };
+    let mut diagnostics = Vec::new();
+    let options = Options {
+        target: optional(value, "target"),
+        build: optional(value, "build"),
+        include_process_env: value.get("includeProcessEnv").and_then(Value::as_bool),
+        require_override: value.get("requireOverride").and_then(Value::as_bool),
+    };
+    let result = match operation {
+        "core.listWorkspacePackages" => json!(packages),
+        "core.resolveTargetPackage" => json!(workspace::resolve_target(
+            &packages,
+            options.target,
+            &loaded.config.workspace.default_target,
+            value
+                .get("inferFromCwd")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+                .then_some(loaded.invocation_cwd.as_path())
+        )?),
+        "core.listEnvFiles" => json!(context.files(&options, &mut diagnostics)?),
+        "core.resolveInjectedEnv" => json!(context.resolve(&options, &mut diagnostics)?),
+        "core.checkDotenvSelector" => json!(check::check_selector(
+            &context,
+            &check::CheckOptions {
+                target: options.target,
+                build: options.build,
+                require_override: options.require_override,
+            },
+            &mut diagnostics
+        )?),
+        "core.runEnvCheck" => json!(policy::run_check(
+            &context,
+            required(value, "name")?,
+            options.build,
+            &mut diagnostics
+        )?),
+        "core.runEnvSync" => json!(policy::run_sync(
+            &context,
+            required(value, "name")?,
+            &policy::SyncOptions {
+                build: options.build,
+                dry_run: value
+                    .get("dryRun")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            },
+            &mut diagnostics
+        )?),
+        "core.sortEnvFilesFromConfig" => json!(sort::sort_configured(
+            &loaded,
+            &packages,
+            optional(value, "key"),
+            optional(value, "envSuffix"),
+            &sort::ConfiguredOptions {
+                create: value.get("create").and_then(Value::as_bool),
+                check: value.get("check").and_then(Value::as_bool).unwrap_or(false),
+                preserve_bom: value.get("preserveBOM").and_then(Value::as_bool),
+                eol: value
+                    .get("eol")
+                    .cloned()
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(|error| Error::new("INVALID_SORT_OPTIONS", error.to_string()))?,
+            }
+        )?),
+        _ => {
+            return Err(Error::new(
+                "INVALID_NATIVE_OPERATION",
+                format!("Unknown operation: {operation}"),
+            ));
+        }
+    };
+    Ok(json!({"value":result,"diagnostics":diagnostics}))
+}
+fn plugin_error(error: PluginError) -> Error {
+    Error {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+    }
+}
+
+fn plugin(operation: &str, value: &Value) -> Result<Value> {
+    let namespace = operation.split('.').next().unwrap_or_default();
+    if namespace.is_empty() || namespace == "core" || !operation.contains('.') {
+        return Err(Error::new(
+            "INVALID_NATIVE_OPERATION",
+            format!("Unknown operation: {operation}"),
+        ));
+    }
+    let cwd = optional(value, "projectRoot")
+        .or_else(|| value.pointer("/config/baseDir").and_then(Value::as_str))
+        .map(PathBuf::from)
+        .unwrap_or(
+            std::env::current_dir()
+                .map_err(|error| Error::new("CWD_READ_FAILED", error.to_string()))?,
+        );
+    let loaded = if let Some(host_config) = value.get("hostConfig") {
+        load_core(
+            &json!({"cwd": cwd, "config": host_config, "configFile": value.get("configFile")}),
+        )?
+    } else {
+        config::load(&cwd, path(value, "configFile", &cwd).as_deref())?
+    };
+    let executable = std::env::current_exe()
+        .map_err(|error| Error::new("PLUGIN_PACKAGE_INVALID", error.to_string()))?;
+    let mut namespaces = HashSet::new();
+    let mut selected = None;
+    for (field, registration) in &loaded.config.plugins {
+        if !registration.enabled {
+            continue;
+        }
+        let package_name = registration.package_name(field).ok_or_else(|| {
+            Error::new(
+                "PLUGIN_PACKAGE_INVALID",
+                format!("{field}.packageName is required"),
+            )
+        })?;
+        let manifest =
+            match package::resolve(field, package_name, &loaded.project_root, &executable) {
+                Ok(manifest) => manifest,
+                Err(error) if field == namespace => return Err(plugin_error(error)),
+                Err(_) => continue,
+            };
+        for capability in &manifest.capabilities {
+            if let Capability::NativeApi {
+                namespace: registered,
+            } = capability
+            {
+                if registered == "core"
+                    || registered.is_empty()
+                    || !namespaces.insert(registered.clone())
+                {
+                    return Err(Error::new(
+                        "PLUGIN_PACKAGE_INVALID",
+                        format!("Duplicate native namespace: {registered}"),
+                    ));
+                }
+                if registered == namespace {
+                    selected = Some(manifest.clone());
+                }
+            }
+        }
+    }
+    let manifest = selected.ok_or_else(|| {
+        Error::new(
+            "INVALID_NATIVE_OPERATION",
+            format!("Unknown operation: {operation}"),
+        )
+    })?;
+    let mut session = Session::start(&manifest).map_err(plugin_error)?;
+    let result: Value = session
+        .call_typed(
+            "native.invoke",
+            &json!({"operation":operation,"request":value}),
+        )
+        .map_err(plugin_error)?;
+    session.finish().map_err(plugin_error)?;
+    Ok(result)
+}
+
+/// A transport envelope carries stable error codes and data without forcing
+/// application objects through duplicate Node-API schemas.
+#[napi]
+pub fn invoke(operation: String, request: String) -> String {
+    let result = serde_json::from_str::<Value>(&request)
+        .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))
+        .and_then(|value| {
+            if operation.starts_with("core.") {
+                core(&operation, &value)
+            } else {
+                plugin(&operation, &value)
+            }
+        });
+    match result {
+        Ok(value) => json!({"ok":true,"result":value}).to_string(),
+        Err(error) => json!({"ok":false,"error":error}).to_string(),
+    }
+}

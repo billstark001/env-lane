@@ -2,12 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { withVaultOperationLock } from '../../src/application/storage.js'
 import {
   applyRestorePlan,
   buildRestorePlan,
   createApprovalDocument,
   decryptEnvFiles,
   encryptEnvFiles,
+  loadVaultConfig,
   readApprovalDocument,
   writeApprovalDocument,
 } from '../../src/index.js'
@@ -16,6 +18,10 @@ const testDirectories = new Set<string>()
 
 function testDirectory(prefix: string): string {
   const root = mkdtempSync(path.join(tmpdir(), `${prefix}-`))
+  writeFileSync(
+    path.join(root, 'env-lane.config.json'),
+    JSON.stringify({ vault: { enabled: true } }),
+  )
   testDirectories.add(root)
   return root
 }
@@ -26,6 +32,81 @@ afterEach(() => {
 })
 
 describe('@env-lane/vault restore', () => {
+  it('applies callback decisions under one operation lock', async () => {
+    const root = testDirectory('env-lane-vault-restore-callback-lock')
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    const envPath = path.join(root, '.env')
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(envPath, 'A=original\nB=original\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    await encryptEnvFiles(configPath, keyPath)
+    writeFileSync(envPath, 'A=changed\nB=changed\n')
+    const plan = await buildRestorePlan(configPath, keyPath)
+    const selected: string[] = []
+    const applied = await applyRestorePlan(configPath, keyPath, plan, {
+      autoApprove: true,
+      selectEntry: (entry) => {
+        selected.push(entry.key)
+        return entry.key === 'A'
+      },
+    })
+    expect(selected).toEqual(['A', 'B'])
+    expect(applied.appliedEntries).toBe(1)
+    expect(readFileSync(envPath, 'utf8')).toBe('A=original\nB=changed\n')
+
+    const nextPlan = await buildRestorePlan(configPath, keyPath)
+    await expect(
+      applyRestorePlan(configPath, keyPath, nextPlan, {
+        autoApprove: true,
+        // A JS caller can supply an async callback despite the TS signature.
+        selectEntry: (async () => false) as never,
+      }),
+    ).rejects.toMatchObject({ code: 'VAULT_INVALID_DECISION' })
+    expect(readFileSync(envPath, 'utf8')).toBe('A=original\nB=changed\n')
+
+    await expect(
+      applyRestorePlan(configPath, keyPath, nextPlan, {
+        autoApprove: true,
+        selectEntry: () => {
+          writeFileSync(envPath, 'A=original\nB=changed-during-callback\n')
+          return true
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'VAULT_PLAN_STALE' })
+    expect(readFileSync(envPath, 'utf8')).toBe('A=original\nB=changed-during-callback\n')
+  })
+
+  it('keeps the operation lock when public options contain an internal bypass flag', async () => {
+    const root = testDirectory('env-lane-vault-restore-public-lock')
+    const configPath = path.join(root, 'vault.json')
+    const keyPath = path.join(root, 'key.aes')
+    const envPath = path.join(root, '.env')
+    writeFileSync(keyPath, 'dev-only-key-material')
+    writeFileSync(envPath, 'A=original\n')
+    writeFileSync(
+      configPath,
+      JSON.stringify({ envFiles: ['.env'], outputDir: '.vault', outputFile: 'store.dat' }),
+    )
+    await encryptEnvFiles(configPath, keyPath)
+    writeFileSync(envPath, 'A=changed\n')
+    const plan = await buildRestorePlan(configPath, keyPath)
+    const config = await loadVaultConfig(configPath, { cwd: root })
+    await withVaultOperationLock(config, async () => {
+      await expect(
+        applyRestorePlan(configPath, keyPath, plan, {
+          cwd: root,
+          autoApprove: true,
+          skipOperationLock: true,
+        } as Parameters<typeof applyRestorePlan>[3]),
+      ).rejects.toMatchObject({ code: 'VAULT_LOCK_TIMEOUT' })
+    })
+    expect(readFileSync(envPath, 'utf8')).toBe('A=changed\n')
+  }, 20_000)
+
   it('restores dotenv files without rewriting unmanaged content', async () => {
     const root = testDirectory(`env-lane-vault-restore`)
     mkdirSync(root, { recursive: true })
@@ -197,6 +278,7 @@ describe('@env-lane/vault restore', () => {
         'API_URL=https://api.example.com/v1/items',
         'DATABASE_URL=postgres://user:password@db.example.com:5432/moment',
         'CALLBACK_URL=https://example.com/callback?token=abc&mode=test',
+        'FRAGMENT_URL="https://example.com/callback#access_token=synthetic-secret"',
         'RPC_URL=https://rpc.provider.com/v2/secret-project-id',
         '',
       ].join('\n'),
@@ -219,6 +301,7 @@ describe('@env-lane/vault restore', () => {
         'API_URL=https://api.example.com/v1/local',
         'DATABASE_URL=postgres://local:password@db.example.com:5432/moment',
         'CALLBACK_URL=https://example.com/callback?token=local&mode=test',
+        'FRAGMENT_URL="https://example.com/callback#access_token=local-value"',
         'RPC_URL=https://rpc.provider.com/v2/local-project-id',
         '',
       ].join('\n'),
@@ -231,6 +314,7 @@ describe('@env-lane/vault restore', () => {
     expect(vaultPreviews).toEqual({
       API_URL: 'https://api.example.com/v1/items',
       CALLBACK_URL: 'https://example.com/callback?token=abc&mode=test',
+      FRAGMENT_URL: 'https://example.com/callback#access_token=<redacted>',
       DATABASE_URL: 'postgres://<redacted>@db.example.com:5432/moment',
       RPC_URL: 'https://rpc.provider.com/v2/<redacted>',
     })
@@ -367,6 +451,10 @@ describe('@env-lane/vault restore', () => {
       // 5. Test autoRemapPaths: false
       const rootNew = path.join(root, 'new-workspace')
       mkdirSync(rootNew, { recursive: true })
+      writeFileSync(
+        path.join(rootNew, 'env-lane.config.json'),
+        JSON.stringify({ vault: { enabled: true } }),
+      )
       const remappedConfigPath = path.join(rootNew, 'vault-remap.json')
       writeFileSync(
         remappedConfigPath,
@@ -399,7 +487,7 @@ describe('@env-lane/vault restore', () => {
         autoRemapPaths: false,
       })
       expect(existsSync(otherFile)).toBe(true)
-    })
+    }, 120_000)
   })
 
   it('rejects an approval that removes both a plan entry and its decision', async () => {

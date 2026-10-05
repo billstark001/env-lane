@@ -31,9 +31,9 @@ jobs:
           persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
-          version: 11
+          version: 12
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -51,3 +51,151 @@ jobs:
       - name: Pack dry run
         if: matrix.node == '24.x'
         run: pnpm pack:dry-run
+
+  compatibility-platform:
+    name: Compatibility on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 12
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package entries
+        run: pnpm test:build
+
+      - name: Test compatibility baseline
+        run: pnpm test
+
+  rust:
+    name: Rust and native differential on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node for the frozen oracle
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 12
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Native tests and doctests
+        run: cargo test --workspace --locked
+
+      - name: Build native Node binding and package entries
+        run: pnpm test:build
+
+      - name: Document differential against frozen Node artifact
+        run: node scripts/compat/rust-document.mjs
+
+      - name: Config differential against frozen Node artifact
+        run: node scripts/compat/rust-config.mjs
+
+      - name: Compile static JS and TypeScript config for no-Node native use
+        run: node scripts/compat/rust-config-cache.mjs
+
+      - name: Rust-generated document differential with shrinking
+        run: node scripts/compat/rust-document-fuzz.mjs
+
+      - name: Policy and sync result and filesystem differential
+        run: node scripts/compat/rust-policy.mjs
+
+      - name: Sort plans and configured file operations differential
+        run: node scripts/compat/rust-sort.mjs
+
+      - name: Shared frozen Core API case
+        run: node scripts/compat/rust-core-fixtures.mjs
+
+      - name: Workspace matching and traversal differential
+        run: node scripts/compat/rust-workspace.mjs
+
+      - name: Child execution and signal differential
+        run: node scripts/compat/rust-process.mjs
+
+      - name: Shared redaction differential
+        run: node scripts/compat/rust-redaction.mjs
+
+      - name: Native Core CLI frozen fixture subset
+        run: node scripts/compat/rust-cli.mjs
+
+      - name: Native CLI options and no-Node smoke
+        run: node scripts/compat/rust-cli-options.mjs
+
+      - name: Vault cryptographic interoperability
+        run: node scripts/compat/rust-vault-crypto.mjs
+
+      - name: Vault record store interoperability
+        run: node scripts/compat/rust-vault-store.mjs
+
+      - name: Vault canonical configuration differential
+        run: node scripts/compat/rust-vault-config.mjs
+
+      - name: Vault cross-process lock interoperability
+        run: node scripts/compat/rust-vault-lock.mjs
+
+      - name: Vault sync baseline and conflict differential
+        run: node scripts/compat/rust-vault-sync.mjs
+
+      - name: Vault history preview and apply differential
+        run: node scripts/compat/rust-vault-history.mjs
+
+      - name: Vault push dry-run and cross-decrypt differential
+        run: node scripts/compat/rust-vault-push.mjs
+
+      - name: Vault restore plan and apply differential
+        run: node scripts/compat/rust-vault-restore.mjs
+
+      - name: Native Vault CLI differential
+        run: node scripts/compat/rust-vault-cli.mjs
+
+      - name: Native Vault terminal selection
+        run: node scripts/compat/rust-vault-tty.mjs
+
+      - name: Native npm install entry and optional Vault peer
+        run: node scripts/compat/rust-native-install.mjs

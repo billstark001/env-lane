@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "template-order",
+      "content": "B=two\nA=one\n",
+      "template": "A=\nB=\n"
+    },
+    {
+      "id": "comments-bom-crlf",
+      "content": "\ufeff# local header\r\nB=two\r\n# local A\r\nA=one\r\nEXTRA=value\r\n",
+      "template": "# template header\nA=\n# template B\nB=\nC=\n"
+    },
+    {
+      "id": "duplicate-values",
+      "content": "# A=\nA=one\nB=two\nA=last\n",
+      "template": "A=\nB=\n"
+    },
+    {
+      "id": "multiline-block",
+      "content": "B=two\nA=\"first\nsecond\"\n",
+      "template": "A=\nB=\n"
+    },
+    {
+      "id": "missing-file-template-layout",
+      "content": null,
+      "template": "\ufeffA=default\r\nB=default\r\n"
+    },
+    {
+      "id": "empty-file-no-newline",
+      "content": "",
+      "template": "A=default"
+    },
+    {
+      "id": "unlisted-comment-idempotence",
+      "content": "A=one\n\n# custom extras\nZ=zed\n",
+      "template": "A=\n",
+      "options": {
+        "unlistedVariablesComment": "custom extras"
+      }
+    }
+  ]
+}

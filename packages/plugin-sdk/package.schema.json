@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "package.schema.json",
+  "title": "env-lane plugin package metadata v1",
+  "type": "object",
+  "required": ["name", "envLanePlugin"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "envLanePlugin": {
+      "type": "object",
+      "required": ["protocolVersion", "id", "capabilities", "entry"],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "protocol.schema.json#/$defs/capability" }
+        },
+        "entry": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind", "path"],
+              "properties": {
+                "kind": { "const": "node" },
+                "path": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["kind", "platforms"],
+              "properties": {
+                "kind": { "const": "native" },
+                "platforms": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": ["package", "path"],
+                    "properties": {
+                      "package": { "type": "string", "minLength": 1 },
+                      "path": { "type": "string", "minLength": 1 }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

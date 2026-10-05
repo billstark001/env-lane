@@ -1,124 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
-import {
-  EnvLaneError,
-  loadConfigWithC12,
-  loadEnvLaneConfig,
-  type ResolvedEnvLaneConfig,
-} from '@env-lane/core'
-import { z } from 'zod'
+import { EnvLaneError, loadEnvLaneConfig } from '@env-lane/core'
+import { loadConfig as c12LoadConfig } from 'c12'
 import type { VaultRestoreRedaction, VaultRestoreReveal } from '../domain/types.js'
-import {
-  type AbsolutePath,
-  absoluteDirname,
-  assertAbsolutePath,
-  resolveFromDirectory,
-  resolveInvocationCwd,
-} from './paths.js'
-
-const schema = z.object({
-  envFiles: z.array(z.string().min(1)),
-  outputDir: z.string().min(1).default('.env-lane-vault'),
-  outputFile: z.string().min(1).default('store.dat'),
-  trackDeletions: z.boolean().default(true),
-  autoRemapPaths: z.boolean().default(true),
-  allowUnmanaged: z.boolean().default(false),
-  restore: z
-    .object({
-      redaction: z.enum(['full', 'partial', 'none']).default('full'),
-      reveal: z
-        .literal(false)
-        .or(
-          z.object({
-            start: z.number().int().min(0).max(64).default(4),
-            end: z.number().int().min(0).max(64).default(4),
-          }),
-        )
-        .default(false),
-      promptLoop: z.boolean().default(false),
-    })
-    .default({ redaction: 'full', reveal: false, promptLoop: false }),
-  exclude: z
-    .array(
-      z.object({
-        files: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-        file: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-        filePattern: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-        filePatterns: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-        keys: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-        key: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-        keyPattern: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-        keyPatterns: z.array(z.string().min(1)).or(z.string().min(1)).optional(),
-      }),
-    )
-    .default([]),
-  sort: z
-    .record(
-      z.string(),
-      z.object({
-        file: z.string().min(1),
-        template: z.string().min(1),
-        files: z.record(z.string(), z.string().min(1)).optional(),
-      }),
-    )
-    .optional(),
-  disableUnsafeWarning: z.boolean().optional(),
-})
-
-function stringList(value: unknown, fieldName: string): string[] {
-  if (value === undefined || value === null) return []
-  const values = Array.isArray(value) ? value : [value]
-  return values.map((item) => {
-    if (typeof item !== 'string' || !item.trim()) {
-      throw new EnvLaneError('VAULT_INVALID_CONFIG', `${fieldName} must contain non-empty strings.`)
-    }
-    return item.trim()
-  })
-}
-
-function normalizeExclude(rawExclude: unknown): Array<{ files: string[]; keys: string[] }> {
-  if (rawExclude === undefined) return []
-  const rawRules: unknown[] = []
-
-  if (Array.isArray(rawExclude)) {
-    rawRules.push(...rawExclude)
-  } else if (rawExclude && typeof rawExclude === 'object') {
-    for (const [filePattern, keyPatterns] of Object.entries(rawExclude)) {
-      rawRules.push({ files: [filePattern], keys: keyPatterns })
-    }
-  } else {
-    throw new EnvLaneError(
-      'VAULT_INVALID_CONFIG',
-      'config.exclude must be an array or an object when provided.',
-    )
-  }
-
-  return rawRules.map((rawRule, index) => {
-    if (!rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule)) {
-      throw new EnvLaneError('VAULT_INVALID_CONFIG', `config.exclude[${index}] must be an object.`)
-    }
-    const rule = rawRule as Record<string, unknown>
-    const files = stringList(
-      rule.files ?? rule.file ?? rule.filePattern ?? rule.filePatterns,
-      `config.exclude[${index}].files`,
-    )
-    const keys = stringList(
-      rule.keys ?? rule.key ?? rule.keyPattern ?? rule.keyPatterns,
-      `config.exclude[${index}].keys`,
-    )
-    if (files.length === 0 || keys.length === 0) {
-      throw new EnvLaneError(
-        'VAULT_INVALID_CONFIG',
-        `config.exclude[${index}] must define at least one file pattern and one key pattern for the local-only boundary.`,
-      )
-    }
-    return { files, keys }
-  })
-}
-
-function uniqueResolvedFiles(baseDir: AbsolutePath, files: string[]): AbsolutePath[] {
-  return [...new Set(files.map((file) => resolveFromDirectory(baseDir, file)))]
-}
+import { bindVaultHostConfig, callNativeVault } from './native.js'
+import { resolveInvocationCwd } from './paths.js'
 
 export interface VaultConfig {
   baseDir: string
@@ -139,168 +25,8 @@ export interface VaultConfig {
   disableUnsafeWarning: boolean
 }
 
-function resolveRestoreConfig(
-  configured: VaultConfig['restore'],
-  overrides?: {
-    restoreRedaction?: VaultRestoreRedaction
-    restoreReveal?: VaultRestoreReveal | false
-    promptLoop?: boolean
-  },
-): VaultConfig['restore'] {
-  const redaction = overrides?.restoreRedaction ?? configured.redaction
-  if (redaction !== 'full' && redaction !== 'partial' && redaction !== 'none') {
-    throw new EnvLaneError(
-      'VAULT_INVALID_CONFIG',
-      'restoreRedaction must be one of: full, partial, none.',
-    )
-  }
-  const reveal = overrides?.restoreReveal ?? configured.reveal
-  if (
-    reveal !== false &&
-    (!reveal ||
-      !Number.isInteger(reveal.start) ||
-      reveal.start < 0 ||
-      reveal.start > 64 ||
-      !Number.isInteger(reveal.end) ||
-      reveal.end < 0 ||
-      reveal.end > 64)
-  ) {
-    throw new EnvLaneError(
-      'VAULT_INVALID_CONFIG',
-      'restoreReveal start/end must be integers between 0 and 64.',
-    )
-  }
-  const promptLoop = overrides?.promptLoop ?? configured.promptLoop
-  if (typeof promptLoop !== 'boolean') {
-    throw new EnvLaneError('VAULT_INVALID_CONFIG', 'promptLoop must be a boolean.')
-  }
-  return { redaction, reveal, promptLoop }
-}
-
-export function defineVaultConfig(config: z.input<typeof schema>): z.input<typeof schema> {
+export function defineVaultConfig<T extends Record<string, unknown>>(config: T): T {
   return config
-}
-
-function isVaultConfig(obj: unknown): boolean {
-  if (!obj || typeof obj !== 'object') return false
-  return 'envFiles' in obj || 'outputDir' in obj || 'outputFile' in obj
-}
-
-async function loadVaultConfigUnchecked(
-  configPath?: string,
-  options?: {
-    cwd?: string
-    vaultConfigFile?: string
-    autoRemapPaths?: boolean
-    allowUnmanaged?: boolean
-    restoreRedaction?: VaultRestoreRedaction
-    restoreReveal?: VaultRestoreReveal | false
-    promptLoop?: boolean
-  },
-): Promise<VaultConfig> {
-  const invocationCwd = resolveInvocationCwd(options?.cwd)
-  let mainConfigPath: string | undefined
-  let vaultConfigPath: AbsolutePath | undefined = options?.vaultConfigFile
-    ? resolveFromDirectory(invocationCwd, options.vaultConfigFile)
-    : undefined
-
-  if (configPath && !vaultConfigPath) {
-    const resolvedPath = resolveFromDirectory(invocationCwd, configPath)
-    let rawConfig: unknown
-    if (path.extname(resolvedPath) === '.json' && existsSync(resolvedPath)) {
-      rawConfig = JSON.parse(readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, ''))
-    } else {
-      const loaded = await loadConfigWithC12<Record<string, unknown>>({
-        cwd: absoluteDirname(resolvedPath),
-        configFile: resolvedPath,
-        name: 'env-lane.vault',
-        configFileRequired: true,
-      })
-      rawConfig = loaded.config
-    }
-
-    if (isVaultConfig(rawConfig)) {
-      vaultConfigPath = resolvedPath
-    } else {
-      mainConfigPath = resolvedPath
-    }
-  } else if (configPath && vaultConfigPath) {
-    mainConfigPath = configPath
-  }
-
-  const mainConfig: ResolvedEnvLaneConfig = await loadEnvLaneConfig({
-    cwd: invocationCwd,
-    configFile: mainConfigPath,
-  })
-
-  const baseDir = mainConfig.rootDir
-  assertAbsolutePath(baseDir, 'Project root')
-  let configFileToLoad: AbsolutePath
-
-  if (vaultConfigPath) {
-    configFileToLoad = resolveFromDirectory(baseDir, vaultConfigPath)
-  } else {
-    configFileToLoad = resolveFromDirectory(baseDir, mainConfig.vault.configFile)
-  }
-
-  const hasJsonExt = path.extname(configFileToLoad) === '.json'
-  let raw: Record<string, unknown>
-
-  if (hasJsonExt && existsSync(configFileToLoad)) {
-    raw = JSON.parse(readFileSync(configFileToLoad, 'utf8').replace(/^\uFEFF/, '')) as Record<
-      string,
-      unknown
-    >
-  } else {
-    const loaded = await loadConfigWithC12<Record<string, unknown>>({
-      cwd: absoluteDirname(configFileToLoad),
-      configFile: configFileToLoad,
-      name: 'env-lane.vault',
-      configFileRequired: true,
-    })
-    if (!loaded.configFile) {
-      throw new EnvLaneError(
-        'VAULT_CONFIG_NOT_FOUND',
-        `Vault config does not exist: ${configFileToLoad}`,
-      )
-    }
-    assertAbsolutePath(loaded.configFile, 'Loaded Vault config file')
-    configFileToLoad = loaded.configFile
-    raw = loaded.config ?? {}
-  }
-
-  const baseDirOfConfig = absoluteDirname(configFileToLoad)
-  const parsed = schema.parse({
-    ...raw,
-    exclude: normalizeExclude(raw.exclude ?? raw.excludes),
-  })
-  const outputDir = resolveFromDirectory(baseDirOfConfig, parsed.outputDir)
-  const envFiles = uniqueResolvedFiles(baseDirOfConfig, parsed.envFiles)
-  const storePath = resolveFromDirectory(outputDir, parsed.outputFile)
-  if (envFiles.includes(storePath)) {
-    throw new EnvLaneError(
-      'VAULT_STORE_OVERLAP',
-      'The vault store file must not overlap with any env file.',
-    )
-  }
-  return {
-    baseDir: baseDirOfConfig,
-    envFiles,
-    outputDir,
-    outputFile: parsed.outputFile,
-    storePath,
-    trackDeletions: parsed.trackDeletions,
-    autoRemapPaths: options?.autoRemapPaths ?? parsed.autoRemapPaths,
-    allowUnmanaged: options?.allowUnmanaged ?? parsed.allowUnmanaged,
-    restore: resolveRestoreConfig(parsed.restore, options),
-    exclude: parsed.exclude.map((rule) => ({
-      files: Array.isArray(rule.files) ? rule.files : rule.files ? [rule.files] : [],
-      keys: Array.isArray(rule.keys) ? rule.keys : rule.keys ? [rule.keys] : [],
-    })),
-    sort: parsed.sort,
-    disableUnsafeWarning:
-      parsed.disableUnsafeWarning ?? mainConfig.vault.disableUnsafeWarning ?? false,
-  }
 }
 
 export async function loadVaultConfig(
@@ -315,15 +41,66 @@ export async function loadVaultConfig(
     promptLoop?: boolean
   },
 ): Promise<VaultConfig> {
-  try {
-    return await loadVaultConfigUnchecked(configPath, options)
-  } catch (error) {
-    if (error instanceof EnvLaneError && error.code.startsWith('VAULT_')) throw error
-    const cause = error instanceof Error ? error.message : String(error)
-    throw new EnvLaneError('VAULT_CONFIG_LOAD_FAILED', `Failed to load Vault config: ${cause}`, {
-      cause,
-      configPath,
-      vaultConfigFile: options?.vaultConfigFile,
+  if (configPath && options?.vaultConfigFile) {
+    throw new EnvLaneError('VAULT_INVALID_CONFIG', 'Specify one Vault config path.')
+  }
+  const cwd = resolveInvocationCwd(
+    options?.cwd ??
+      (configPath && path.isAbsolute(configPath) ? path.dirname(configPath) : undefined),
+  )
+  const hostConfig = await loadEnvLaneConfig({ cwd })
+  if (!hostConfig.vault?.enabled) {
+    throw new EnvLaneError('PLUGIN_DISABLED', 'Vault plugin is not enabled in the main config.')
+  }
+  const requested = configPath ?? options?.vaultConfigFile
+  const file = requested
+    ? path.resolve(cwd, requested)
+    : path.resolve(hostConfig.rootDir, hostConfig.vault.configFile)
+  const nativeExtensions = ['json', 'yaml', 'yml', 'jsonc', 'json5', 'toml']
+  const nativeFile = (
+    path.extname(file)
+      ? [file]
+      : [file, ...nativeExtensions.map((extension) => `${file}.${extension}`)]
+  ).find(
+    (candidate) =>
+      existsSync(candidate) && nativeExtensions.includes(path.extname(candidate).slice(1)),
+  )
+  let resolved: VaultConfig
+  if (nativeFile) {
+    resolved = callNativeVault<VaultConfig>('vault.loadConfig', {
+      configFile: nativeFile,
+      disableUnsafeWarning: hostConfig.vault.disableUnsafeWarning,
+      hostConfig,
+      projectRoot: hostConfig.rootDir,
+    })
+  } else {
+    const loaded = await c12LoadConfig<Record<string, unknown>>({
+      name: 'env-lane.vault',
+      cwd: hostConfig.rootDir,
+      configFile: path.relative(hostConfig.rootDir, file),
+      packageJson: false,
+      dotenv: false,
+      rcFile: false,
+      globalRc: false,
+      configFileRequired: true,
+    })
+    if (!loaded.configFile) {
+      throw new EnvLaneError('VAULT_CONFIG_NOT_FOUND', `Vault config does not exist: ${file}`)
+    }
+    resolved = callNativeVault<VaultConfig>('vault.resolveConfig', {
+      rawConfig: loaded.config ?? {},
+      baseDir: path.dirname(path.resolve(loaded.configFile)),
+      disableUnsafeWarning: hostConfig.vault.disableUnsafeWarning,
+      hostConfig,
+      projectRoot: hostConfig.rootDir,
     })
   }
+  if (options?.autoRemapPaths !== undefined) resolved.autoRemapPaths = options.autoRemapPaths
+  if (options?.allowUnmanaged !== undefined) resolved.allowUnmanaged = options.allowUnmanaged
+  if (options?.restoreRedaction !== undefined) resolved.restore.redaction = options.restoreRedaction
+  if (options?.restoreReveal !== undefined) resolved.restore.reveal = options.restoreReveal
+  if (options?.promptLoop !== undefined) resolved.restore.promptLoop = options.promptLoop
+  bindVaultHostConfig(resolved, hostConfig)
+  callNativeVault('vault.validateConfig', { config: resolved })
+  return resolved
 }

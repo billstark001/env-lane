@@ -1,0 +1,34 @@
+{
+  "selector": {
+    "envKey": "LANE",
+    "defaultBuild": "local",
+    "builds": ["local", "production"],
+    "buildValidation": "error"
+  },
+  "workspace": {
+    "packageGlobs": ["server"],
+    "aliases": { "landing": "synthetic-landing", "api": "synthetic-landing-server" },
+    "defaultTarget": "landing",
+    "includeRoot": true
+  },
+  "dotenv": {
+    "order": [".env", ".env.{build}"],
+    "localBuildName": "local",
+    "localOverrideFile": ".env",
+    "includeProcessEnv": false
+  },
+  "vault": {
+    "enabled": true,
+    "disableUnsafeWarning": true,
+    "configFile": "env-lane.vault.json"
+  },
+  "sort": {
+    "landing": { "baseDir": ".", "file": ".env", "template": ".env.example" }
+  },
+  "checks": {
+    "deploy": {
+      "sources": { "landing": { "target": "landing", "includeProcessEnv": false } },
+      "rules": [{ "type": "required", "source": "landing", "key": "PUBLIC_ORIGIN" }]
+    }
+  }
+}
