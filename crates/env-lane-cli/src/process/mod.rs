@@ -1,6 +1,7 @@
 //! Child execution belongs to the executable, never to the shared domain context.
+use crate::output::Output;
 use env_lane_core::{
-    error::{Error, Result},
+    error::{Diagnostic, Error, Result, Severity},
     run::PreparedRun,
 };
 #[cfg(windows)]
@@ -9,38 +10,79 @@ use std::{
     ffi::OsStr,
     process::{Command, Stdio},
 };
+#[cfg(unix)]
+use std::{io::IsTerminal, os::unix::process::CommandExt};
 
 #[cfg(unix)]
 mod signals;
 
-pub fn execute(prepared: &PreparedRun) -> Result<i32> {
+pub fn execute(prepared: &PreparedRun, output: &Output) -> Result<i32> {
     // Register before spawning so termination cannot leave a child in the gap
     // between process creation and installing cleanup handlers.
     #[cfg(unix)]
-    let termination = signals::Termination::listen().map_err(process_error)?;
+    let isolated_group = !std::io::stdin().is_terminal()
+        && !std::io::stdout().is_terminal()
+        && !std::io::stderr().is_terminal();
+    #[cfg(unix)]
+    let termination = signals::Termination::listen(isolated_group).map_err(process_error)?;
     let mut command = command(prepared);
+    #[cfg(unix)]
+    if isolated_group {
+        // A non-interactive child can own a process group without losing TTY
+        // access. This lets an interrupted runner terminate its descendants.
+        command.process_group(0);
+    }
     let mut child = match command.spawn() {
         Ok(child) => child,
         #[cfg(windows)]
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let Some(batch) = windows_batch_fallback(prepared) else {
-                return Ok(1);
+                return spawn_failure(prepared, output, error);
             };
             let mut retry = command_for(prepared, batch.as_os_str());
             match retry.spawn() {
                 Ok(child) => child,
-                Err(_) => return Ok(1),
+                Err(error) => return spawn_failure(prepared, output, error),
             }
         }
-        // `run` reports execution failure through its exit status. It does not
-        // append parent diagnostics to streams owned by the requested command.
-        Err(_) => return Ok(1),
+        Err(error) => return spawn_failure(prepared, output, error),
     };
     #[cfg(unix)]
     let status = termination.wait(&mut child).map_err(process_error)?;
     #[cfg(not(unix))]
     let status = child.wait().map_err(process_error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            drop(termination);
+            // Preserve the signal disposition seen by the calling shell or
+            // package manager. The numeric fallback is only for a failed raise.
+            signal_hook::low_level::emulate_default_handler(signal).map_err(process_error)?;
+            return Ok(128 + signal);
+        }
+    }
     Ok(status.code().unwrap_or(1))
+}
+
+fn spawn_failure(prepared: &PreparedRun, output: &Output, error: std::io::Error) -> Result<i32> {
+    let directory_missing = !prepared.cwd.is_dir();
+    let not_found = error.kind() == std::io::ErrorKind::NotFound && !directory_missing;
+    let (code, diagnostic) = if not_found {
+        (127, "RUN_COMMAND_NOT_FOUND")
+    } else {
+        (126, "RUN_SPAWN_FAILED")
+    };
+    output.diagnostic(&Diagnostic {
+        code: diagnostic.into(),
+        severity: Severity::Error,
+        message: format!(
+            "Cannot start '{}': {error}",
+            prepared.program.to_string_lossy()
+        ),
+        details: None,
+    })?;
+    Ok(code)
 }
 
 fn command(prepared: &PreparedRun) -> Command {

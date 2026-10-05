@@ -46,9 +46,12 @@ import {
   resolveTargetPackage,
   runEnvCheck,
   runEnvSync,
+  runWithInjectedEnv,
+  runWithInjectedEnvDetailed,
   shouldRedact,
   sortEnvFile,
   sortEnvFilesFromConfig,
+  spawnWithInjectedEnv,
   withEnvLaneContext,
 } from '../../src/index.js'
 import {
@@ -125,6 +128,67 @@ function configSource(ext: string, config: unknown): string {
 }
 
 describe('@env-lane/core', () => {
+  describe('child process contract', () => {
+    it('exposes piped byte streams and the numeric child exit', async () => {
+      const root = fixture()
+      const { child, completed } = await spawnWithInjectedEnv({
+        cwd: root,
+        target: 'api',
+        stdio: 'pipe',
+        command: [
+          process.execPath,
+          '-e',
+          "const fs=require('node:fs');const ok=fs.readFileSync(0).equals(Buffer.from('ping'));process.stdout.write(Buffer.from([0,255,10]));process.stderr.write(Buffer.from([1,254,13]));process.exitCode=ok?7:9",
+        ],
+      })
+      const stdout: Buffer[] = []
+      const stderr: Buffer[] = []
+      child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
+      child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+      child.stdin?.end('ping')
+      expect(await completed).toEqual({ exitCode: 7, signal: null })
+      expect(Buffer.concat(stdout)).toEqual(Buffer.from([0, 255, 10]))
+      expect(Buffer.concat(stderr)).toEqual(Buffer.from([1, 254, 13]))
+    })
+
+    it('distinguishes missing commands from an invalid child directory', async () => {
+      const root = fixture()
+      const missingCommand = {
+        cwd: root,
+        target: 'api',
+        command: ['env-lane-synthetic-missing-command'],
+      }
+      expect(await runWithInjectedEnv(missingCommand)).toBe(127)
+      expect(await runWithInjectedEnvDetailed(missingCommand)).toMatchObject({
+        exitCode: null,
+        signal: null,
+        spawnError: { code: 'ENOENT', exitStatus: 127 },
+      })
+      expect(
+        await runWithInjectedEnv({
+          cwd: root,
+          target: 'api',
+          runCwd: 'missing-directory',
+          command: [process.execPath, '-e', 'process.exit(0)'],
+        }),
+      ).toBe(126)
+    })
+
+    it.skipIf(process.platform === 'win32')('retains a child termination signal', async () => {
+      const root = fixture()
+      const options = {
+        cwd: root,
+        target: 'api',
+        command: [process.execPath, '-e', "process.kill(process.pid, 'SIGTERM')"],
+      }
+      expect(await runWithInjectedEnvDetailed(options)).toEqual({
+        exitCode: null,
+        signal: 'SIGTERM',
+      })
+      expect(await runWithInjectedEnv(options)).toBe(143)
+    })
+  })
+
   it('atomically replaces file content without leaving temporary files', () => {
     const root = testDirectory(`env-lane-file-utils`)
     const filePath = path.join(root, 'nested', '.env')

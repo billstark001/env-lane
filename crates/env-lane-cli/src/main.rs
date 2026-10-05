@@ -66,7 +66,9 @@ fn execute(cli: &Cli, output: &mut Output) -> Result<i32> {
 }
 
 fn main() {
-    let arguments = protect_child_arguments(std::env::args_os().collect());
+    let raw_arguments = std::env::args_os().collect::<Vec<_>>();
+    let run_invocation = env_lane_cli::arguments::is_run_command(&raw_arguments);
+    let arguments = protect_child_arguments(raw_arguments.clone());
     let cli = match Cli::try_parse_from(arguments) {
         Ok(cli) => cli,
         Err(error) => {
@@ -83,9 +85,16 @@ fn main() {
                 return;
             }
             let rendered = env_lane_cli::argument_error::render(&error);
-            let output = env_lane_cli::bootstrap::output(&std::env::args_os().collect::<Vec<_>>());
+            let output = env_lane_cli::bootstrap::output(&raw_arguments);
             if rendered.message == "error: missing required argument 'command'" {
                 eprintln!("{}", rendered.message);
+            } else if run_invocation {
+                let _ = output.diagnostic(&env_lane_core::error::Diagnostic {
+                    code: rendered.code.clone(),
+                    severity: env_lane_core::error::Severity::Error,
+                    message: rendered.message.clone(),
+                    details: None,
+                });
             } else {
                 let _ = output.error(&rendered);
             }
@@ -94,7 +103,7 @@ fn main() {
     };
     // Successful native commands load configuration exactly once in execute().
     let mut output = if matches!(cli.command, env_lane_cli::arguments::Operation::Plugin(_)) {
-        env_lane_cli::bootstrap::output(&std::env::args_os().collect::<Vec<_>>())
+        env_lane_cli::bootstrap::output(&raw_arguments)
     } else {
         Output {
             format: if cli.common.json || cli.common.format.as_deref() == Some("json") {
@@ -108,7 +117,16 @@ fn main() {
     let code = match execute(&cli, &mut output) {
         Ok(code) => code,
         Err(error) => {
-            let _ = output.error(&error);
+            if run_invocation {
+                let _ = output.diagnostic(&env_lane_core::error::Diagnostic {
+                    code: error.code.clone(),
+                    severity: env_lane_core::error::Severity::Error,
+                    message: error.message.clone(),
+                    details: None,
+                });
+            } else {
+                let _ = output.error(&error);
+            }
             1
         }
     };

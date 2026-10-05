@@ -117,6 +117,33 @@ pub struct SortOptions {
     pub no_preserve_bom: bool,
 }
 
+fn option_consumes_value(argument: &str) -> bool {
+    matches!(
+        argument,
+        "-b" | "--build" | "-c" | "--config" | "--cwd" | "--format" | "--run-cwd"
+    )
+}
+
+/// Identify run before parsing so even its argument errors keep stdout free.
+pub fn is_run_command(argv: &[OsString]) -> bool {
+    let mut index = 1;
+    while index < argv.len() {
+        let argument = argv[index].to_string_lossy();
+        if argument == "--" {
+            return false;
+        }
+        if !argument.starts_with('-') {
+            return argument == "run";
+        }
+        index += if option_consumes_value(&argument) {
+            2
+        } else {
+            1
+        };
+    }
+    false
+}
+
 /// The first child word (or explicit `--`) ends env-lane option parsing. Insert
 /// that boundary before handing argv to clap so child flags remain byte-for-byte.
 pub fn protect_child_arguments(mut argv: Vec<OsString>) -> Vec<OsString> {
@@ -129,11 +156,11 @@ pub fn protect_child_arguments(mut argv: Vec<OsString>) -> Vec<OsString> {
             break;
         }
         if argument.starts_with('-') {
-            let consumes = matches!(
-                argument.as_ref(),
-                "-b" | "--build" | "-c" | "--config" | "--cwd" | "--format" | "--run-cwd"
-            );
-            index += if consumes { 2 } else { 1 };
+            index += if option_consumes_value(&argument) {
+                2
+            } else {
+                1
+            };
             continue;
         }
         if !run {

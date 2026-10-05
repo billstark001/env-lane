@@ -10,7 +10,15 @@ export {
   defineEnvSync,
 } from './application/policy.js'
 export { runEnvCheck, runEnvSync } from './application/native-policy.js'
-export { runWithInjectedEnv } from './application/run.js'
+export {
+  type ChildRunResult,
+  type RunSpawnError,
+  type RunWithInjectedEnvOptions,
+  type StartedChildProcess,
+  runWithInjectedEnv,
+  runWithInjectedEnvDetailed,
+  spawnWithInjectedEnv,
+} from './application/run.js'
 export { sortEnvFile, sortEnvFilesFromConfig } from './application/native-sort.js'
 export { listWorkspacePackages, resolveTargetPackage } from './application/workspace.js'
 export { defineConfig, loadEnvLaneConfig } from './adapters/config.js'

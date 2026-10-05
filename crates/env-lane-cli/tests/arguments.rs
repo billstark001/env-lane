@@ -1,5 +1,5 @@
 use clap::Parser;
-use env_lane_cli::arguments::{Cli, Operation, protect_child_arguments};
+use env_lane_cli::arguments::{Cli, Operation, is_run_command, protect_child_arguments};
 use std::ffi::OsString;
 
 #[test]
@@ -37,4 +37,25 @@ fn missing_command_and_removed_alias_are_parser_errors() {
     assert!(Cli::try_parse_from(["env-lane", "run", "app", "--quiet"]).is_err());
     let parsed = Cli::try_parse_from(["env-lane", "env-files", "app", "--json"]).unwrap();
     assert!(matches!(parsed.command, Operation::Plugin(_)));
+}
+
+#[test]
+fn run_argument_errors_keep_stdout_reserved_for_the_child() {
+    for arguments in [
+        vec!["env-lane", "--json", "run", "app", "--quiet"],
+        vec!["env-lane", "--config", "synthetic.json", "run", "app"],
+    ] {
+        assert!(is_run_command(
+            &arguments
+                .into_iter()
+                .map(OsString::from)
+                .collect::<Vec<_>>()
+        ));
+    }
+    assert!(!is_run_command(
+        &["env-lane", "--config", "run", "packages"]
+            .into_iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+    ));
 }

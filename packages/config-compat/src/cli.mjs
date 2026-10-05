@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import native from '@env-lane/native'
 import binary from '@env-lane/native/bin.cjs'
 import { compileConfig, locateConfig } from './cache.mjs'
+import { runBinary } from './run-binary.mjs'
 import { inspectRunnerArguments } from './runner-arguments.mjs'
 
 const [command, ...rest] = process.argv.slice(2)
@@ -50,9 +50,7 @@ if (command === 'run') {
       }
     }
     environment.ENV_LANE_CONFIG_CACHES = JSON.stringify(activeCaches)
-    const result = spawnSync(binary.resolveBinary(), rest, { stdio: 'inherit', env: environment })
-    if (result.error) throw result.error
-    process.exitCode = result.status ?? 1
+    process.exitCode = await runBinary(binary.resolveBinary(), rest, environment)
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1

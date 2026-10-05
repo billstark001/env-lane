@@ -43,7 +43,13 @@ fn execute(request: &Value) -> Result<i32> {
         directory,
         &mut Vec::new(),
     )?;
-    env_lane_cli::process::execute(&prepared)
+    env_lane_cli::process::execute(
+        &prepared,
+        &env_lane_cli::output::Output {
+            format: config::OutputFormat::Text,
+            prefix: false,
+        },
+    )
 }
 
 fn main() {

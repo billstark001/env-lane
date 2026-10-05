@@ -68,6 +68,38 @@ async function terminate(command, args, root, signal) {
   }
 }
 
+async function terminateTree(command, args, root) {
+  for (const file of ['.tree-ready', '.grandchild-ready', '.grandchild-terminated'])
+    rmSync(path.join(root, file), { force: true })
+  const parent = spawn(command, args, { cwd: root, stdio: 'ignore' })
+  let grandchild
+  try {
+    const closed = new Promise((resolve) =>
+      parent.once('close', (code, signal) => resolve({ code, signal })),
+    )
+    await until(() => existsSync(path.join(root, '.tree-ready')), 'Grandchild readiness')
+    await until(
+      () => existsSync(path.join(root, '.grandchild-ready')),
+      'Grandchild listener readiness',
+    )
+    grandchild = Number(readFileSync(path.join(root, '.tree-ready'), 'utf8'))
+    parent.kill('SIGINT')
+    const result = await Promise.race([
+      closed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Runner did not stop')), 5000)),
+    ])
+    await until(() => existsSync(path.join(root, '.grandchild-terminated')), 'Grandchild cleanup')
+    return { ...result, cleanup: readFileSync(path.join(root, '.grandchild-terminated'), 'utf8') }
+  } finally {
+    parent.kill('SIGKILL')
+    if (grandchild) {
+      try {
+        process.kill(grandchild, 'SIGKILL')
+      } catch {}
+    }
+  }
+}
+
 await withOracle(async ({ temporary, runtime }) => {
   const root = path.join(temporary, 'project')
   cpSync(path.join(workspace, 'compat/fixtures/topologies/moment-landing'), root, {
@@ -91,8 +123,6 @@ await withOracle(async ({ temporary, runtime }) => {
     build: 'local',
   }
   const requests = [
-    { command: ['env-lane-synthetic-command-not-found'] },
-    { runCwd: 'missing-directory', command: ['node', 'child-cwd.mjs'] },
     { command: ['node', 'child-exit.mjs'] },
     { command: ['node', 'child-cwd.mjs'] },
     { target: 'api', runCwd: 'root', command: ['node', 'child-cwd.mjs'] },
@@ -114,7 +144,6 @@ await withOracle(async ({ temporary, runtime }) => {
     process.env[pathKey] = `tools${path.delimiter}${process.env[pathKey] ?? ''}`
     requests.push({ command: ['child-path', 'relative'] })
   }
-  if (process.platform !== 'win32') requests.push({ command: ['node', 'child-signal.mjs'] })
   requests.push({
     command: [
       'node',
@@ -143,15 +172,45 @@ await withOracle(async ({ temporary, runtime }) => {
       )
     }
   }
+  for (const [request, status, diagnostic] of [
+    [{ command: ['env-lane-synthetic-command-not-found'] }, 127, 'RUN_COMMAND_NOT_FOUND'],
+    [{ runCwd: 'missing-directory', command: ['node', 'child-cwd.mjs'] }, 126, 'RUN_SPAWN_FAILED'],
+  ]) {
+    writeFileSync(requestFile, JSON.stringify({ ...base, ...request }))
+    const actual = observation(executable, [requestFile], root)
+    assert.equal(actual.status, status)
+    assert.equal(actual.signal, null)
+    assert.match(actual.stderr, new RegExp(diagnostic))
+    assert.equal(actual.stdout, '')
+  }
   if (process.platform !== 'win32') {
+    writeFileSync(requestFile, JSON.stringify({ ...base, command: ['node', 'child-signal.mjs'] }))
+    const selfSignal = observation(executable, [requestFile], root)
+    assert.equal(selfSignal.status, null)
+    assert.equal(selfSignal.signal, 'SIGTERM')
+    assert.equal(selfSignal.stdout, '')
+    assert.equal(selfSignal.stderr, '')
     writeFileSync(requestFile, JSON.stringify({ ...base, command: ['node', 'child-wait.mjs'] }))
     for (const signal of ['SIGINT', 'SIGTERM']) {
-      const expected = await terminate(process.execPath, [oracle, requestFile], root, signal)
       const actual = await terminate(executable, [requestFile], root, signal)
-      assert.deepEqual(actual, expected)
+      assert.deepEqual(actual, { code: null, signal, cleanup: signal })
     }
+    writeFileSync(
+      path.join(root, 'child-tree.mjs'),
+      `import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs';
+const grandchild = spawn(process.execPath, ['-e', "const fs=require('node:fs');for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{fs.writeFileSync('.grandchild-terminated',signal);process.exit(0)});fs.writeFileSync('.grandchild-ready','ready');setInterval(()=>{},1000)"], { stdio: 'ignore' });
+writeFileSync('.tree-ready', String(grandchild.pid));
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => setTimeout(() => process.exit(0), 50));
+setInterval(() => {}, 1000);`,
+    )
+    writeFileSync(requestFile, JSON.stringify({ ...base, command: ['node', 'child-tree.mjs'] }))
+    assert.deepEqual(await terminateTree(executable, [requestFile], root), {
+      code: null,
+      signal: 'SIGINT',
+      cleanup: 'SIGINT',
+    })
   }
   process.stdout.write(
-    `Rust process differential: ${requests.length * 2} executions and platform signal checks passed.\n`,
+    `Rust process differential: ${requests.length * 2} unchanged executions; 0.5 status and signal checks passed.\n`,
   )
 })

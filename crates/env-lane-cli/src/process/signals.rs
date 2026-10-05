@@ -8,17 +8,18 @@ use std::{
     process::{Child, ExitStatus},
     sync::mpsc::{self, Receiver},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 pub(super) struct Termination {
     signals: Receiver<i32>,
     handle: Handle,
     listener: Option<JoinHandle<()>>,
+    isolated_group: bool,
 }
 
 impl Termination {
-    pub(super) fn listen() -> io::Result<Self> {
+    pub(super) fn listen(isolated_group: bool) -> io::Result<Self> {
         let mut signals = Signals::new([SIGINT, SIGTERM])?;
         let handle = signals.handle();
         let (sender, receiver) = mpsc::channel();
@@ -35,22 +36,45 @@ impl Termination {
             signals: receiver,
             handle,
             listener: Some(listener),
+            isolated_group,
         })
     }
 
     pub(super) fn wait(&self, child: &mut Child) -> io::Result<ExitStatus> {
         loop {
             if let Ok(signal) = self.signals.recv_timeout(Duration::from_millis(10)) {
-                // The CLI retains the signal that terminated it. Child cleanup
-                // requests graceful termination even when the parent received INT.
+                let requested = if signal == SIGINT {
+                    rustix::process::Signal::INT
+                } else {
+                    rustix::process::Signal::TERM
+                };
                 if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
-                    let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
+                    self.send(pid, requested);
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    while Instant::now() < deadline {
+                        if child.try_wait()?.is_some() {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    if child.try_wait()?.is_none() {
+                        self.send(pid, rustix::process::Signal::KILL);
+                        let _ = child.wait();
+                    }
                 }
                 signal_hook::low_level::emulate_default_handler(signal)?;
             }
             if let Some(status) = child.try_wait()? {
                 return Ok(status);
             }
+        }
+    }
+
+    fn send(&self, pid: rustix::process::Pid, signal: rustix::process::Signal) {
+        if self.isolated_group {
+            let _ = rustix::process::kill_process_group(pid, signal);
+        } else {
+            let _ = rustix::process::kill_process(pid, signal);
         }
     }
 }

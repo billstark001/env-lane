@@ -97,7 +97,7 @@ pub fn execute(
                     details: None,
                 })?;
             }
-            crate::process::execute(&prepared)
+            crate::process::execute(&prepared, output)
         }
         Operation::Check {
             policy,

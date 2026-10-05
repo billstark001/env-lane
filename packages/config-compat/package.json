@@ -22,9 +22,9 @@
     "env-lane-config": "./src/cli.mjs"
   },
   "scripts": {
-    "build": "node --check src/cache.mjs && node --check src/cli.mjs && node --check src/runner-arguments.mjs",
+    "build": "node --check src/cache.mjs && node --check src/cli.mjs && node --check src/runner-arguments.mjs && node --check src/run-binary.mjs",
     "prepack": "pnpm run build",
-    "typecheck": "node --check src/cache.mjs && node --check src/cli.mjs && node --check src/runner-arguments.mjs",
+    "typecheck": "node --check src/cache.mjs && node --check src/cli.mjs && node --check src/runner-arguments.mjs && node --check src/run-binary.mjs",
     "lint": "biome check ."
   },
   "dependencies": {

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { compileConfig, locateConfig } from '../../packages/config-compat/src/cache.mjs'
@@ -20,6 +28,14 @@ const binary = path.join(
 const compiler = path.join(workspace, 'packages/config-compat/src/cli.mjs')
 const temporary = mkdtempSync(path.join(tmpdir(), 'env-lane-compiled-config-'))
 const gitOnly = mkdtempSync(path.join(tmpdir(), 'env-lane-git-config-'))
+
+async function until(predicate, description) {
+  const deadline = Date.now() + 10_000
+  while (!predicate()) {
+    assert.ok(Date.now() < deadline, description)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
 
 assert.deepEqual(
   inspectRunnerArguments([
@@ -156,6 +172,14 @@ try {
   const loaded = packages()
   assert.equal(loaded.status, 0)
   assert.equal(loaded.output.length, 2)
+  const invalidRunFormat = spawnSync(
+    binary,
+    ['run', 'server', '--cwd', temporary, '--config', 'env-lane.config.ts', '--json', '--', 'node'],
+    { encoding: 'utf8' },
+  )
+  assert.equal(invalidRunFormat.status, 1)
+  assert.equal(invalidRunFormat.stdout, '')
+  assert.match(invalidRunFormat.stderr, /UNSUPPORTED_OUTPUT_FORMAT/)
 
   const source = path.join(temporary, 'env-lane.config.ts')
   writeFileSync(source, `${readFileSync(source, 'utf8')}\n// cache invalidation\n`)
@@ -216,6 +240,100 @@ try {
   )
   assert.equal(joinedShortConfig.status, 0, joinedShortConfig.stderr)
   assert.deepEqual(JSON.parse(joinedShortConfig.stdout), JSON.parse(withRoot.stdout))
+  const child = (command, input) =>
+    spawnSync(
+      process.execPath,
+      [
+        compiler,
+        'run',
+        'run',
+        'server',
+        '--cwd',
+        temporary,
+        '--config',
+        dynamic,
+        '--quiet',
+        '--',
+        ...command,
+      ],
+      {
+        input,
+        env: { ...process.env, ENV_LANE_NATIVE_BINARY: binary },
+        timeout: 20_000,
+      },
+    )
+  const io = child(
+    [
+      process.execPath,
+      '-e',
+      [
+        "const fs=require('node:fs')",
+        // biome-ignore lint/security/noSecrets: This synthetic child reads stdin, not a secret.
+        'const input=fs.readFileSync(0)',
+        // biome-ignore lint/security/noSecrets: This synthetic child compares a fixed test word.
+        "const ok=input.equals(Buffer.from('ping'))",
+        'process.stdout.write(Buffer.from([0,255,10]))',
+        'process.stderr.write(Buffer.from([1,254,13]))',
+        'process.exitCode=ok?7:9',
+      ].join(';'),
+    ],
+    Buffer.from('ping'),
+  )
+  assert.equal(io.status, 7)
+  assert.deepEqual(io.stdout, Buffer.from([0, 255, 10]))
+  assert.deepEqual(io.stderr, Buffer.from([1, 254, 13]))
+  const missingChild = child(['env-lane-synthetic-missing-command'])
+  assert.equal(missingChild.status, 127)
+  assert.match(missingChild.stderr.toString(), /RUN_COMMAND_NOT_FOUND/)
+  if (process.platform !== 'win32') {
+    const terminated = child([process.execPath, '-e', "process.kill(process.pid, 'SIGTERM')"])
+    assert.equal(terminated.status, null)
+    assert.equal(terminated.signal, 'SIGTERM')
+    const ready = path.join(temporary, '.child-ready')
+    const stopped = path.join(temporary, '.child-terminated')
+    const runner = spawn(
+      process.execPath,
+      [
+        compiler,
+        'run',
+        'run',
+        'server',
+        '--run-cwd',
+        'root',
+        '--cwd',
+        temporary,
+        '--config',
+        dynamic,
+        '--quiet',
+        '--',
+        process.execPath,
+        'child-wait.mjs',
+      ],
+      { stdio: 'ignore', env: { ...process.env, ENV_LANE_NATIVE_BINARY: binary } },
+    )
+    let childPid
+    try {
+      const closed = new Promise((resolve) =>
+        runner.once('close', (code, signal) => resolve({ code, signal })),
+      )
+      await until(() => existsSync(ready), 'Config runner child readiness')
+      childPid = Number(readFileSync(ready, 'utf8'))
+      runner.kill('SIGINT')
+      const timeout = setTimeout(() => runner.kill('SIGKILL'), 10_000)
+      timeout.unref()
+      const outcome = await closed.finally(() => clearTimeout(timeout))
+      await until(() => existsSync(stopped), 'Config runner child cleanup')
+      assert.deepEqual(outcome, { code: null, signal: 'SIGINT' })
+      assert.equal(readFileSync(stopped, 'utf8'), 'SIGINT')
+    } finally {
+      runner.kill('SIGKILL')
+      if (childPid) {
+        try {
+          process.kill(childPid, 'SIGKILL')
+        } catch {}
+      }
+    }
+  }
   writeFileSync(dynamic, 'export default { workspace: { includeRoot: Math.random() > 0.5 } }\n')
   assert.equal(compile('main', 'env-lane.dynamic.mjs').cacheable, false)
   process.stdout.write(

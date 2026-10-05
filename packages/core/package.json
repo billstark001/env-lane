@@ -59,8 +59,7 @@
   },
   "dependencies": {
     "@env-lane/native": "workspace:*",
-    "c12": "^3.3.4",
-    "execa": "^10.0.1"
+    "c12": "^3.3.4"
   },
   "devDependencies": {
     "dotenv": "^17.3.1"

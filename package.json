@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "node scripts/verify-workspace-metadata.mjs && pnpm -r build",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test:build && pnpm test",
     "compat:classify": "node scripts/compat/classify-tests.mjs",
     "compat:fixtures": "node scripts/compat/run-fixtures.mjs",
     "compat:oracle:capture": "node scripts/compat/capture-oracle.mjs",
