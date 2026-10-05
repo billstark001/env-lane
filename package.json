@@ -21,7 +21,7 @@
     "release:verify": "node scripts/verify-release.mjs",
     "release": "node scripts/publish-release.mjs",
     "test": "cargo build --locked -p env-lane-cli -p env-lane-plugin-vault && node scripts/stage-local-plugins.mjs && pnpm --filter @env-lane/native build && node scripts/run-vitest.mjs && pnpm compat:verify",
-    "test:build": "pnpm build && node scripts/test-build.mjs && node scripts/compat/v05-core-bridge.mjs",
+    "test:build": "cargo build --locked -p env-lane-cli -p env-lane-plugin-vault && pnpm build && node scripts/test-build.mjs && node scripts/compat/v05-core-bridge.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",

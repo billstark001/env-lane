@@ -84,7 +84,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build package entries
-        run: pnpm build
+        run: pnpm test:build
 
       - name: Test compatibility baseline
         run: pnpm test
