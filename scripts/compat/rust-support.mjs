@@ -68,6 +68,16 @@ export function plainValue(value) {
   return value
 }
 
+/** Compare the frozen Core config independently of 0.5 plugin registration. */
+export function coreConfig(value) {
+  return Object.fromEntries(
+    ['selector', 'workspace', 'dotenv', 'output', 'sort', 'checks', 'sync'].map((field) => [
+      field,
+      value[field],
+    ]),
+  )
+}
+
 /** Normalize path roots without changing backslashes inside dotenv values. */
 export function normalizeRoot(value, root) {
   if (typeof value === 'string') {

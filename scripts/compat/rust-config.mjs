@@ -2,12 +2,14 @@ import assert from 'node:assert/strict'
 import { cpSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { plainValue, runRustExample, withOracle, workspace } from './rust-support.mjs'
-
-const coreFields = ['selector', 'workspace', 'dotenv', 'output', 'sort', 'checks', 'sync']
-function coreConfig(config) {
-  return Object.fromEntries(coreFields.map((field) => [field, config[field]]))
-}
+import {
+  coreConfig,
+  normalizeRoot,
+  plainValue,
+  runRustExample,
+  withOracle,
+  workspace,
+} from './rust-support.mjs'
 
 await withOracle(async ({ temporary, runtime }) => {
   const legacy = await import(
@@ -97,8 +99,8 @@ await withOracle(async ({ temporary, runtime }) => {
       continue
     }
     assert.deepEqual(
-      request.operation ? response : coreConfig(response),
-      request.operation ? expected[index] : coreConfig(expected[index]),
+      normalizeRoot(request.operation ? response : coreConfig(response), temporary),
+      normalizeRoot(request.operation ? expected[index] : coreConfig(expected[index]), temporary),
       `Config case ${index}: ${JSON.stringify(request)}`,
     )
   }

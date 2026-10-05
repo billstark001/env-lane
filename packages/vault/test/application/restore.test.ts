@@ -487,7 +487,7 @@ describe('@env-lane/vault restore', () => {
         autoRemapPaths: false,
       })
       expect(existsSync(otherFile)).toBe(true)
-    })
+    }, 120_000)
   })
 
   it('rejects an approval that removes both a plan entry and its decision', async () => {

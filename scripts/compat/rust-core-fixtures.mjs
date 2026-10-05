@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { normalizeRoot, runRustExample, workspace } from './rust-support.mjs'
+import { coreConfig, normalizeRoot, runRustExample, workspace } from './rust-support.mjs'
 
 // This gate consumes the same frozen case as the legacy fixture runner. It tests
 // native application results; CLI byte rendering has its own later boundary.
@@ -37,9 +37,11 @@ try {
   for (const [index, result] of results.entries()) {
     const step = fixture.steps[index]
     assert.equal(step.expected.status, 0)
+    const actual = normalizeRoot(result, root)
+    const expected = JSON.parse(step.expected.stdout)
     assert.deepEqual(
-      normalizeRoot(result, root),
-      JSON.parse(step.expected.stdout),
+      step.operation === 'core.load-config' ? coreConfig(actual) : actual,
+      step.operation === 'core.load-config' ? coreConfig(expected) : expected,
       `${fixture.id}: ${step.operation}`,
     )
   }

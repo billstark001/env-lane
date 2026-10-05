@@ -72,7 +72,7 @@ describe('@env-lane/vault sync', () => {
     expect(syncState).toMatchObject({ version: 1, fingerprint: 'hmac-sha256' })
     expect(syncEntry).toMatchObject({ valueFingerprint: expectedFingerprint })
     expect(syncEntry).not.toHaveProperty('valueHash')
-    expect(statSync(syncStatePath).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(syncStatePath).mode & 0o777).toBe(0o600)
     writeFileSync(path.join(root, '.env'), 'A=2\n')
     await encryptEnvFiles(path.join(root, 'vault.json'), path.join(root, 'key.aes'), {})
     writeFileSync(path.join(root, '.env'), 'A=3\n')

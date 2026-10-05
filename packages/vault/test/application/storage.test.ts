@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -432,7 +433,9 @@ describe('@env-lane/vault storage', () => {
       try {
         const enc = await encryptEnvFiles(undefined, path.join(root, 'key.aes'), {})
         expect(enc.setRecordsWritten).toBe(1)
-        expect(enc.storePath.endsWith('.vault/store.dat')).toBe(true)
+        expect(realpathSync(enc.storePath)).toBe(
+          realpathSync(path.join(root, '.vault', 'store.dat')),
+        )
       } finally {
         process.cwd = originalCwd
       }
