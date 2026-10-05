@@ -1,20 +1,21 @@
 # env-lane
 
 Workspace-aware dotenv injection for TypeScript and Node.js projects, with a Rust CLI and
-Node-API backed library implementation on the rewrite branch.
+Node-API backed library implementation.
 
 `env-lane` makes environment selection explicit across single-package projects and pnpm
 workspaces. It resolves a target, loads dotenv files in a predictable order, injects a build
 selector such as `ENV_BUILD`, and can inspect, validate, synchronize, sort, or run commands with
 the resulting environment.
 
-The workspace contains these packages (the native additions on this branch are not published yet):
+The workspace contains these packages:
 
 - `env-lane`: CLI plus a stable convenience facade for the `@env-lane/core` root API.
 - `@env-lane/core`: configuration, workspace, dotenv, policy, redaction, and sorting APIs.
 - `@env-lane/vault`: optional development-only reversible encrypted dotenv record storage.
-- `@env-lane/native`: Rust Node-API binding and platform binary distribution (rewrite branch).
+- `@env-lane/native`: Rust Node-API binding and platform binary distribution.
 - `@env-lane/config-compat`: external JS/TS configuration compiler and dynamic runner.
+- `@env-lane/plugin-sdk`: JavaScript plugin runtime and protocol types.
 
 Node.js 22 or newer is required for npm installation, configuration compilation, and the JS API.
 The standalone Rust binary does not need Node.js.
@@ -22,8 +23,7 @@ The standalone Rust binary does not need Node.js.
 The Rust executable can run Core, Sort, and Vault commands without Node.js when configuration is
 JSON, JSONC, JSON5, YAML, or TOML, or has a valid compiled cache. The npm package installs a
 platform executable at `env-lane`; JavaScript API calls enter Rust through `@env-lane/native`.
-The native release pipeline is present on this branch but has not published new packages. See
-[migration and verification status](docs/native-migration.md).
+See [migration and verification](docs/native-migration.md) for the package and standalone paths.
 
 ## Install
 
@@ -101,7 +101,8 @@ relative to `--cwd`) without changing config discovery.
 ## Output and automation
 
 Final payloads use stdout. Diagnostics, warnings, progress, and prompts use stderr. JSON mode emits
-one JSON document on stdout, including for errors. Secret-like values are redacted unless
+one JSON document on stdout, including for errors outside `run`. `run` gives stdout to the child
+and reports its own errors on stderr. Secret-like values are redacted unless
 `--show-secrets` is explicit.
 
 Use `--non-interactive` in CI and agent workflows. Commands that require approval or conflict

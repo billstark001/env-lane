@@ -114,8 +114,14 @@ Keep unrelated user changes out of a commit. Review staged content with
 8. Push the tag. The release workflow validates that the tag, package versions, changelog,
    clean tree, and checked-out commit agree before publishing.
 
-The npm environment must configure each package's Trusted Publisher for
-`.github/workflows/release.yml`. The workflow uses OIDC and does not require a long-lived npm token.
+Each npm package, including the 16 derived platform packages, must already exist on npm and
+authorize GitHub repository `billstark001/env-lane`, workflow `release.yml`, and environment
+`npm` as a Trusted Publisher with direct publish permission. npm requires a package to exist
+before this trust relationship can be configured; first publication of a new package is a
+separate maintainer bootstrap step. The workflow grants `id-token: write` only to the publish
+job, packs workspace packages with pnpm, and uploads all packages with npm's OIDC flow. It does
+not use a long-lived publish token. The publish job requires npm 11.5.1 or newer and rejects
+`NODE_AUTH_TOKEN` and `NPM_TOKEN`.
 
 `pnpm check` already includes a build, so a second standalone build is optional rather than a
 release requirement.

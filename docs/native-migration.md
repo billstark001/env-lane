@@ -1,6 +1,6 @@
 # Rust rewrite status (0.5.0)
 
-The 0.5.0 branch uses a Rust CLI and Core engine, a Node-API binding for stable JS imports, and a process plugin boundary. The frozen 0.4.2 oracle remains a reference for stable Core behavior and Vault persisted data. The branch has not been published.
+Version 0.5.0 uses a Rust CLI and Core engine, a Node-API binding for stable JS imports, and a process plugin boundary. The frozen 0.4.2 oracle remains a reference for stable Core behavior and Vault persisted data; the 0.5.0 process contract documents intentional fixes to exit status, stdio, and signals.
 
 ## Runtime paths
 
@@ -13,6 +13,6 @@ The old `plugins: []` registration, `env-files`/`env-json` command aliases, depr
 
 ## Verification
 
-`pnpm check` runs lint, TypeScript, synthetic Vitest coverage, package-entry smoke checks, and 0.5.0 plugin conformance. `pnpm rust:check` runs rustfmt, Clippy, Rust tests, and differential checks for the stable document, sort, Vault crypto/store/config contracts. The local npm layout test verifies package discovery and native Vault startup with no Node on `PATH`. Cross-platform release jobs build eight targets and package standalone archives with checksums. The 16 platform npm packages are generated from the target table and staged binaries during release; neither native nor Vault platform package directories are tracked.
+`pnpm check` runs lint, TypeScript, package builds, synthetic Vitest coverage, package-entry smoke checks, and 0.5.0 plugin conformance. `pnpm rust:check` runs rustfmt, Clippy, Rust tests, and differential checks for the stable document, sort, Vault crypto/store/config contracts. Process conformance uses synthetic children and the [0.5.0 process contract](../compat/contracts/v0.5.0-process.json). The local npm layout test verifies package discovery and native Vault startup with no Node on `PATH`. Cross-platform release jobs build eight targets and package standalone archives with checksums. The 16 platform npm packages are generated from the target table and staged binaries during release; neither native nor Vault platform package directories are tracked.
 
 The Vault record format remains v1 for new writes and reads v0/v1. The 0.4.2 release remains the rollback package. Production dotenv values and keys are not used by these tests. The three downstream projects are inspected read-only; any writable canary belongs in a separate controlled environment.

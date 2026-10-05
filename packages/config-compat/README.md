@@ -19,3 +19,6 @@ binary on each call. The standalone Rust binary does not evaluate JavaScript. Ke
 `.env-lane-cache/` outside version control.
 For `env-lane-config run run <target> <child command>`, flags after the child command are passed
 to that command. Use `--` before it when a child option could look like an env-lane option.
+The runner inherits stdin/stdout/stderr, passes through numeric exit codes, and preserves POSIX
+signal termination. Its startup failures use 126/127, as specified in the
+[0.5.0 process contract](../../compat/contracts/v0.5.0-process.json).

@@ -23,6 +23,10 @@ No changes yet.
 - Added platform-native npm binaries and standalone archives with matching plugin manifests.
   All native and Vault platform packages are derived during release from the target table and
   staged binaries; their manifests are no longer tracked as source files.
+- Added a tag-triggered release workflow that builds eight native targets, publishes npm packages
+  with GitHub OIDC trusted publishing, and attaches standalone archives and checksums to a GitHub
+  release. Workspace packages are packed with pnpm and uploaded with npm so `workspace:*`
+  dependencies become exact release versions without using a publish token.
 
 ### Changed
 
@@ -33,6 +37,13 @@ No changes yet.
   enabled plugin namespace; unknown namespaces fail instead of routing to Vault.
 - Rust now validates main and Vault configuration. JavaScript adapters only evaluate JS/TS
   source and pass its raw result to Rust.
+- `run` now inherits all child streams without buffering, preserves normal exit codes and POSIX
+  signal identity, forwards the parent's INT/TERM signal, and uses 127/126 for startup failures.
+  Run diagnostics use stderr even when JSON output was requested.
+- The Core Node API adds `runWithInjectedEnvDetailed` and `spawnWithInjectedEnv` for structured
+  completion results and optional pipe streams. Its numeric API now maps signals to 128 plus the
+  signal number and startup failures to 127/126. Windows direct executables bypass `cmd.exe`;
+  discovered batch files still use it.
 - Stable Core and Vault application calls reach Rust while preserving the Vault v0/v1 store and
   sync data formats. The separate `@env-lane/vault/cli` Commander adapter remains public.
 
@@ -54,9 +65,7 @@ No changes yet.
 | Vault-root `registerVaultCommands` | Import from `@env-lane/vault/cli`. |
 | Deprecated Core root document helpers | Import from `@env-lane/core/env-document`. |
 | Vault config path guessed from `loadVaultConfig()` first argument | Pass the Vault file as the first argument or `options.vaultConfigFile`; do not pass both. |
-
-Publication and clean package-manager installation checks remain release gates. This entry
-describes the branch implementation, not a published release.
+| A signal-terminated child produced status 1; parent SIGINT cleaned up with SIGTERM | Handle the child's original signal, or use the Node API's structured result. Parent SIGINT now reaches the child as SIGINT. |
 
 ## [0.4.2] - 2026-08-04
 

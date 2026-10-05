@@ -37,7 +37,8 @@ The stable root contains:
 - Workspace use cases: `listWorkspacePackages`, `resolveTargetPackage`.
 - Checks and sync: `checkDotenvSelector`, `defineEnvCheck`, `defineEnvSync`,
   `runEnvCheck`, `runEnvSync`.
-- Execution and sorting: `runWithInjectedEnv`, `sortEnvFile`,
+- Execution and sorting: `runWithInjectedEnv`, `runWithInjectedEnvDetailed`,
+  `spawnWithInjectedEnv`, `sortEnvFile`,
   `sortEnvFilesFromConfig`.
 - Diagnostics and errors: `EnvLaneError`, `errorCode`, `withEnvLaneContext`, and the
   diagnostic formatting API.
@@ -49,6 +50,14 @@ Sorting options accept `check: true` to calculate and return drift without writi
 and aggregate results expose `changed`; `applied` remains false in check mode. `runWithInjectedEnv`
 uses `cwd` for invocation/config resolution and the distinct `runCwd` option for the child working
 directory.
+
+`runWithInjectedEnv` still returns `Promise<number>`: normal child codes pass through, startup
+failures return 127 for a missing executable or 126 for another spawn failure, and a POSIX signal
+returns 128 plus its signal number. `runWithInjectedEnvDetailed` returns `{ exitCode, signal,
+spawnError? }` when callers need to distinguish these cases. `spawnWithInjectedEnv` returns
+`{ child, completed }`; pass `stdio: 'pipe'` to read raw child output or write stdin. Without it,
+the child inherits all three streams. The process contract is recorded in
+[v0.5.0-process.json](../compat/contracts/v0.5.0-process.json).
 
 The lower-level document feature has a stable dedicated entry:
 

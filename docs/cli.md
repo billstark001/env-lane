@@ -38,9 +38,10 @@ Global options may be placed before or after a subcommand:
 | `--non-interactive` | Disable prompts and require explicit decisions. |
 | `--no-prefix` | Remove diagnostic scope prefixes. |
 
-Final payloads use stdout. Diagnostics, warnings, progress, and prompts use stderr. JSON mode emits
-exactly one JSON document on stdout, including for errors. Expected public failures expose stable
-`error.code` values and may include structured `error.details`.
+Final payloads use stdout. Diagnostics, warnings, progress, and prompts use stderr. Except for
+`run`, JSON mode emits exactly one JSON document on stdout, including for errors. `run` reserves
+stdout for its child and reports its own errors on stderr, even if `--json` is requested. Expected
+public failures expose stable `error.code` values and may include structured `error.details`.
 
 Secret-like values from `print` and `sync` are redacted by default. Use `--show-secrets` only
 when the destination is trusted.
@@ -78,6 +79,14 @@ part of the child command. A path passed to `--run-cwd` is resolved from `--cwd`
 default) and `root` select the resolved package directory and workspace root respectively.
 `--run-cwd` changes only the child working directory, while `--cwd` controls config discovery and
 all caller-relative CLI paths.
+
+The child inherits stdin, stdout, and stderr without text conversion or buffering. `--quiet`
+suppresses the run summary. A normal child exit code passes through unchanged. A missing executable
+exits 127 (`RUN_COMMAND_NOT_FOUND`); another startup failure exits 126
+(`RUN_SPAWN_FAILED`). On POSIX, a child signal terminates the runner with the same signal. When the
+runner receives SIGINT or SIGTERM, it forwards that signal to the child before terminating itself;
+non-TTY runs use a child process group so descendants receive it too. See the
+[0.5.0 process contract](../compat/contracts/v0.5.0-process.json).
 
 `check` requires exactly one of `--target` or `--policy`.
 

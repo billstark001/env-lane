@@ -1,8 +1,8 @@
 # @env-lane/core
 
-Stable application calls on `rewrite/rust-native` use the Rust Node-API binding from
+Stable application calls use the Rust Node-API binding from
 `@env-lane/native`. Configuration evaluation, diagnostic context, public TypeScript types,
-the env-document feature facade, and deprecated 0.4.x exports remain in JavaScript. Document
+and the env-document feature facade remain in JavaScript. Document
 parsing, formatting, and patch planning now run in Rust; the facade preserves the public `Map`
 shapes and file write behavior. See
 [native migration](../../docs/native-migration.md).
@@ -43,6 +43,12 @@ Public use cases normalize `cwd` once for config discovery and caller-relative p
 `runWithInjectedEnv`, `runCwd` independently selects `target`, `root`, or a child directory relative
 to `cwd`; it does not replace the invocation context.
 
+The numeric API passes through normal child exit codes, maps startup failures to 126/127, and
+returns 128 plus the signal number for POSIX signal termination. Use `runWithInjectedEnvDetailed`
+for `{ exitCode, signal, spawnError? }`, or `spawnWithInjectedEnv({ ..., stdio: 'pipe' })` for
+direct access to the child streams and a completion promise. By default all three child streams
+are inherited.
+
 Runtime and editing APIs use the same line-level env AST. Assignment nodes preserve concrete syntax while exposing a `dotenv`-compatible `effectiveValue`, keeping injection, checks, sync, sort, and vault behavior aligned.
 
 Redaction combines secret-like key names with value inspection. The public `isJwt`, `isPaseto`,
@@ -64,10 +70,8 @@ import {
 } from '@env-lane/core/env-document';
 ```
 
-The same document symbols remain at the Core root in 0.4.x as deprecated compatibility exports.
-They are planned for removal in the next intentionally breaking release. Config adapter internals,
-resolved-input helpers, the Node file adapter, sort planner internals, and workspace orchestration
-internals exported from the root are deprecated on the same schedule.
+The deprecated Core root document and internal adapter exports from 0.4.x were removed in 0.5.0.
+Import the document feature from `@env-lane/core/env-document`.
 
 Core and Vault APIs are silent unless called inside an explicit async context. Diagnostics are emitted through the context logger and are not mixed into operation results:
 

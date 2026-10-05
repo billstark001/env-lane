@@ -23,7 +23,7 @@ env-lane sort api production --check
 env-lane vault encrypt key.aes --dry-run --json
 ```
 
-Final command payloads use stdout; diagnostics use stderr. `--json` emits one JSON document on stdout. The `run` command accepts text only because its child owns stdout. Use `--non-interactive` together with explicit approval and conflict policies for agents and CI.
+Final command payloads use stdout; diagnostics use stderr. Outside `run`, `--json` emits one JSON document on stdout. The `run` command accepts text only because its child owns stdout; its own errors use stderr. Use `--non-interactive` together with explicit approval and conflict policies for agents and CI.
 
 `--cwd` controls config discovery and caller-relative CLI paths. `--run-cwd` only chooses the child
 working directory and defaults to the resolved target. Prefer an explicit child boundary; later
@@ -32,6 +32,11 @@ separators remain child arguments:
 ```bash
 env-lane run api -- node script.mjs -- --child-flag
 ```
+
+The child inherits all three byte streams. Normal exit status passes through; a missing command
+returns 127 and another startup failure returns 126. On POSIX, the runner retains the child's
+termination signal and forwards a received SIGINT/SIGTERM to the child process group in non-TTY
+runs.
 
 `sort --check` and `sort-file --check` do not write and exit with status 1 on drift. Vault
 `encrypt --dry-run` previews selected record changes without creating or updating the encrypted
