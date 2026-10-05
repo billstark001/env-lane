@@ -20,6 +20,10 @@ export function nativePlatformManifest(suffix, version, description) {
     version,
     description,
     license: 'MIT',
+    repository: {
+      type: 'git',
+      url: 'git+https://github.com/billstark001/env-lane.git',
+    },
     ...platform(suffix),
     main: addon,
     files: [addon, binary],
@@ -33,6 +37,10 @@ export function vaultPlatformManifest(suffix, version) {
     version,
     description: 'Native Vault plugin for env-lane',
     license: 'MIT',
+    repository: {
+      type: 'git',
+      url: 'git+https://github.com/billstark001/env-lane.git',
+    },
     ...platform(suffix),
     main: binary,
     files: [binary],

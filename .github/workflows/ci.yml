@@ -83,13 +83,16 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Build package entries
+        run: pnpm build
+
       - name: Test compatibility baseline
         run: pnpm test
 
   rust:
     name: Rust and native differential on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +107,14 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        with:
+          version: 12
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain

@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -82,6 +81,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: npm
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,7 +94,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.x
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
       - run: pnpm release:verify
       - run: pnpm install --frozen-lockfile
@@ -106,7 +107,7 @@ jobs:
       - run: pnpm release
 
   standalone-release:
-    needs: [native, publish]
+    needs: [verify, native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

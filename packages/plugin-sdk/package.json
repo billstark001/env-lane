@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Node.js runtime and types for env-lane JSON-RPC plugins",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/billstark001/env-lane.git",
+    "directory": "packages/plugin-sdk"
+  },
   "engines": {
     "node": ">=22"
   },
