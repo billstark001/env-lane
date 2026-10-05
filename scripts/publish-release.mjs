@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
 import path from 'node:path'
+import { NATIVE_TARGETS } from './native-targets.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 function run(command, args) {
@@ -10,7 +10,7 @@ function run(command, args) {
 
 run('node', ['scripts/verify-native-packages.mjs'])
 const platformRoot = path.join(root, 'packages/native/npm')
-for (const entry of readdirSync(platformRoot).sort()) {
+for (const entry of Object.values(NATIVE_TARGETS).sort()) {
   run('npm', [
     'publish',
     path.join(platformRoot, entry),
@@ -21,7 +21,7 @@ for (const entry of readdirSync(platformRoot).sort()) {
   ])
 }
 const vaultPlatformRoot = path.join(root, 'packages/vault/npm')
-for (const entry of readdirSync(vaultPlatformRoot).sort()) {
+for (const entry of Object.values(NATIVE_TARGETS).sort()) {
   run('npm', [
     'publish',
     path.join(vaultPlatformRoot, entry),
@@ -39,6 +39,12 @@ run('npm', [
   '--provenance',
   '--ignore-scripts',
 ])
-for (const name of ['@env-lane/config-compat', '@env-lane/core', '@env-lane/vault', 'env-lane']) {
+for (const name of [
+  '@env-lane/plugin-sdk',
+  '@env-lane/config-compat',
+  '@env-lane/core',
+  '@env-lane/vault',
+  'env-lane',
+]) {
   run('pnpm', ['--filter', name, 'publish', '--access', 'public', '--no-git-checks'])
 }

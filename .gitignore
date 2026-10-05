@@ -13,6 +13,7 @@ dist
 /crates/env-lane-node/index.js
 /crates/env-lane-node/index.d.ts
 /packages/native/npm/
+/packages/vault/npm/
 /native-artifacts/
 /release-files/
 .env-lane-cache/

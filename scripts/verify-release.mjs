@@ -10,6 +10,7 @@ const manifestPaths = [
   'packages/cli/package.json',
   'packages/native/package.json',
   'packages/config-compat/package.json',
+  'packages/plugin-sdk/package.json',
 ]
 
 function readJson(relativePath) {

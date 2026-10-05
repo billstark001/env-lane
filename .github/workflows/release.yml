@@ -100,8 +100,6 @@ jobs:
         with:
           pattern: native-*
           path: native-artifacts
-      - run: pnpm --filter @env-lane/native exec napi create-npm-dirs --cwd .
-      - run: pnpm --filter @env-lane/native exec napi artifacts --cwd . --output-dir $GITHUB_WORKSPACE/native-artifacts
       - run: node scripts/native-release.mjs prepare
       - run: npm pack ./packages/native --dry-run --ignore-scripts
       - run: node scripts/verify-native-packages.mjs

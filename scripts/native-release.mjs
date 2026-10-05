@@ -9,13 +9,22 @@ import {
 } from 'node:fs'
 import path from 'node:path'
 import { NATIVE_TARGETS } from './native-targets.mjs'
+import {
+  nativePlatformManifest,
+  platformReadme,
+  vaultPlatformManifest,
+} from './platform-packages.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
-const nativeManifestPath = path.join(root, 'packages/native/package.json')
+const [mode, target, fixtureRoot] = process.argv.slice(2)
+if (mode === 'prepare' && target === '--root' && !fixtureRoot) {
+  throw new Error('prepare --root requires a directory')
+}
+const packageRoot = mode === 'prepare' && target === '--root' ? path.resolve(fixtureRoot) : root
+const nativeManifestPath = path.join(packageRoot, 'packages/native/package.json')
 const nativeManifest = JSON.parse(readFileSync(nativeManifestPath, 'utf8'))
 assert.deepEqual(new Set(nativeManifest.napi.targets), new Set(Object.keys(NATIVE_TARGETS)))
-const artifactRoot = path.join(root, 'native-artifacts')
-const [mode, target] = process.argv.slice(2)
+const artifactRoot = path.join(packageRoot, 'native-artifacts')
 
 if (mode === 'stage') {
   assert.ok(Object.hasOwn(NATIVE_TARGETS, target), `Unknown native target: ${target}`)
@@ -41,8 +50,7 @@ if (mode === 'stage') {
   const vaultOptionalDependencies = {}
   for (const [triple, suffix] of Object.entries(NATIVE_TARGETS)) {
     const source = path.join(artifactRoot, `native-${suffix}`)
-    const packageDir = path.join(root, 'packages/native/npm', suffix)
-    const packageManifestPath = path.join(packageDir, 'package.json')
+    const packageDir = path.join(packageRoot, 'packages/native/npm', suffix)
     const addonName = `env-lane-native.${suffix}.node`
     const binaryName = triple.includes('windows') ? 'env-lane.exe' : 'env-lane'
     const pluginName = triple.includes('windows')
@@ -50,33 +58,35 @@ if (mode === 'stage') {
       : 'env-lane-plugin-vault'
     assert.ok(existsSync(path.join(source, addonName)), `Missing staged addon for ${suffix}`)
     assert.ok(existsSync(path.join(source, binaryName)), `Missing staged CLI for ${suffix}`)
-    assert.ok(
-      existsSync(path.join(packageDir, addonName)),
-      `napi artifacts did not place ${suffix}`,
+    assert.ok(existsSync(path.join(source, pluginName)), `Missing staged plugin for ${suffix}`)
+    mkdirSync(packageDir, { recursive: true })
+    const platform = nativePlatformManifest(
+      suffix,
+      nativeManifest.version,
+      nativeManifest.description,
     )
-    const platform = JSON.parse(readFileSync(packageManifestPath, 'utf8'))
-    assert.equal(platform.name, `@env-lane/native-${suffix}`)
-    assert.equal(platform.version, nativeManifest.version)
-    assert.deepEqual(platform.files, [addonName])
+    copyFileSync(path.join(source, addonName), path.join(packageDir, addonName))
     copyFileSync(path.join(source, binaryName), path.join(packageDir, binaryName))
     if (binaryName === 'env-lane') chmodSync(path.join(packageDir, binaryName), 0o755)
-    platform.files.push(binaryName)
-    writeFileSync(packageManifestPath, `${JSON.stringify(platform, null, 2)}\n`)
+    writeFileSync(path.join(packageDir, 'package.json'), `${JSON.stringify(platform, null, 2)}\n`)
+    writeFileSync(path.join(packageDir, 'README.md'), platformReadme(platform))
     optionalDependencies[platform.name] = nativeManifest.version
-    const vaultPackageDir = path.join(root, 'packages/vault/npm', suffix)
-    const vaultPackageManifestPath = path.join(vaultPackageDir, 'package.json')
-    const vaultPlatform = JSON.parse(readFileSync(vaultPackageManifestPath, 'utf8'))
-    assert.equal(vaultPlatform.name, `@env-lane/vault-native-${suffix}`)
-    assert.equal(vaultPlatform.version, nativeManifest.version)
-    assert.deepEqual(vaultPlatform.files, [pluginName])
+    const vaultPackageDir = path.join(packageRoot, 'packages/vault/npm', suffix)
+    mkdirSync(vaultPackageDir, { recursive: true })
+    const vaultPlatform = vaultPlatformManifest(suffix, nativeManifest.version)
     copyFileSync(path.join(source, pluginName), path.join(vaultPackageDir, pluginName))
     if (pluginName === 'env-lane-plugin-vault')
       chmodSync(path.join(vaultPackageDir, pluginName), 0o755)
+    writeFileSync(
+      path.join(vaultPackageDir, 'package.json'),
+      `${JSON.stringify(vaultPlatform, null, 2)}\n`,
+    )
+    writeFileSync(path.join(vaultPackageDir, 'README.md'), platformReadme(vaultPlatform))
     vaultOptionalDependencies[vaultPlatform.name] = nativeManifest.version
   }
   nativeManifest.optionalDependencies = optionalDependencies
   writeFileSync(nativeManifestPath, `${JSON.stringify(nativeManifest, null, 2)}\n`)
-  const vaultManifestPath = path.join(root, 'packages/vault/package.json')
+  const vaultManifestPath = path.join(packageRoot, 'packages/vault/package.json')
   const vaultManifest = JSON.parse(readFileSync(vaultManifestPath, 'utf8'))
   vaultManifest.optionalDependencies = vaultOptionalDependencies
   writeFileSync(vaultManifestPath, `${JSON.stringify(vaultManifest, null, 2)}\n`)
@@ -84,5 +94,5 @@ if (mode === 'stage') {
     `Prepared ${Object.keys(NATIVE_TARGETS).length} platform packages and the root optional dependency manifest.\n`,
   )
 } else {
-  throw new Error('Usage: node scripts/native-release.mjs stage <target> | prepare')
+  throw new Error('Usage: node scripts/native-release.mjs stage <target> | prepare [--root dir]')
 }
