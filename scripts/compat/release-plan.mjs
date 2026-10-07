@@ -68,7 +68,8 @@ try {
     shell: process.platform === 'win32',
   })
   assert.equal(nativePublish.status, 0, nativePublish.stderr)
-  assert.equal(Object.values(JSON.parse(nativePublish.stdout))[0].name, '@env-lane/native')
+  const nativeMetadata = JSON.parse(nativePublish.stdout)
+  assert.equal(nativeMetadata.name ?? Object.values(nativeMetadata)[0].name, '@env-lane/native')
 
   for (const [name, directory] of Object.entries(packageDirectories)) {
     const original = readJson(workspace, `${directory}/package.json`)

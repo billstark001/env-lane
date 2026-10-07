@@ -60,7 +60,8 @@ try {
     })
     assert.equal(published.status, 0, published.stderr)
     const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8'))
-    assert.equal(Object.values(JSON.parse(published.stdout))[0].name, manifest.name)
+    const metadata = JSON.parse(published.stdout)
+    assert.equal(metadata.name ?? Object.values(metadata)[0].name, manifest.name)
   }
   for (const suffix of Object.values(NATIVE_TARGETS)) {
     const archive = path.join(fixture, 'release-files', `env-lane-${suffix}.tar.gz`)
