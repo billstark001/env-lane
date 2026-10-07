@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '*-v*'
   workflow_dispatch:
 
 permissions:
@@ -17,6 +18,9 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      native: ${{ steps.release.outputs.native }}
+      standalone: ${{ steps.release.outputs.standalone }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,13 +33,15 @@ jobs:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - run: pnpm release:verify
+      - id: release
+        run: pnpm release:verify
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm rust:check
 
   native:
     needs: verify
+    if: needs.verify.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +91,7 @@ jobs:
 
   publish:
     needs: [verify, native]
+    if: ${{ always() && needs.verify.result == 'success' && (needs.native.result == 'success' || needs.native.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: npm
@@ -105,16 +112,17 @@ jobs:
       - run: pnpm release:verify
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
+        if: needs.verify.outputs.native == 'true'
         with:
           pattern: native-*
           path: native-artifacts
-      - run: node scripts/native-release.mjs prepare
-      - run: npm pack ./packages/native --dry-run --ignore-scripts
-      - run: node scripts/verify-native-packages.mjs
+      - if: needs.verify.outputs.native == 'true'
+        run: node scripts/native-release.mjs prepare
       - run: pnpm release
 
   standalone-release:
-    needs: [verify, native]
+    needs: [verify, native, publish]
+    if: needs.verify.outputs.standalone == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

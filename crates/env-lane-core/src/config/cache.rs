@@ -39,6 +39,17 @@ fn compile_required(kind: &str, reason: &str) -> Error {
     )
 }
 
+fn release_line(version: &str) -> Option<(u64, Option<u64>)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse::<u64>().ok()?;
+    let minor = parts.next()?.parse::<u64>().ok()?;
+    parts.next()?.parse::<u64>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, (major == 0).then_some(minor)))
+}
+
 pub(super) fn load(root: &Path, source: &Path, kind: &str) -> Result<Value> {
     let name = format!(
         "{kind}-{}.json",
@@ -50,7 +61,7 @@ pub(super) fn load(root: &Path, source: &Path, kind: &str) -> Result<Value> {
     let envelope: Envelope = serde_json::from_slice(&bytes)
         .map_err(|_| compile_required(kind, "Executable config cache is invalid"))?;
     if envelope.format_version != 1
-        || envelope.bridge_version != env!("CARGO_PKG_VERSION")
+        || release_line(&envelope.bridge_version) != release_line(env!("CARGO_PKG_VERSION"))
         || envelope.kind != kind
         || envelope.source != source
         || envelope.project_root != root

@@ -16,7 +16,9 @@ import path from 'node:path'
 const root = path.resolve(import.meta.dirname, '../..')
 const require = createRequire(import.meta.url)
 const { platformSuffix } = require('../../packages/native/bin.cjs')
-const version = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version
+const version = JSON.parse(
+  readFileSync(path.join(root, 'packages/cli/package.json'), 'utf8'),
+).version
 const binaryName = process.platform === 'win32' ? 'env-lane.exe' : 'env-lane'
 const source = path.join(root, 'target/debug', binaryName)
 assert.ok(existsSync(source), 'Build the native CLI before running the installer test.')

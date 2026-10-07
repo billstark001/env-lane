@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "env-lane-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "crossterm",
@@ -352,7 +352,7 @@ dependencies = [
 
 [[package]]
 name = "env-lane-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64",
  "fancy-regex",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "env-lane-node"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "env-lane-core",
  "env-lane-plugin-api",
@@ -398,7 +398,7 @@ dependencies = [
 
 [[package]]
 name = "env-lane-plugin-vault"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "crossterm",

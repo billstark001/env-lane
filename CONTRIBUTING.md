@@ -104,24 +104,14 @@ Keep unrelated user changes out of a commit. Review staged content with
 
 ## Release
 
-1. Update the root and all publishable package versions.
-2. Update `CHANGELOG.md` and migration/deprecation documentation.
-3. Run `pnpm check`.
-4. Run `pnpm pack:dry-run` and inspect package contents.
-5. Run `pnpm release:dry-run`.
-6. Create the matching annotated `v<version>` tag on the clean release commit.
-7. Run `pnpm release:verify -- --tag v<version>`; it checks that the tag points at `HEAD`.
-8. Push the tag. The release workflow validates that the tag, package versions, changelog,
-   clean tree, and checked-out commit agree before publishing.
+Follow [versioning, changelog and publishing](docs/releasing.md). Patch versions are independent:
+bump only packages with shipped changes, including dependency-range corrections. Ordinary
+internal dependencies use explicit `workspace:^MAJOR.MINOR.PATCH` minimums so later compatible
+patches remain installable. Generated platform artifacts retain exact owning-package versions.
 
-Each npm package, including the 16 derived platform packages, must already exist on npm and
-authorize GitHub repository `billstark001/env-lane`, workflow `release.yml`, and environment
-`npm` as a Trusted Publisher with direct publish permission. npm requires a package to exist
-before this trust relationship can be configured; first publication of a new package is a
-separate maintainer bootstrap step. The workflow grants `id-token: write` only to the publish
-job, packs workspace packages with pnpm, and uploads all packages with npm's OIDC flow. It does
-not use a long-lived publish token. The publish job requires npm 11.5.1 or newer and rejects
-`NODE_AUTH_TOKEN` and `NPM_TOKEN`.
+Use dated package-name changelog entries for partial updates and a committed `releases/<tag>.json`
+plan to select the batch. The tag-driven workflow preserves GitHub OIDC trusted publishing and
+publishes only selected packages and their platform families.
 
 `pnpm check` already includes a build, so a second standalone build is optional rather than a
 release requirement.

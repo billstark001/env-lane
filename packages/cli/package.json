@@ -1,6 +1,6 @@
 {
   "name": "env-lane",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "CLI for env-lane dotenv injection and optional plugins.",
   "license": "MIT",
@@ -58,7 +58,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@env-lane/native": "workspace:*",
-    "@env-lane/core": "workspace:*"
+    "@env-lane/native": "workspace:^0.5.1",
+    "@env-lane/core": "workspace:^0.5.1"
   }
 }

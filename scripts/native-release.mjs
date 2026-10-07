@@ -23,6 +23,8 @@ if (mode === 'prepare' && target === '--root' && !fixtureRoot) {
 const packageRoot = mode === 'prepare' && target === '--root' ? path.resolve(fixtureRoot) : root
 const nativeManifestPath = path.join(packageRoot, 'packages/native/package.json')
 const nativeManifest = JSON.parse(readFileSync(nativeManifestPath, 'utf8'))
+const vaultManifestPath = path.join(packageRoot, 'packages/vault/package.json')
+const vaultManifest = JSON.parse(readFileSync(vaultManifestPath, 'utf8'))
 assert.deepEqual(new Set(nativeManifest.napi.targets), new Set(Object.keys(NATIVE_TARGETS)))
 const artifactRoot = path.join(packageRoot, 'native-artifacts')
 
@@ -73,7 +75,7 @@ if (mode === 'stage') {
     optionalDependencies[platform.name] = nativeManifest.version
     const vaultPackageDir = path.join(packageRoot, 'packages/vault/npm', suffix)
     mkdirSync(vaultPackageDir, { recursive: true })
-    const vaultPlatform = vaultPlatformManifest(suffix, nativeManifest.version)
+    const vaultPlatform = vaultPlatformManifest(suffix, vaultManifest.version)
     copyFileSync(path.join(source, pluginName), path.join(vaultPackageDir, pluginName))
     if (pluginName === 'env-lane-plugin-vault')
       chmodSync(path.join(vaultPackageDir, pluginName), 0o755)
@@ -82,12 +84,10 @@ if (mode === 'stage') {
       `${JSON.stringify(vaultPlatform, null, 2)}\n`,
     )
     writeFileSync(path.join(vaultPackageDir, 'README.md'), platformReadme(vaultPlatform))
-    vaultOptionalDependencies[vaultPlatform.name] = nativeManifest.version
+    vaultOptionalDependencies[vaultPlatform.name] = vaultManifest.version
   }
   nativeManifest.optionalDependencies = optionalDependencies
   writeFileSync(nativeManifestPath, `${JSON.stringify(nativeManifest, null, 2)}\n`)
-  const vaultManifestPath = path.join(packageRoot, 'packages/vault/package.json')
-  const vaultManifest = JSON.parse(readFileSync(vaultManifestPath, 'utf8'))
   vaultManifest.optionalDependencies = vaultOptionalDependencies
   writeFileSync(vaultManifestPath, `${JSON.stringify(vaultManifest, null, 2)}\n`)
   process.stdout.write(

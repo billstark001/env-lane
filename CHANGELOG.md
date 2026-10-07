@@ -5,11 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Version and entry rules
+
+- Packages share a major version, and share a minor version while major is zero; patches may differ.
+- Shared release-line updates use `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD`.
+- Partial updates use `## exact-package-name [MAJOR.MINOR.PATCH] - YYYY-MM-DD` and describe only
+  that package's changes. Generated platform packages are covered by their owning package entry.
+- Dependency-range corrections warrant a package patch; unaffected packages keep their versions.
+- See [the release guide](docs/releasing.md) for compatible dependency ranges and batch selection.
+
 ---
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- Added independent package patch versions, explicit selective release plans, and package-specific
+  changelog checks. Trusted publishing retains the existing GitHub OIDC workflow identity and
+  skips unselected packages; standalone releases wait for successful npm publishing.
+
+## env-lane [0.5.1] - 2026-10-08
+
+### Fixed
+
+- A terminal Ctrl+C delivers one SIGINT to the child, preserving terminal stdin and graceful
+  cleanup. Foreground-terminal SIGINT sent only to the runner PID follows the documented
+  no-forwarding policy. ([#7](https://github.com/billstark001/env-lane/issues/7))
+- Requested non-TTY stops finish cleanup of the owned group after its leader exits, allowing up
+  to five seconds before SIGKILL. Further signals retain the original deadline and the runner's
+  first requested termination signal. ([#8](https://github.com/billstark001/env-lane/issues/8))
+
+### Changed
+
+- Require compatible Core/native versions starting at 0.5.1, allowing subsequent 0.5.x patches.
+
+## @env-lane/native [0.5.1] - 2026-10-08
+
+### Changed
+
+- Ship the corrected native CLI and Core cache compatibility through all eight platform packages.
+  Platform artifact versions remain exact matches to the native loader package.
+
+## @env-lane/core [0.5.1] - 2026-10-08
+
+### Fixed
+
+- Accept configuration caches compiled by compatible 0.5.x bridge versions while retaining
+  cache-format, source-hash, and dynamic freshness checks.
+
+### Changed
+
+- Replace the exact native dependency with a compatible range starting at 0.5.1.
+
+## @env-lane/config-compat [0.5.1] - 2026-10-08
+
+### Changed
+
+- Use a compatible native dependency starting at 0.5.1, delivering the updated CLI to the
+  configuration runner and allowing subsequent compatible patches.
+
+## @env-lane/vault [0.5.1] - 2026-10-08
+
+### Changed
+
+- Replace exact Core/native dependencies with compatible ranges starting at 0.5.1. Vault command
+  behavior and persisted record formats are unchanged. Its eight native plugin packages follow
+  the Vault package version independently of the host native package version.
 
 ## [0.5.0] - 2026-10-05
 

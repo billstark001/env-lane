@@ -24,7 +24,7 @@ for (const file of [addon, binary, plugin]) {
 }
 const result = spawnSync(binary, ['--version'], { encoding: 'utf8' })
 assert.equal(result.status, 0, result.stderr || result.error?.message)
-const manifest = JSON.parse(readFileSync(path.join(root, 'packages/native/package.json'), 'utf8'))
+const manifest = JSON.parse(readFileSync(path.join(root, 'packages/cli/package.json'), 'utf8'))
 assert.equal(result.stdout.trim().split(/\s+/).at(-1), manifest.version)
 if (!triple.includes('musl')) {
   const native = createRequire(import.meta.url)(addon)

@@ -147,6 +147,18 @@ try {
   writeFileSync(main.file, JSON.stringify({ ...invalidEnvelope, config: null }))
   assert.equal(compile('main', 'env-lane.config.ts').reused, false)
   assert.equal(packages().status, 0)
+  const compatibleEnvelope = JSON.parse(readFileSync(main.file, 'utf8'))
+  for (const bridgeVersion of ['0.5.0', '0.5.2']) {
+    writeFileSync(main.file, JSON.stringify({ ...compatibleEnvelope, bridgeVersion }))
+    assert.equal(packages().status, 0, `Compatible bridge ${bridgeVersion}`)
+  }
+  for (const bridgeVersion of ['0.6.0', '1.0.0', 'invalid']) {
+    writeFileSync(main.file, JSON.stringify({ ...compatibleEnvelope, bridgeVersion }))
+    assert.equal(packages().output.error.code, 'CONFIG_COMPILATION_REQUIRED')
+  }
+  writeFileSync(main.file, JSON.stringify({ ...compatibleEnvelope, formatVersion: 2 }))
+  assert.equal(packages().output.error.code, 'CONFIG_COMPILATION_REQUIRED')
+  writeFileSync(main.file, JSON.stringify(compatibleEnvelope))
   const vaultSource = path.join(temporary, 'env-lane.vault.ts')
   writeFileSync(
     vaultSource,

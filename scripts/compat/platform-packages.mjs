@@ -15,6 +15,10 @@ try {
       path.join(root, 'packages', packageName, 'package.json'),
       path.join(destination, 'package.json'),
     )
+    const manifestPath = path.join(destination, 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    manifest.version = packageName === 'native' ? '0.5.2' : '0.5.1'
+    writeFileSync(manifestPath, JSON.stringify(manifest))
   }
   for (const [triple, suffix] of Object.entries(NATIVE_TARGETS)) {
     const directory = path.join(fixture, 'native-artifacts', `native-${suffix}`)
@@ -42,6 +46,10 @@ try {
   const vault = JSON.parse(readFileSync(path.join(fixture, 'packages/vault/package.json')))
   assert.equal(Object.keys(native.optionalDependencies).length, 8)
   assert.equal(Object.keys(vault.optionalDependencies).length, 8)
+  assert.equal(native.version, '0.5.2')
+  assert.equal(vault.version, '0.5.1')
+  assert.ok(Object.values(native.optionalDependencies).every((version) => version === '0.5.2'))
+  assert.ok(Object.values(vault.optionalDependencies).every((version) => version === '0.5.1'))
   for (const suffix of Object.values(NATIVE_TARGETS)) {
     const archive = path.join(fixture, 'release-files', `env-lane-${suffix}.tar.gz`)
     const listed = spawnSync('tar', ['-tzf', archive], { encoding: 'utf8' })

@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url'
 
 const root = path.resolve(import.meta.dirname, '..')
 const require = createRequire(import.meta.url)
-const metadata = require(path.join(root, 'package.json'))
+const metadata = require(path.join(root, 'packages/cli/package.json'))
 const entries = [
   ['core', 'index', ['defineConfig', 'loadEnvLaneConfig', 'resolveInjectedEnv', 'sortEnvFile']],
   ['core', 'env-document', ['parseEnvDocument', 'parseEnvLine']],

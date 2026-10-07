@@ -1,6 +1,6 @@
 [package]
 name = "env-lane-plugin-vault"
-version.workspace = true
+version = "0.5.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

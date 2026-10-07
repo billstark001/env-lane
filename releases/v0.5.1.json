@@ -1,0 +1,10 @@
+{
+  "packages": {
+    "@env-lane/native": "0.5.1",
+    "@env-lane/config-compat": "0.5.1",
+    "@env-lane/core": "0.5.1",
+    "@env-lane/vault": "0.5.1",
+    "env-lane": "0.5.1"
+  },
+  "standalone": true
+}

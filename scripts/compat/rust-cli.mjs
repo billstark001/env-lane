@@ -27,12 +27,15 @@ const cases = [
   'process-contract',
   'cli-bootstrap-and-child-boundary',
 ]
+const cliVersion = JSON.parse(
+  readFileSync(path.join(workspace, 'packages/cli/package.json'), 'utf8'),
+).version
 function expectedObservation(name, index, step) {
   if (name === 'process-contract' && index === 2) {
     return { ...step.expected, status: null }
   }
   if (name === 'cli-bootstrap-and-child-boundary' && index === 0) {
-    return { ...step.expected, stdout: '0.5.0\n' }
+    return { ...step.expected, stdout: `${cliVersion}\n` }
   }
   return step.expected
 }
