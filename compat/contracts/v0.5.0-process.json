@@ -12,7 +12,8 @@
       "otherFailure": { "status": 126, "code": "RUN_SPAWN_FAILED" }
     },
     "posixChildSignal": "Terminate the runner with the same signal, preserving signal identity for its parent.",
-    "posixParentSignal": "Forward SIGINT or SIGTERM to the child, then terminate the runner with that same signal; non-TTY children run in a separate process group so the signal reaches descendants.",
+    "posixParentSignal": "Forward SIGINT or SIGTERM, allow up to five seconds for shutdown, then terminate the runner with the first requested signal. Further requests do not extend grace. With all three streams non-TTY, signal and clean up the entire owned child process group, even after its leader exits; SIGKILL remaining members at the deadline. Ordinary child completion does not trigger group cleanup and descendants that leave the group are excluded.",
+    "posixTerminalSignal": "Interactive children retain the inherited group and terminal stdin access. When the group owns the foreground terminal, do not relay SIGINT already delivered by Ctrl+C; SIGINT sent only to the runner PID is likewise not relayed because its source cannot be distinguished portably. SIGTERM is forwarded to the direct child. Timeout SIGKILL targets only the child, never the shared terminal group.",
     "windows": "Return the available numeric child status; POSIX signal identity and process groups do not apply. Batch files use the Windows command processor."
   },
   "nodeApi": {
@@ -31,7 +32,7 @@
     {
       "case": "Parent receives SIGINT",
       "old": "Child cleanup receives SIGTERM",
-      "new": "Child receives SIGINT; parent exits on SIGINT",
+      "new": "Non-TTY child receives forwarded SIGINT; foreground-terminal child receives Ctrl+C directly without duplicate forwarding; parent exits on SIGINT",
       "reason": "Keep interrupt semantics through wrappers",
       "migration": "Child signal handlers should listen for SIGINT as well as SIGTERM"
     },

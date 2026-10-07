@@ -26,7 +26,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "rust:check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && cargo test -p env-lane-cli --features plugin-fixture --locked && pnpm compat:rust",
+    "rust:check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && cargo test -p env-lane-cli --features plugin-fixture --locked && node scripts/compat/rust-process-signals.mjs && pnpm compat:rust",
     "compat:rust": "node scripts/compat/rust-document.mjs && node scripts/compat/rust-sort.mjs && node scripts/compat/rust-vault-crypto.mjs && node scripts/compat/rust-vault-store.mjs && node scripts/compat/rust-vault-config.mjs"
   },
   "devDependencies": {

@@ -90,9 +90,21 @@ all caller-relative CLI paths.
 The child inherits stdin, stdout, and stderr without text conversion or buffering. `--quiet`
 suppresses the run summary. A normal child exit code passes through unchanged. A missing executable
 exits 127 (`RUN_COMMAND_NOT_FOUND`); another startup failure exits 126
-(`RUN_SPAWN_FAILED`). On POSIX, a child signal terminates the runner with the same signal. When the
-runner receives SIGINT or SIGTERM, it forwards that signal to the child before terminating itself;
-non-TTY runs use a child process group so descendants receive it too. See the
+(`RUN_SPAWN_FAILED`). On POSIX, a child signal terminates the runner with the same signal.
+
+When all three streams are non-TTY, the runner creates a dedicated child process group and forwards
+received SIGINT/SIGTERM to that group. A requested stop allows up to five seconds for the entire
+group to finish, even if the direct child exits first, then sends SIGKILL to remaining members.
+Further signals are forwarded during this grace period without extending it. The runner terminates
+with the first requested signal. Ordinary child completion does not trigger group cleanup, and
+descendants that deliberately leave the group are outside this cleanup boundary.
+
+Interactive children keep the inherited process group and terminal stdin access. When that group
+owns the foreground terminal, Ctrl+C already reaches the child, so the runner does not forward
+SIGINT again. This also applies to SIGINT sent only to the runner PID: portable signal APIs cannot
+reliably distinguish it from terminal Ctrl+C. Use terminal Ctrl+C or signal the child directly in
+that case. SIGTERM still forwards to the direct child. Interactive timeout cleanup sends SIGKILL
+only to the direct child, never to the shared terminal group. See the
 [0.5.0 process contract](../compat/contracts/v0.5.0-process.json).
 
 `check` requires exactly one of `--target` or `--policy`.

@@ -43,24 +43,8 @@ impl Termination {
     pub(super) fn wait(&self, child: &mut Child) -> io::Result<ExitStatus> {
         loop {
             if let Ok(signal) = self.signals.recv_timeout(Duration::from_millis(10)) {
-                let requested = if signal == SIGINT {
-                    rustix::process::Signal::INT
-                } else {
-                    rustix::process::Signal::TERM
-                };
                 if let Some(pid) = rustix::process::Pid::from_raw(child.id() as i32) {
-                    self.send(pid, requested);
-                    let deadline = Instant::now() + Duration::from_secs(5);
-                    while Instant::now() < deadline {
-                        if child.try_wait()?.is_some() {
-                            break;
-                        }
-                        thread::sleep(Duration::from_millis(10));
-                    }
-                    if child.try_wait()?.is_none() {
-                        self.send(pid, rustix::process::Signal::KILL);
-                        let _ = child.wait();
-                    }
+                    self.shutdown(child, pid, signal)?;
                 }
                 signal_hook::low_level::emulate_default_handler(signal)?;
             }
@@ -70,13 +54,64 @@ impl Termination {
         }
     }
 
+    fn shutdown(
+        &self,
+        child: &mut Child,
+        pid: rustix::process::Pid,
+        signal: i32,
+    ) -> io::Result<()> {
+        self.send(pid, requested_signal(signal));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let child_running = child.try_wait()?.is_none();
+            // Reaping the leader does not mean its owned group is empty. Probe
+            // the group independently until it disappears or grace expires.
+            let group_running = self.isolated_group
+                && rustix::process::test_kill_process_group(pid) != Err(rustix::io::Errno::SRCH);
+            if !child_running && !group_running {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                self.send(pid, rustix::process::Signal::KILL);
+                if child_running {
+                    child.wait()?;
+                }
+                return Ok(());
+            }
+            if let Ok(next) = self.signals.recv_timeout(Duration::from_millis(10)) {
+                // Relay further requests during grace without extending it.
+                // The runner still exits with the first requested signal.
+                self.send(pid, requested_signal(next));
+            }
+        }
+    }
+
     fn send(&self, pid: rustix::process::Pid, signal: rustix::process::Signal) {
         if self.isolated_group {
             let _ = rustix::process::kill_process_group(pid, signal);
-        } else {
+        } else if signal != rustix::process::Signal::INT || !shares_foreground_terminal() {
             let _ = rustix::process::kill_process(pid, signal);
         }
     }
+}
+
+fn requested_signal(signal: i32) -> rustix::process::Signal {
+    if signal == SIGINT {
+        rustix::process::Signal::INT
+    } else {
+        rustix::process::Signal::TERM
+    }
+}
+
+fn shares_foreground_terminal() -> bool {
+    // The child inherits our group and streams in interactive runs. A terminal
+    // interrupt has already reached that group, so relaying SIGINT duplicates
+    // it. Portable signal APIs cannot distinguish a terminal interrupt from a
+    // SIGINT sent only to the runner PID; both are left to the terminal here.
+    let group = rustix::process::getpgrp();
+    rustix::termios::tcgetpgrp(std::io::stdin()).ok() == Some(group)
+        || rustix::termios::tcgetpgrp(std::io::stdout()).ok() == Some(group)
+        || rustix::termios::tcgetpgrp(std::io::stderr()).ok() == Some(group)
 }
 
 impl Drop for Termination {

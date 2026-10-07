@@ -121,6 +121,9 @@ jobs:
       - name: Child execution and signal differential
         run: node scripts/compat/rust-process.mjs
 
+      - name: Native run signal and real PTY regressions
+        run: node scripts/compat/rust-process-signals.mjs
+
       - name: Shared redaction differential
         run: node scripts/compat/rust-redaction.mjs
 

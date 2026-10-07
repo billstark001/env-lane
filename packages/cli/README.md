@@ -40,7 +40,11 @@ env-lane run api -- node script.mjs -- --child-flag
 The child inherits all three byte streams. Normal exit status passes through; a missing command
 returns 127 and another startup failure returns 126. On POSIX, the runner retains the child's
 termination signal and forwards a received SIGINT/SIGTERM to the child process group in non-TTY
-runs.
+runs. Requested stops allow the whole owned group up to five seconds to finish before SIGKILL,
+even if its leader exits first. Interactive children retain terminal stdin access; SIGINT is not
+forwarded when the inherited group owns the foreground terminal, avoiding duplicate Ctrl+C. A
+SIGINT sent only to the runner PID is also not forwarded in that case. Interactive cleanup never
+kills the shared group. See [signal handling](../../docs/cli.md#workspace-and-dotenv-commands) for details.
 
 `sort --check` and `sort-file --check` do not write and exit with status 1 on drift. Vault
 `encrypt --dry-run` previews selected record changes without creating or updating the encrypted
