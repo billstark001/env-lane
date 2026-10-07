@@ -137,6 +137,12 @@ jobs:
       - run: node scripts/prepare-standalone-release.mjs
       - run: sha256sum -c SHA256SUMS
         working-directory: release-files
+      - name: Smoke test the standalone archive after artifact download
+        run: |
+          mkdir standalone-smoke
+          tar -xzf release-files/env-lane-linux-x64-gnu.tar.gz -C standalone-smoke
+          test -x standalone-smoke/plugins/@env-lane/vault-native-linux-x64-gnu/env-lane-plugin-vault
+          standalone-smoke/env-lane --version
       - run: gh release create "$GITHUB_REF_NAME" release-files/* --verify-tag --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Publish local native package directories using absolute paths so npm does not interpret them
   as GitHub repository shorthand.
+- Restore executable permissions for standalone CLI and Vault plugin archives after downloading
+  GitHub Actions artifacts.
 
 ### Changed
 

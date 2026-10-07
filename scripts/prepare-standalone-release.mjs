@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -47,6 +48,10 @@ for (const suffix of Object.values(NATIVE_TARGETS)) {
     ]) {
       assert.ok(existsSync(from), `Missing standalone input ${from}`)
       copyFileSync(from, to)
+    }
+    if (!suffix.startsWith('win32')) {
+      chmodSync(path.join(temporary, binary), 0o755)
+      chmodSync(path.join(platform, plugin), 0o755)
     }
     writeFileSync(
       path.join(platform, 'package.json'),

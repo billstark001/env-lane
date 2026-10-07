@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { NATIVE_TARGETS } from '../native-targets.mjs'
@@ -53,14 +61,18 @@ try {
   assert.ok(Object.values(vault.optionalDependencies).every((version) => version === '0.5.1'))
   for (const packageName of ['native', 'vault']) {
     const directory = path.join(fixture, 'packages', packageName, 'npm/darwin-arm64')
-    const published = spawnSync('npm', [...npmPublishArgs(directory), '--dry-run', '--json'], {
-      cwd: fixture,
-      encoding: 'utf8',
-      shell: process.platform === 'win32',
-    })
-    assert.equal(published.status, 0, published.stderr)
+    const packed = spawnSync(
+      'npm',
+      ['pack', npmPublishArgs(directory)[1], '--dry-run', '--ignore-scripts', '--json'],
+      {
+        cwd: fixture,
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+      },
+    )
+    assert.equal(packed.status, 0, packed.stderr)
     const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8'))
-    const metadata = JSON.parse(published.stdout)
+    const metadata = JSON.parse(packed.stdout)
     assert.equal(metadata.name ?? Object.values(metadata)[0].name, manifest.name)
   }
   for (const suffix of Object.values(NATIVE_TARGETS)) {
@@ -68,6 +80,18 @@ try {
     const listed = spawnSync('tar', ['-tzf', archive], { encoding: 'utf8' })
     assert.equal(listed.status, 0, listed.stderr)
     assert.ok(listed.stdout.includes(`./plugins/@env-lane/vault-native-${suffix}/package.json`))
+    if (process.platform !== 'win32' && !suffix.startsWith('win32')) {
+      const extracted = path.join(fixture, `extracted-${suffix}`)
+      mkdirSync(extracted)
+      const unpacked = spawnSync('tar', ['-xzf', archive, '-C', extracted], { encoding: 'utf8' })
+      assert.equal(unpacked.status, 0, unpacked.stderr)
+      for (const binary of [
+        'env-lane',
+        `plugins/@env-lane/vault-native-${suffix}/env-lane-plugin-vault`,
+      ]) {
+        assert.equal(statSync(path.join(extracted, binary)).mode & 0o777, 0o755, binary)
+      }
+    }
   }
   process.stdout.write('Derived native and Vault platform packages passed pack verification.\n')
 } finally {

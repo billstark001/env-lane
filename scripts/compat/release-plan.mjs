@@ -62,13 +62,17 @@ try {
 
   const nativeArgs = npmPublishArgs('packages/native')
   assert.equal(nativeArgs[1], path.join(workspace, 'packages/native'))
-  const nativePublish = spawnSync('npm', [...nativeArgs, '--dry-run', '--json'], {
-    cwd: temporary,
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-  })
-  assert.equal(nativePublish.status, 0, nativePublish.stderr)
-  const nativeMetadata = JSON.parse(nativePublish.stdout)
+  const nativePack = spawnSync(
+    'npm',
+    ['pack', nativeArgs[1], '--dry-run', '--ignore-scripts', '--json'],
+    {
+      cwd: temporary,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    },
+  )
+  assert.equal(nativePack.status, 0, nativePack.stderr)
+  const nativeMetadata = JSON.parse(nativePack.stdout)
   assert.equal(nativeMetadata.name ?? Object.values(nativeMetadata)[0].name, '@env-lane/native')
 
   for (const [name, directory] of Object.entries(packageDirectories)) {
