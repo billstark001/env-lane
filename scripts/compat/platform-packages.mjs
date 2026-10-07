@@ -4,6 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { NATIVE_TARGETS } from '../native-targets.mjs'
+import { npmPublishArgs } from '../publish-release.mjs'
 
 const root = path.resolve(import.meta.dirname, '../..')
 const fixture = mkdtempSync(path.join(tmpdir(), 'env-lane-platform-packages-'))
@@ -50,6 +51,17 @@ try {
   assert.equal(vault.version, '0.5.1')
   assert.ok(Object.values(native.optionalDependencies).every((version) => version === '0.5.2'))
   assert.ok(Object.values(vault.optionalDependencies).every((version) => version === '0.5.1'))
+  for (const packageName of ['native', 'vault']) {
+    const directory = path.join(fixture, 'packages', packageName, 'npm/darwin-arm64')
+    const published = spawnSync('npm', [...npmPublishArgs(directory), '--dry-run', '--json'], {
+      cwd: fixture,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    })
+    assert.equal(published.status, 0, published.stderr)
+    const manifest = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8'))
+    assert.equal(Object.values(JSON.parse(published.stdout))[0].name, manifest.name)
+  }
   for (const suffix of Object.values(NATIVE_TARGETS)) {
     const archive = path.join(fixture, 'release-files', `env-lane-${suffix}.tar.gz`)
     const listed = spawnSync('tar', ['-tzf', archive], { encoding: 'utf8' })

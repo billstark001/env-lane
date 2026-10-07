@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { npmPublishArgs } from '../publish-release.mjs'
 import {
   loadReleasePlan,
   packageDirectories,
@@ -58,6 +59,16 @@ try {
     JSON.stringify({ ...jsSource, packages: { '@env-lane/vault': '0.5.1' } }),
   )
   assert.throws(() => loadReleasePlan(temporary, 'core-v0.5.1'))
+
+  const nativeArgs = npmPublishArgs('packages/native')
+  assert.equal(nativeArgs[1], path.join(workspace, 'packages/native'))
+  const nativePublish = spawnSync('npm', [...nativeArgs, '--dry-run', '--json'], {
+    cwd: temporary,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  })
+  assert.equal(nativePublish.status, 0, nativePublish.stderr)
+  assert.equal(Object.values(JSON.parse(nativePublish.stdout))[0].name, '@env-lane/native')
 
   for (const [name, directory] of Object.entries(packageDirectories)) {
     const original = readJson(workspace, `${directory}/package.json`)

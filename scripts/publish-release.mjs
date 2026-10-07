@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   loadReleasePlan,
   publishEntries,
@@ -11,13 +12,27 @@ import {
   workspace,
 } from './release-plan.mjs'
 
-const plan = loadReleasePlan(workspace, releaseTag())
-const entries = publishEntries(plan)
-if (process.argv.includes('--dry-run')) {
-  process.stdout.write(`${entries.map((item) => `${item.name}@${item.version}`).join('\n')}\n`)
-  process.stdout.write(`Standalone archives: ${plan.standalone}\n`)
-} else {
-  publish()
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const plan = loadReleasePlan(workspace, releaseTag())
+  if (process.argv.includes('--dry-run')) {
+    const entries = publishEntries(plan)
+    process.stdout.write(`${entries.map((item) => `${item.name}@${item.version}`).join('\n')}\n`)
+    process.stdout.write(`Standalone archives: ${plan.standalone}\n`)
+  } else {
+    publish(plan)
+  }
+}
+
+export function npmPublishArgs(packagePath) {
+  // Bare paths such as packages/native are parsed as GitHub repository shorthand by npm.
+  return [
+    'publish',
+    path.resolve(workspace, packagePath),
+    '--access',
+    'public',
+    '--provenance',
+    '--ignore-scripts',
+  ]
 }
 
 function run(command, args, options = {}) {
@@ -46,20 +61,14 @@ function publishWorkspace(item) {
     run('pnpm', ['--filter', item.name, 'pack', '--pack-destination', temporary])
     const archives = readdirSync(temporary).filter((entry) => entry.endsWith('.tgz'))
     assert.equal(archives.length, 1, `Expected one package archive for ${item.name}`)
-    run('npm', [
-      'publish',
-      path.join(temporary, archives[0]),
-      '--access',
-      'public',
-      '--provenance',
-      '--ignore-scripts',
-    ])
+    run('npm', npmPublishArgs(path.join(temporary, archives[0])))
   } finally {
     rmSync(temporary, { recursive: true, force: true })
   }
 }
 
-function publish() {
+function publish(plan) {
+  const entries = publishEntries(plan)
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Publishing requires GitHub Actions OIDC')
   assert.ok(process.env.ACTIONS_ID_TOKEN_REQUEST_URL, 'Missing GitHub Actions OIDC endpoint')
   assert.ok(!process.env.NODE_AUTH_TOKEN && !process.env.NPM_TOKEN, 'Remove npm publish tokens')
@@ -81,14 +90,7 @@ function publish() {
     if (published(item.name, item.version)) {
       process.stdout.write(`Already published: ${item.name}@${item.version}; skipping.\n`)
     } else if (item.platform || item.name === '@env-lane/native') {
-      run('npm', [
-        'publish',
-        item.directory,
-        '--access',
-        'public',
-        '--provenance',
-        '--ignore-scripts',
-      ])
+      run('npm', npmPublishArgs(item.directory))
     } else {
       publishWorkspace(item)
     }

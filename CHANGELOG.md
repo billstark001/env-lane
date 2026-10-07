@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Publish local native package directories using absolute paths so npm does not interpret them
+  as GitHub repository shorthand.
+
 ### Changed
 
 - Added independent package patch versions, explicit selective release plans, and package-specific
