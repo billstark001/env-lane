@@ -82,11 +82,8 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
 
-      - name: Format
-        run: cargo fmt --all --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Rust lint and formatting check
+        run: pnpm lint:rust
 
       - name: Native tests and doctests
         run: cargo test --workspace --locked

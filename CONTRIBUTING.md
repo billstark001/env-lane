@@ -14,18 +14,29 @@ pnpm install
 
 ~~~bash
 pnpm lint
+pnpm lint:rust
+pnpm lint:js
+pnpm format
+pnpm format:rust
+pnpm format:js
 pnpm typecheck
 pnpm test
+pnpm test:rust
 pnpm test:watch
 pnpm build
 pnpm check
-pnpm rust:check
 ~~~
 
-`pnpm check` is the release gate. It runs lint, type checking, all tests, a clean package build,
-published-entry checks, and built CLI child-process tests.
+`pnpm check` runs lint for both languages, type checking, JS tests, a clean package build,
+published-entry checks, and built CLI child-process tests. Run `pnpm test:rust` as well for
+release verification.
 
-`pnpm rust:check` adds rustfmt, Clippy, Cargo tests, and curated frozen 0.4.2 differential tests. The
+Run lint and formatting commands from the workspace root. `pnpm lint` checks both JavaScript/
+TypeScript with Biome and Rust with rustfmt and Clippy. `pnpm format` applies Biome's formatting
+and safe fixes, then formats every Rust workspace crate. The `:js` and `:rust` commands limit
+either operation to one language. Package manifests do not define separate lint entry points.
+
+`pnpm test:rust` runs Cargo tests and curated frozen 0.4.2 differential tests. The
 standalone CLI is `cargo run --locked -p env-lane-cli -- <arguments>`. The Node binding is built
 with `pnpm --filter @env-lane/native build`. Keep `.rewrite/` implementation notes current even
 though that directory is ignored by Git. See [native migration](docs/native-migration.md) for

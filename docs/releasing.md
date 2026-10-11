@@ -75,7 +75,7 @@ archives include the current Vault plugin version, even when Vault is omitted fr
 
 1. Update only affected package/crate versions, compatible dependency floors, and both lockfiles.
 2. Write dated package changelog entries and the batch plan.
-3. Run `pnpm check`, `pnpm rust:check`, and inspect `pnpm pack:dry-run` contents. The conformance
+3. Run `pnpm check`, `pnpm test:rust`, and inspect `pnpm pack:dry-run` contents. The conformance
    gates verify selective plans, differing native/Vault patches, and real packed dependency ranges.
 4. Preview the exact publishing list with `pnpm release:dry-run --tag vX.Y.Z`. This prints the
    selection without building or publishing artifacts.

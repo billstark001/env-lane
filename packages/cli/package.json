@@ -54,8 +54,7 @@
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
     "postinstall": "node scripts/install-native.cjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "biome check ."
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@env-lane/native": "workspace:^0.5.1",

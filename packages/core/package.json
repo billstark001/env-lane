@@ -54,8 +54,7 @@
     "build": "tsup src/index.ts src/env-document.ts --format esm,cjs --clean && tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run typecheck",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "biome check ."
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@env-lane/native": "workspace:^0.5.1",

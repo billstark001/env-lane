@@ -37,7 +37,7 @@ jobs:
         run: pnpm release:verify
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - run: pnpm rust:check
+      - run: pnpm test:rust
 
   native:
     needs: verify

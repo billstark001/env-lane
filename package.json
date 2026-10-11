@@ -25,9 +25,13 @@
     "test:build": "cargo build --locked -p env-lane-cli -p env-lane-plugin-vault && pnpm build && node scripts/test-build.mjs && node scripts/compat/v05-core-bridge.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
-    "lint": "biome check .",
-    "format": "biome check --write .",
-    "rust:check": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && cargo test -p env-lane-cli --features plugin-fixture --locked && node scripts/compat/rust-process-signals.mjs && pnpm compat:rust",
+    "lint": "pnpm lint:js && pnpm lint:rust",
+    "lint:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "lint:js": "biome check .",
+    "format": "pnpm format:js && pnpm format:rust",
+    "format:rust": "cargo fmt --all",
+    "format:js": "biome check --write .",
+    "test:rust": "cargo test --workspace --locked && cargo test -p env-lane-cli --features plugin-fixture --locked && node scripts/compat/rust-process-signals.mjs && pnpm compat:rust",
     "compat:rust": "node scripts/compat/rust-document.mjs && node scripts/compat/rust-sort.mjs && node scripts/compat/rust-vault-crypto.mjs && node scripts/compat/rust-vault-store.mjs && node scripts/compat/rust-vault-config.mjs"
   },
   "devDependencies": {
