@@ -184,7 +184,8 @@ that file become delete candidates, while env-lane leaves the local file absent.
 `--reveal <start:end>` as one-off overrides of `restore.redaction` and `restore.reveal`.
 `--no-reveal` suppresses configured value hints. Interactive decrypt also accepts `--prompt-loop`
 and `--no-prompt-loop`; wrapping defaults to off. The selector shows current/Vault previews in
-each row, displays ten lines when the terminal permits, and accepts `Esc` or `q` to cancel.
+each row, reserves space for the focused preview, and adapts to terminal width and height.
+Press `v` for a wrapped detail view, or `Esc`/`q` to cancel.
 
 `vault encrypt --dry-run` returns the same selected changes and record counts without creating or
 modifying the encrypted store, sync state, or output directories. Combine it with `--json` for CI

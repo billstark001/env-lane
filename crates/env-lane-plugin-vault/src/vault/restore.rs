@@ -98,6 +98,7 @@ pub(super) fn execute(
                 };
                 vault_prompt::choose(
                     &plan,
+                    &context.loaded.project_root,
                     &filter,
                     loop_navigation,
                     redaction,

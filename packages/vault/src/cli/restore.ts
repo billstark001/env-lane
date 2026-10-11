@@ -124,6 +124,7 @@ function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void
           )
         }
         decisions = await promptRestoreDecisions(plan, allOpts, {
+          root: allOpts.cwd,
           loop: resolvedConfig.restore.promptLoop,
           redaction: resolvedConfig.restore.redaction,
           reveal: resolvedConfig.restore.reveal,

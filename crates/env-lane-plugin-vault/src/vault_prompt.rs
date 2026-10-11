@@ -1,9 +1,13 @@
 //! Vault TTY selection. The domain plan supplies only redacted previews.
 use crossterm::{
-    cursor::MoveTo,
+    cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    execute, queue,
+    style::Print,
+    terminal::{
+        self, Clear, ClearType, DisableLineWrap, EnableLineWrap, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 use env_lane_core::error::{Error, Result};
 use env_lane_vault::{
@@ -12,7 +16,7 @@ use env_lane_vault::{
 };
 use std::{
     io::{self, IsTerminal, Write},
-    path::PathBuf,
+    path::Path,
 };
 
 fn input_error(error: io::Error) -> Error {
@@ -46,7 +50,18 @@ impl Terminal {
             return Err(non_interactive());
         }
         terminal::enable_raw_mode().map_err(input_error)?;
-        if let Err(error) = execute!(io::stderr().lock(), EnterAlternateScreen) {
+        if let Err(error) = execute!(
+            io::stderr().lock(),
+            EnterAlternateScreen,
+            DisableLineWrap,
+            Hide
+        ) {
+            let _ = execute!(
+                io::stderr().lock(),
+                Show,
+                EnableLineWrap,
+                LeaveAlternateScreen
+            );
             let _ = terminal::disable_raw_mode();
             return Err(input_error(error));
         }
@@ -55,70 +70,176 @@ impl Terminal {
 }
 impl Drop for Terminal {
     fn drop(&mut self) {
-        let _ = execute!(io::stderr().lock(), LeaveAlternateScreen);
+        let _ = execute!(
+            io::stderr().lock(),
+            Show,
+            EnableLineWrap,
+            LeaveAlternateScreen
+        );
         let _ = terminal::disable_raw_mode();
     }
 }
-fn draw(
+struct Frame {
+    lines: Vec<String>,
+}
+fn list_lines(
     entries: &[&Entry],
     selected: &[bool],
     cursor: usize,
-    redaction: &str,
+    root: &Path,
+    columns: usize,
+) -> (Vec<String>, usize) {
+    use env_lane_core::{
+        paths::relative_path,
+        presentation::{group_keys, inline, truncate, width},
+    };
+    let mut lines = Vec::new();
+    let mut current = 0;
+    let mut start = 0;
+    let key_width = entries
+        .iter()
+        .map(|entry| width(&entry.key))
+        .max()
+        .unwrap_or(0)
+        .min(columns.saturating_sub(18))
+        .min(48);
+    while start < entries.len() {
+        let file = &entries[start].file_path;
+        let end = entries[start..]
+            .iter()
+            .position(|entry| entry.file_path != *file)
+            .map_or(entries.len(), |offset| start + offset);
+        lines.push(relative_path(root, file));
+        let keys = entries[start..end]
+            .iter()
+            .map(|entry| entry.key.clone())
+            .collect::<Vec<_>>();
+        for group in group_keys(&keys) {
+            if let Some(prefix) = group.prefix {
+                lines.push(format!("  {prefix} ({})", group.keys.len()));
+            }
+            for key in group.keys {
+                let index = (start..end)
+                    .find(|index| entries[*index].key == key)
+                    .unwrap();
+                let entry = entries[index];
+                if index == cursor {
+                    current = lines.len();
+                }
+                let name = truncate(&entry.key, key_width);
+                let marker = if index == cursor { '❯' } else { ' ' };
+                let checkbox = if selected[index] { 'x' } else { ' ' };
+                let line = if columns < 40 {
+                    format!(
+                        "{marker}[{checkbox}] {} {}",
+                        action(entry.action),
+                        inline(&entry.key)
+                    )
+                } else {
+                    let padding = " ".repeat(key_width.saturating_sub(width(&name)));
+                    format!(
+                        "{marker} [{checkbox}] {:<8} {name}{padding}  {} → {}",
+                        action(entry.action),
+                        inline(&entry.preview.current),
+                        inline(&entry.preview.vault)
+                    )
+                };
+                lines.push(line);
+            }
+        }
+        start = end;
+    }
+    (lines, current)
+}
+#[derive(Clone, Copy)]
+struct View<'a> {
+    entries: &'a [&'a Entry],
+    selected: &'a [bool],
+    cursor: usize,
+    root: &'a Path,
+    redaction: &'a str,
     reveal: Option<(u8, u8)>,
-) -> Result<()> {
-    let (columns, rows) = terminal::size().unwrap_or((80, 24));
-    let page = usize::from(rows.saturating_sub(4).clamp(1, 10));
-    let start = cursor / page * page;
-    let mut stderr = io::stderr().lock();
-    execute!(stderr, MoveTo(0, 0), Clear(ClearType::All)).map_err(input_error)?;
+    expanded: bool,
+    scroll: usize,
+}
+fn frame(view: &View<'_>, columns: usize, rows: usize) -> Frame {
+    let View {
+        entries,
+        selected,
+        cursor,
+        root,
+        redaction,
+        reveal,
+        expanded,
+        scroll,
+    } = *view;
+    use env_lane_core::presentation::{inline, truncate};
+    let width = columns.saturating_sub(1);
     let reveal = reveal.map_or(String::new(), |(start, end)| {
         format!(", reveal: {start}:{end}")
     });
-    writeln!(
-        stderr,
-        "Select Vault entries to apply (preview redaction: {redaction}{reveal})"
-    )
-    .map_err(input_error)?;
-    let mut last_file = PathBuf::new();
-    for (index, entry) in entries.iter().enumerate().skip(start).take(page) {
-        if entry.file_path != last_file {
-            last_file = entry.file_path.clone();
-            writeln!(stderr, "  {}", last_file.display()).map_err(input_error)?;
-        }
-        let name: String = entry.key.chars().take(64).collect();
-        let name = if entry.key.chars().count() > 64 {
-            format!("{}…", name.chars().take(63).collect::<String>())
-        } else {
-            name
-        };
-        let current = serde_json::to_string(&entry.preview.current).unwrap_or_default();
-        let vault = serde_json::to_string(&entry.preview.vault).unwrap_or_default();
-        let line = format!(
-            "{} [{}] {:<8} {:<64}  {} → {}",
-            if index == cursor { '❯' } else { ' ' },
-            if selected[index] { 'x' } else { ' ' },
+    let mut lines = vec![format!(
+        "Select Vault entries to apply ({redaction}{reveal})"
+    )];
+    if expanded {
+        let entry = entries[cursor];
+        let text = format!(
+            "{}\n{} {}\nCurrent: {}\nVault: {}",
+            env_lane_core::paths::relative_path(root, &entry.file_path),
             action(entry.action),
-            name,
-            current.trim_matches('"'),
-            vault.trim_matches('"')
+            inline(&entry.key),
+            inline(&entry.preview.current),
+            inline(&entry.preview.vault)
         );
-        writeln!(
-            stderr,
-            "{}",
-            line.chars().take(usize::from(columns)).collect::<String>()
-        )
-        .map_err(input_error)?;
+        let detail = env_lane_core::presentation::wrap(&text, width);
+        let height = rows.saturating_sub(2);
+        let scroll = scroll.min(detail.len().saturating_sub(height));
+        lines.extend(detail.into_iter().skip(scroll).take(height));
+        lines.push("v back • ↑↓ scroll • esc/q cancel".into());
+    } else {
+        let details = if rows >= 8 { 3 } else { 0 };
+        let body_height = rows.saturating_sub(2 + details);
+        let (body, focus) = list_lines(entries, selected, cursor, root, width);
+        let start = focus.saturating_sub(body_height.saturating_sub(1));
+        lines.extend(body.into_iter().skip(start).take(body_height));
+        if details > 0 {
+            let entry = entries[cursor];
+            lines.push(format!(
+                "{} · {} [{} / {}]",
+                inline(&entry.key),
+                env_lane_core::paths::relative_path(root, &entry.file_path),
+                cursor + 1,
+                entries.len()
+            ));
+            lines.push(format!("Current: {}", inline(&entry.preview.current)));
+            lines.push(format!("Vault:   {}", inline(&entry.preview.vault)));
+        }
+        lines.push(if width >= 90 { "↑↓ navigate • space select • a all • i invert • v details • enter submit • esc/q cancel" } else { "↑↓ move • space select • v details • enter apply • q cancel" }.into());
     }
-    writeln!(
-        stderr,
-        "↑↓ navigate • space select • a all • i invert • ⏎ submit • esc/q cancel"
-    )
-    .map_err(input_error)?;
+    Frame {
+        lines: lines
+            .into_iter()
+            .take(rows)
+            .map(|line| truncate(&line, width))
+            .collect(),
+    }
+}
+fn paint(frame: &Frame) -> Result<()> {
+    let mut stderr = io::stderr().lock();
+    queue!(stderr, MoveTo(0, 0), Clear(ClearType::All)).map_err(input_error)?;
+    for (row, line) in frame.lines.iter().enumerate() {
+        queue!(stderr, MoveTo(0, row as u16), Print(line)).map_err(input_error)?;
+    }
     stderr.flush().map_err(input_error)
+}
+fn draw(view: &View<'_>) -> Result<()> {
+    let (columns, rows) = terminal::size().unwrap_or((80, 24));
+    paint(&frame(view, usize::from(columns), usize::from(rows)))
 }
 
 pub fn choose(
     plan: &Plan,
+    root: &Path,
     filter: &PreparedFilter,
     loop_navigation: bool,
     redaction: &str,
@@ -132,6 +253,25 @@ pub fn choose(
             entries.push(entry);
         }
     }
+    let mut ordered = Vec::new();
+    for file in &plan.files {
+        let keys = entries
+            .iter()
+            .filter(|entry| entry.file_path == file.file_path)
+            .map(|entry| entry.key.clone())
+            .collect::<Vec<_>>();
+        for group in env_lane_core::presentation::group_keys(&keys) {
+            for key in group.keys {
+                ordered.extend(
+                    entries
+                        .iter()
+                        .filter(|entry| entry.file_path == file.file_path && entry.key == key)
+                        .copied(),
+                );
+            }
+        }
+    }
+    entries = ordered;
     if entries.is_empty() {
         return Ok(Vec::new());
     }
@@ -144,8 +284,19 @@ pub fn choose(
         })
         .collect();
     let mut cursor = 0_usize;
+    let mut expanded = false;
+    let mut scroll = 0;
     loop {
-        draw(&entries, &selected, cursor, redaction, reveal)?;
+        draw(&View {
+            entries: &entries,
+            selected: &selected,
+            cursor,
+            root,
+            redaction,
+            reveal,
+            expanded,
+            scroll,
+        })?;
         let Event::Key(key) = event::read().map_err(input_error)? else {
             continue;
         };
@@ -157,6 +308,12 @@ pub fn choose(
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 return Err(cancelled());
             }
+            KeyCode::Char('v') => {
+                expanded = !expanded;
+                scroll = 0;
+            }
+            KeyCode::Up if expanded => scroll = scroll.saturating_sub(1),
+            KeyCode::Down if expanded => scroll += 1,
             KeyCode::Up => {
                 if cursor > 0 {
                     cursor -= 1;
@@ -179,14 +336,18 @@ pub fn choose(
         }
     }
     let count = selected.iter().filter(|value| **value).count();
-    execute!(io::stderr().lock(), MoveTo(0, 0), Clear(ClearType::All)).map_err(input_error)?;
-    write!(
-        io::stderr().lock(),
-        "Apply {count} selected entries? [y/N] "
-    )
-    .map_err(input_error)?;
-    io::stderr().flush().map_err(input_error)?;
     loop {
+        let (columns, rows) = terminal::size().unwrap_or((80, 24));
+        paint(&Frame {
+            lines: if rows == 0 {
+                vec![]
+            } else {
+                vec![env_lane_core::presentation::truncate(
+                    &format!("Apply {count} selected entries? [y/N]"),
+                    usize::from(columns).saturating_sub(1),
+                )]
+            },
+        })?;
         let Event::Key(key) = event::read().map_err(input_error)? else {
             continue;
         };
@@ -230,4 +391,64 @@ pub fn choose(
             }
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn every_frame_fits_and_focus_survives_narrow_windows() {
+        use env_lane_vault::restore::Preview;
+        let entries = (0..24)
+            .map(|index| Entry {
+                entry_id: index.to_string(),
+                file_path: format!("/workspace/long-path-{index}/.env.production").into(),
+                key: format!("AWS_S3_LONG_KEY_{index}"),
+                action: Action::Modify,
+                preview: Preview {
+                    current: "中文\nold value".into(),
+                    vault: "new value with long text".into(),
+                },
+                occurrence_count: 1,
+                conflict: false,
+                vault_action: Action::Modify,
+                conflict_reason: None,
+            })
+            .collect::<Vec<_>>();
+        let refs = entries.iter().collect::<Vec<_>>();
+        for columns in [1, 20, 40, 80, 160] {
+            for rows in [1, 4, 8, 12, 24] {
+                for expanded in [false, true] {
+                    let selected = vec![true; 24];
+                    let frame = frame(
+                        &View {
+                            entries: &refs,
+                            selected: &selected,
+                            cursor: 23,
+                            root: Path::new("/workspace"),
+                            redaction: "full",
+                            reveal: None,
+                            expanded,
+                            scroll: 0,
+                        },
+                        columns,
+                        rows,
+                    );
+                    assert!(frame.lines.len() <= rows);
+                    assert!(
+                        frame
+                            .lines
+                            .iter()
+                            .all(|line| env_lane_core::presentation::width(line) < columns)
+                    );
+                    assert!(
+                        frame
+                            .lines
+                            .iter()
+                            .all(|line| !line.contains(['\n', '\r', '\x1b']))
+                    );
+                }
+            }
+        }
+    }
 }

@@ -84,7 +84,7 @@ describe('Vault interactive prompts', () => {
       promptRestoreDecisions(
         plan([deletion, conflict]),
         {},
-        { loop: false, redaction: 'partial', reveal: { start: 4, end: 4 } },
+        { root: '/workspace', loop: false, redaction: 'partial', reveal: { start: 4, end: 4 } },
       ),
     ).resolves.toEqual([
       { entryId: deletion.entryId, decision: 'skip' },
@@ -102,14 +102,14 @@ describe('Vault interactive prompts', () => {
     )
     expect(deleteChoice).toMatchObject({
       checked: true,
-      name: 'delete   DELETE_ME                 current-DELETE_ME → vault-DELETE_ME',
+      name: 'DELETE_ME [delete]',
       short: 'delete DELETE_ME',
+      description: '.env\nCurrent: current-DELETE_ME\nVault: vault-DELETE_ME',
     })
-    expect(deleteChoice.name.indexOf('current-')).toBe(
-      choices
-        .find((choice: { value?: string }) => choice.value === conflict.entryId)
-        .name.indexOf('current-'),
-    )
+    expect(choices[0].separator).toBe('.env')
+    expect(
+      choices.find((choice: { value?: string }) => choice.value === conflict.entryId).checked,
+    ).toBe(false)
   })
 
   it('handles an empty plan without inventing decisions', async () => {
@@ -125,10 +125,10 @@ describe('Vault interactive prompts', () => {
 
     await promptRestoreDecisions(plan([entry('modify', 'A')]), {})
 
-    expect(promptMocks.checkbox.mock.calls[0][0].pageSize).toBe(4)
+    expect(promptMocks.checkbox.mock.calls[0][0].pageSize).toBe(2)
   })
 
-  it('truncates displayed keys to 64 characters without changing their entry ids', async () => {
+  it('keeps full keys and focuses previews without changing entry ids', async () => {
     const longKey = 'A'.repeat(80)
     const longEntry = entry('modify', longKey)
     longEntry.preview = { current: 'before-value', vault: 'vault-value' }
@@ -140,12 +140,40 @@ describe('Vault interactive prompts', () => {
     ])
 
     const choice = promptMocks.checkbox.mock.calls[0][0].choices[1]
-    const visibleKey = `${'A'.repeat(63)}…`
     expect(choice).toMatchObject({
       value: longEntry.entryId,
-      name: `modify   ${visibleKey}  before-value → vault-value`,
-      short: `modify ${visibleKey}`,
+      name: `${longKey} [modify]`,
+      short: `modify ${longKey}`,
+      description: expect.stringContaining('Current: before-value\nVault: vault-value'),
     })
+  })
+
+  it('shows deeper and remaining parent groups without changing selection identities', async () => {
+    const keys = [
+      'AWS_S3_A',
+      'AWS_S3_B',
+      'AWS_S3_C',
+      'AWS_EC2_A',
+      'AWS_EC2_B',
+      'AWS_EC2_C',
+      'AWS_A',
+      'AWS_B',
+      'AWS_C',
+    ]
+    const entries = keys.map((key) => entry('modify', key))
+    promptMocks.checkbox.mockResolvedValue([entries[0].entryId])
+    promptMocks.confirm.mockResolvedValue(true)
+    const decisions = await promptRestoreDecisions(plan(entries), {}, { root: '/workspace' })
+    const choices = promptMocks.checkbox.mock.calls[0][0].choices
+    expect(
+      choices
+        .filter((choice: { separator?: string }) => choice.separator)
+        .map((choice: { separator: string }) => choice.separator),
+    ).toEqual(['.env', '  AWS (3)', '  AWS_EC2 (3)', '  AWS_S3 (3)'])
+    expect(choices.filter((choice: { value?: string }) => choice.value)).toHaveLength(9)
+    expect(decisions.filter((decision) => decision.decision === 'apply-vault')).toEqual([
+      { entryId: entries[0].entryId, decision: 'apply-vault' },
+    ])
   })
 
   it.each(['q', 'escape'])('allows %s to cancel selection without Ctrl+C', async (keyName) => {

@@ -126,11 +126,12 @@ restore: {
 - `promptLoop` controls whether Up/Down navigation wraps at the ends of the manual selection list;
   it defaults to `false`.
 
-Interactive selection renders each entry's current and Vault previews directly in its checkbox
-row, with the key column padded to a shared width. It shows ten list lines by default, shrinking
-only for shorter terminals. Displayed keys are capped at 64 characters and end in `…` when
-truncated; internal entry identifiers and keys remain unchanged. Press `Esc` or `q` to cancel
-cleanly without applying files; `Ctrl+C` remains supported.
+Interactive selection groups variables within each file, uses project-relative paths, and adapts
+to the terminal's displayed width and height. The focused entry has separate current/Vault preview
+lines. Press `v` to open a wrapped, scrollable detail view containing the full key and redacted
+previews; press `v` again to return. Up/Down moves between entries (or scrolls details), Space
+toggles an entry, `a` selects all, `i` inverts selection, and Enter submits. Press `Esc` or `q`
+to cancel without applying files; Ctrl+C is supported. Resizing retains selection and focus.
 
 Encrypt, decrypt, apply, and previews show variables grouped by file and longest common word
 prefix (split on `_` and `-`, preserving case). A group needs at least three distinct keys.

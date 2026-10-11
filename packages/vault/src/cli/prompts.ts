@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { EnvLaneError } from '@env-lane/core'
 import { checkbox, confirm, Separator } from '@inquirer/prompts'
 import { createVaultSelectionMatcher, type VaultSelectionOptions } from '../application/restore.js'
@@ -7,6 +8,7 @@ import type {
   VaultRestoreRedaction,
   VaultRestoreReveal,
 } from '../domain/types.js'
+import { inline, variableGroups } from './render.js'
 
 function assertInteractive(): void {
   if (!process.stdin.isTTY || !process.stderr.isTTY) {
@@ -28,27 +30,18 @@ function rethrowPromptError(error: unknown): never {
 }
 
 const RESTORE_PROMPT_PAGE_SIZE = 10
-const RESTORE_PROMPT_RESERVED_ROWS = 4
-const RESTORE_PROMPT_KEY_MAX_LENGTH = 64
+const RESTORE_PROMPT_RESERVED_ROWS = 6
 
 function restorePromptPageSize(rows = process.stderr.rows): number {
   if (!Number.isInteger(rows) || !rows || rows <= 0) return RESTORE_PROMPT_PAGE_SIZE
   return Math.max(1, Math.min(RESTORE_PROMPT_PAGE_SIZE, rows - RESTORE_PROMPT_RESERVED_ROWS))
 }
 
-function inlinePreview(value: string): string {
-  return JSON.stringify(value).slice(1, -1)
-}
-
-function displayKey(key: string): string {
-  if (key.length <= RESTORE_PROMPT_KEY_MAX_LENGTH) return key
-  return `${key.slice(0, RESTORE_PROMPT_KEY_MAX_LENGTH - 1)}…`
-}
-
 export async function promptRestoreDecisions(
   plan: RestorePlan,
   options: VaultSelectionOptions,
   display: {
+    root?: string
     loop?: boolean
     redaction?: VaultRestoreRedaction
     reveal?: VaultRestoreReveal | false
@@ -67,27 +60,31 @@ export async function promptRestoreDecisions(
         name: string
         short: string
         checked: boolean
+        description: string
       }
   > = []
-  const keyColumnWidth = entries.reduce(
-    (width, entry) => Math.max(width, Math.min(entry.key.length, RESTORE_PROMPT_KEY_MAX_LENGTH)),
-    0,
-  )
-  let currentFile = ''
-  for (const entry of entries) {
-    if (entry.filePath !== currentFile) {
-      currentFile = entry.filePath
-      choices.push(new Separator(currentFile))
+  for (const file of plan.files) {
+    const fileEntries = entries.filter((entry) => entry.filePath === file.filePath)
+    if (fileEntries.length === 0) continue
+    const relative = inline(path.relative(display.root ?? process.cwd(), file.filePath))
+    choices.push(new Separator(relative))
+    for (const group of variableGroups(fileEntries.map((entry) => entry.key))) {
+      if (group.prefix)
+        choices.push(new Separator(`  ${inline(group.prefix)} (${group.keys.length})`))
+      for (const key of group.keys) {
+        for (const entry of fileEntries.filter((entry) => entry.key === key)) {
+          choices.push({
+            value: entry.entryId,
+            name: `${inline(entry.key)} [${entry.action}]`,
+            short: `${entry.action} ${inline(entry.key)}`,
+            description: `${relative}\nCurrent: ${inline(entry.preview.current)}\nVault: ${inline(entry.preview.vault)}`,
+            checked:
+              entry.action !== 'conflict' &&
+              (entry.action !== 'delete' || options.approveDeletes !== false),
+          })
+        }
+      }
     }
-    const visibleKey = displayKey(entry.key)
-    choices.push({
-      value: entry.entryId,
-      name: `${entry.action.padEnd(8)} ${visibleKey.padEnd(keyColumnWidth)}  ${inlinePreview(entry.preview.current)} → ${inlinePreview(entry.preview.vault)}`,
-      short: `${entry.action} ${visibleKey}`,
-      checked:
-        entry.action !== 'conflict' &&
-        (entry.action !== 'delete' || options.approveDeletes !== false),
-    })
   }
 
   const abortController = new AbortController()
