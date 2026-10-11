@@ -768,7 +768,16 @@ pub struct FileResult {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AppliedChange {
+    pub file_path: PathBuf,
+    pub key: String,
+    pub action: Action,
+    pub conflict_resolved: bool,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApplyResult {
+    pub changes: Vec<AppliedChange>,
     #[serde(flatten)]
     pub plan: Plan,
     pub applied: bool,
@@ -883,6 +892,7 @@ pub fn apply(
     }
     let mut results = Vec::new();
     let mut files_written = 0;
+    let mut changes = Vec::new();
     for file in &plan.files {
         let mut patches = Vec::new();
         for entry in &file.entries {
@@ -918,7 +928,32 @@ pub fn apply(
         let changed = if patches.is_empty() {
             false
         } else {
-            storage::patch_file(&file.file_path, &patches, &PatchOptions::default())?.changed
+            let patched = storage::patch_file(&file.file_path, &patches, &PatchOptions::default())?;
+            if patched.changed {
+                for entry in &file.entries {
+                    if !selected.contains(&entry.entry_id) {
+                        continue;
+                    }
+                    let action = if patched.deleted_keys.contains(&entry.key) {
+                        Some(Action::Delete)
+                    } else if patched.added_keys.contains(&entry.key) {
+                        Some(Action::Add)
+                    } else if patched.written_keys.contains(&entry.key) {
+                        Some(Action::Modify)
+                    } else {
+                        None
+                    };
+                    if let Some(action) = action {
+                        changes.push(AppliedChange {
+                            file_path: file.file_path.clone(),
+                            key: entry.key.clone(),
+                            action,
+                            conflict_resolved: entry.conflict,
+                        });
+                    }
+                }
+            }
+            patched.changed
         };
         if changed {
             files_written += 1;
@@ -973,6 +1008,7 @@ pub fn apply(
     let applied_entries = selected.len();
     let skipped_entries = resolved.len() - applied_entries;
     Ok(ApplyResult {
+        changes,
         plan,
         applied: files_written > 0,
         files_written,

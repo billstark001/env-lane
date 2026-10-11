@@ -25,7 +25,7 @@ import {
   validateFailOnOption,
 } from './options.js'
 import { promptRestoreDecisions } from './prompts.js'
-import { renderRestorePlan } from './render.js'
+import { renderRestorePlan, renderVariableChanges } from './render.js'
 import type { VaultCliContext } from './types.js'
 
 function registerVaultPlanCommand(vault: Command, ctx: VaultCliContext): void {
@@ -60,7 +60,10 @@ function registerVaultPlanCommand(vault: Command, ctx: VaultCliContext): void {
         )
       }
       const selectedPlan = selectRestorePlan(plan, allOpts)
-      ctx.formatAndLog(selectedPlan, { format, text: (result) => renderRestorePlan(ctx, result) })
+      ctx.formatAndLog(selectedPlan, {
+        format,
+        text: (result) => renderRestorePlan(ctx, result, allOpts.cwd),
+      })
       applyRestoreFailOn(selectedPlan, allOpts.failOn)
     })
 }
@@ -97,7 +100,7 @@ function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void
         const selectedPlan = selectRestorePlan(plan, allOpts)
         ctx.formatAndLog(selectedPlan, {
           format,
-          text: (result) => renderRestorePlan(ctx, result),
+          text: (result) => renderRestorePlan(ctx, result, allOpts.cwd),
         })
         applyRestoreFailOn(selectedPlan, allOpts.failOn)
         return
@@ -144,6 +147,8 @@ function registerVaultDecryptCommand(vault: Command, ctx: VaultCliContext): void
           ctx.output(`Decrypted ${res.filesWritten} files from ${res.storePath}`)
           ctx.output(`  Applied entries: ${res.appliedEntries}`)
           ctx.output(`  Skipped entries: ${res.skippedEntries}`)
+          ctx.output(`  Changed variables: ${res.changes.length}`)
+          renderVariableChanges(ctx, res.changes, allOpts.cwd)
         },
       })
       applyRestoreFailOn(selectRestorePlanByDecisions(result, result.decisions), allOpts.failOn)
@@ -179,8 +184,10 @@ function registerVaultApplyCommand(vault: Command, ctx: VaultCliContext): void {
       emitPlanDiagnostics(result)
       ctx.formatAndLog(result, {
         format,
-        text: (res) =>
-          ctx.output(`Applied ${res.appliedEntries} entries to ${res.filesWritten} files.`),
+        text: (res) => {
+          ctx.output(`Applied ${res.appliedEntries} entries to ${res.filesWritten} files.`)
+          renderVariableChanges(ctx, res.changes, allOpts.cwd)
+        },
       })
       applyRestoreFailOn(selectRestorePlanByDecisions(result, result.decisions), allOpts.failOn)
     })

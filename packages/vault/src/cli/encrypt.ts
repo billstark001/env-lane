@@ -10,6 +10,7 @@ import {
   parseVaultMissingFileStrategy,
   validateFailOnOption,
 } from './options.js'
+import { renderVariableChanges } from './render.js'
 import type { VaultCliContext } from './types.js'
 
 export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext): void {
@@ -52,6 +53,7 @@ export function registerVaultEncryptCommand(vault: Command, ctx: VaultCliContext
             ctx.output(`  Missing files treated as empty: ${res.missingFilesTreatedAsEmpty}`)
           }
           if (res.conflicts) ctx.output(`  Conflicts: ${res.conflicts}`)
+          renderVariableChanges(ctx, res.changes, allOpts.cwd)
         },
       })
       if (allOpts.failOn === 'conflict' && result.conflicts > 0) process.exitCode = 2

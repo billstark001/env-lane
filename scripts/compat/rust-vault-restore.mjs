@@ -64,7 +64,10 @@ await withOracle(async ({ temporary, runtime }) => {
   const [nativeApplied] = runRustExample('vault-restore-protocol', [
     { ...request, operation: 'apply', plan: actual, autoApprove: true },
   ])
-  assert.deepEqual(normalize(nativeApplied, rustRoot), normalize(applied, nodeRoot))
+  const { changes, ...commonApplied } = nativeApplied
+  assert.equal(changes.length, applied.appliedEntries)
+  assert.ok(changes.every((change) => change.action !== 'identical'))
+  assert.deepEqual(normalize(commonApplied, rustRoot), normalize(applied, nodeRoot))
   assert.equal(
     readFileSync(path.join(rustRoot, '.env'), 'utf8'),
     readFileSync(path.join(nodeRoot, '.env'), 'utf8'),

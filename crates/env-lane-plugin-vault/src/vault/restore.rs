@@ -47,7 +47,7 @@ pub(super) fn execute(
                 )?;
             }
             let plan = selected(&plan, &filter)?;
-            render_plan(&plan, output)?;
+            render_plan(&plan, &context.loaded.project_root, output)?;
             Ok(plan_exit(&plan, fail))
         }
         VaultOperation::Decrypt {
@@ -69,7 +69,7 @@ pub(super) fn execute(
             let filter = filter(selection)?;
             if *dry_run {
                 let selected = selected(&plan, &filter)?;
-                render_plan(&selected, output)?;
+                render_plan(&selected, &context.loaded.project_root, output)?;
                 return Ok(plan_exit(&selected, fail));
             }
             let strategy = strategy(conflicts.as_deref())?;
@@ -122,6 +122,7 @@ pub(super) fn execute(
                 ))?;
                 output.line(format!("  Applied entries: {}", result.applied_entries))?;
                 output.line(format!("  Skipped entries: {}", result.skipped_entries))?;
+                render_changes(&result, &context.loaded.project_root, output)?;
             }
             Ok(decisions_exit(&result.plan, &result.decisions, fail))
         }
@@ -170,9 +171,41 @@ pub(super) fn execute(
                     "Applied {} entries to {} files.",
                     result.applied_entries, result.files_written
                 ))?;
+                render_changes(&result, &context.loaded.project_root, output)?;
             }
             Ok(decisions_exit(&result.plan, &result.decisions, fail))
         }
         _ => unreachable!("Vault dispatch"),
     }
+}
+
+fn render_changes(
+    result: &restore::ApplyResult,
+    root: &std::path::Path,
+    output: &Output,
+) -> Result<()> {
+    output.line(format!("  Changed variables: {}", result.changes.len()))?;
+    for file in &result.results {
+        let changes = result
+            .changes
+            .iter()
+            .filter(|change| change.file_path == file.file_path)
+            .map(|change| {
+                (
+                    change.key.clone(),
+                    format!(
+                        "{}{}",
+                        super::plan::action_name(change.action),
+                        if change.conflict_resolved {
+                            " (take-vault)"
+                        } else {
+                            ""
+                        }
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        output.variable_changes(&file.file_path, root, &changes)?;
+    }
+    Ok(())
 }

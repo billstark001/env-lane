@@ -77,6 +77,13 @@ function assertSkippedApproval(run, root) {
   assert.equal(JSON.parse(invalid.stdout || invalid.stderr).error.code, 'VAULT_INVALID_PLAN_FILE')
 }
 
+function compareRestore(actual, expected) {
+  const { changes, ...common } = actual
+  assert.equal(changes.length, expected.appliedEntries)
+  assert.ok(changes.every((change) => ['add', 'modify', 'delete'].includes(change.action)))
+  assert.deepEqual(common, expected)
+}
+
 await withOracle(async ({ temporary, runtime }) => {
   const source = path.join(workspace, 'compat/fixtures/topologies/moment-landing')
   const nodeRoot = path.join(temporary, 'node-cli')
@@ -169,7 +176,7 @@ await withOracle(async ({ temporary, runtime }) => {
   const rustRestored = run(native, rustRoot, restored, false)
   delete nodeRestored.createdAt
   delete rustRestored.createdAt
-  assert.deepEqual(rustRestored, nodeRestored)
+  compareRestore(rustRestored, nodeRestored)
   assert.equal(
     readFileSync(path.join(nodeRoot, '.env'), 'utf8'),
     readFileSync(path.join(rustRoot, '.env'), 'utf8'),

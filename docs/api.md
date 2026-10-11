@@ -149,3 +149,8 @@ and `check`. Results add `status` (`missing`, `unchanged`, `conflict`, `changed`
 per-field `conflicts`. Configured results add `missingCount` and `unchangedCount`; `count` counts
 processed files (including explicit creation previews), excluding skipped missing jobs. Template operations include `default-updated`,
 `comment-updated`, and `conflict-kept-local`. `check` never writes sync state.
+
+## Vault applied changes
+
+`applyRestorePlan` adds a flat `changes` list of the dotenv patches that actually changed files,
+separate from the full plan and decisions. Existing `appliedEntries` counts selected entries.

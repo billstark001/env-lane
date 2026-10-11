@@ -132,6 +132,16 @@ only for shorter terminals. Displayed keys are capped at 64 characters and end i
 truncated; internal entry identifiers and keys remain unchanged. Press `Esc` or `q` to cancel
 cleanly without applying files; `Ctrl+C` remains supported.
 
+Encrypt, decrypt, apply, and previews show variables grouped by file and longest common word
+prefix (split on `_` and `-`, preserving case). A group needs at least three distinct keys.
+Deeper groups are extracted first; remaining keys can still form a parent group, so `AWS_S3`,
+`AWS_EC2`, and `AWS` groups can coexist. Every key appears once, with its full name. Grouping is
+presentation only: JSON change lists, plan digests, and selection identities remain flat.
+Encrypt lists records actually appended (or proposed during dry-run). Apply/decrypt return a
+`changes` list of actual add/modify/delete patches with `conflictResolved` metadata; skipped and
+keep-local entries are excluded. Post-write reports show keys and actions without values;
+preview/detail views continue using the configured redaction policy.
+
 For example, `{ start: 4, end: 4 }` renders a sufficiently long secret as:
 
 ~~~text

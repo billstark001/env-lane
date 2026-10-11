@@ -132,7 +132,7 @@ pub(super) fn unresolved(
     }
     Ok(false)
 }
-pub(super) fn render_plan(plan: &Plan, output: &Output) -> Result<()> {
+pub(super) fn render_plan(plan: &Plan, root: &Path, output: &Output) -> Result<()> {
     if output.is_json() {
         return output.json(plan);
     }
@@ -141,19 +141,23 @@ pub(super) fn render_plan(plan: &Plan, output: &Output) -> Result<()> {
         if !file.changed {
             continue;
         }
-        output.line(format!("# {}", file.file_path.display()))?;
-        for entry in &file.entries {
-            if entry.action == Action::Identical {
-                continue;
-            }
-            output.line(format!(
-                "  {:<10} {}: {} -> {}",
-                action_name(entry.action),
-                entry.key,
-                entry.preview.current,
-                entry.preview.vault
-            ))?;
-        }
+        let changes = file
+            .entries
+            .iter()
+            .filter(|entry| entry.action != Action::Identical)
+            .map(|entry| {
+                (
+                    entry.key.clone(),
+                    format!(
+                        "{}: {} → {}",
+                        action_name(entry.action),
+                        env_lane_core::presentation::inline(&entry.preview.current),
+                        env_lane_core::presentation::inline(&entry.preview.vault)
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        output.variable_changes(&file.file_path, root, &changes)?;
     }
     output.line(format!(
         "Summary: {} files to change, {} conflicts.",

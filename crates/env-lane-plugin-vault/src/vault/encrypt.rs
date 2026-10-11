@@ -70,6 +70,15 @@ pub(super) fn execute(
                 if result.conflicts > 0 {
                     output.line(format!("  Conflicts: {}", result.conflicts))?;
                 }
+                for file in &config.env_files {
+                    let changes = result
+                        .changes
+                        .iter()
+                        .filter(|change| std::path::Path::new(&change.file_path) == file)
+                        .map(|change| (change.key.clone(), change.action.to_owned()))
+                        .collect::<Vec<_>>();
+                    output.variable_changes(file, &context.loaded.project_root, &changes)?;
+                }
             }
             Ok(match fail {
                 Some("conflict") if result.conflicts > 0 => 2,

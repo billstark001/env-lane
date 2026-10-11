@@ -235,6 +235,12 @@ interface ApplyRestoreOptions {
 
 /** Result of applying a previously built Vault restore plan. */
 interface ApplyRestoreResult extends RestorePlan {
+  changes: Array<{
+    filePath: string
+    key: string
+    action: 'add' | 'modify' | 'delete'
+    conflictResolved: boolean
+  }>
   applied: boolean
   filesWritten: number
   results: Array<{
