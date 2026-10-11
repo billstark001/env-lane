@@ -11,6 +11,9 @@ type SortOperationAction =
   | 'append-extra'
   | 'append-duplicate'
   | 'group-duplicate'
+  | 'default-updated'
+  | 'comment-updated'
+  | 'conflict-kept-local'
 
 interface SortSummary {
   movedCount: number
@@ -21,6 +24,7 @@ interface SortSummary {
 }
 
 interface SortFileOptions {
+  syncDir?: string
   cwd?: string
   create?: boolean
   check?: boolean
@@ -34,6 +38,8 @@ type SortConfigOptions = Omit<SortFileOptions, 'unlistedVariablesComment'>
 export type SortFileResult = SortSummary & {
   applied: boolean
   changed: boolean
+  status: 'missing' | 'unchanged' | 'conflict' | 'changed' | 'applied'
+  conflicts: Array<{ key: string; field: string }>
   filePath: string
   templateFilePath: string
   operations: Array<{ action: SortOperationAction; key: string }>
@@ -43,6 +49,8 @@ export interface ConfiguredSortResult {
   applied: boolean
   changed: boolean
   count: number
+  missingCount: number
+  unchangedCount: number
   results: SortFileResult[]
 }
 
@@ -58,6 +66,7 @@ export async function sortEnvFile(
     file,
     template,
     options: {
+      syncDir: options?.syncDir ? path.resolve(cwd, options.syncDir) : undefined,
       create: options?.create,
       check: options?.check,
       preserveBOM: options?.preserveBOM,
@@ -87,6 +96,7 @@ export async function sortEnvFilesFromConfig(
     config,
     key,
     envSuffix,
+    syncDir: options?.syncDir,
     create: options?.create,
     check: options?.check,
     preserveBOM: options?.preserveBOM,

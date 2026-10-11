@@ -116,6 +116,7 @@ Sort one file against a template:
 ~~~bash
 env-lane sort-file apps/api/.env apps/api/.env.example
 env-lane sort-file apps/api/.env apps/api/.env.example --check
+env-lane sort-file apps/api/.env apps/api/.env.example --create
 ~~~
 
 Sort configured targets:
@@ -126,6 +127,8 @@ env-lane sort api
 env-lane sort api production
 env-lane sort api production --config env-lane.config.ts
 env-lane sort api production --check
+env-lane sort api default --no-create
+env-lane sort --sync-dir .env-lane-sync
 ~~~
 
 The config path is an option, not a positional argument. `key` defaults to `all`, and
@@ -137,8 +140,17 @@ For `sort-file`, relative env and template arguments are resolved from `--cwd`. 
 default config discovery starts from `--cwd`, and an explicit relative `--config` path is also
 resolved from `--cwd`. Paths declared inside the sort config follow the configuration rules below.
 
-When `sort.create` is true, a missing target env file may be created from an existing template.
-A missing template is always an error.
+Missing target files are skipped by default. `--create` permits creation from an existing
+template; `--no-create` overrides configured creation. `default` selects the configured base file
+(default `.env`), and `files.default` can override it. Both commands accept `--sync-dir <dir>`;
+normal runs maintain template ancestry in `.env-lane-cache` when no directory is supplied.
+`--check` does not initialize or refresh that state and fails for pending template conflicts.
+Text output distinguishes missing, unchanged, drift, conflict, and sorted files, and reports
+checked/missing counts plus grouped variable changes. See [sort configuration](config.md#sort).
+
+A project using workspace aliases and configured builds can replace a wrapper script with
+`"env:sort": "env-lane sort"` after configuring the defaults entry's target/suffix selection.
+Use `targets` to preserve a project's chosen `all` scope and ordering.
 
 ## Vault commands
 

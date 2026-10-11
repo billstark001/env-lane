@@ -78,7 +78,7 @@ export default defineConfig({
     api: {
       file: '.env',
       template: '.env.example',
-      create: true,
+      create: false,
       files: {
         ci: '.env.ci'
       },
@@ -131,6 +131,7 @@ export default defineConfig({
 | `builds` | `[]` | Known builds; an empty array accepts every valid name. |
 | `buildValidation` | `warn` | `off`, `warn`, or `error` for unknown builds. |
 | `forbidInDotenv` | `true` | Reject the selector key in managed dotenv files. |
+| `sortDefaultsKey` | `default` | Name of the shared defaults entry under `sort`. |
 
 Build names must be safe single path segments. The selector supplied by an explicit API/CLI option
 takes precedence over the shell value, which takes precedence over `defaultBuild`.
@@ -163,8 +164,64 @@ Every workspace alias is available as a conventional sort target using `.env` an
 additional named files. A relative `baseDir` is resolved from the project root; `file`, `template`,
 and entries in `files` are resolved from that target's `baseDir`.
 
-`create` defaults to true and permits creation of a missing target env file from an existing
-template. It never creates a missing template. Set it to false to skip absent target files.
+`create` defaults to false. Missing target files are skipped without creating a file or sync
+state directory. Set it to true or pass `--create` to create an inactive (commented) file from an
+existing template. A missing template is an error when its target file is being processed.
+
+The `sort.default` object supplies shared settings. Set `selector.sortDefaultsKey` (default:
+`default`) to another name when a target is itself named `default`. Every alias of a package
+uses the same merged target settings. Conflicting explicit configurations for aliases of the
+same package are rejected before writing. Target settings override defaults; `files` mappings
+merge by suffix.
+
+~~~json5
+{
+  selector: { builds: ['local', 'development', 'production'] },
+  sort: {
+    default: {
+      create: false,
+      syncDir: '.env-lane-sync',
+      targets: ['backend', 'w3', 'agent', 'contracts', 'web', 'admin', 'android', 'ios'],
+      suffixes: ['default', 'local', 'development', 'production'],
+    },
+    backend: {},
+    web: { files: { default: '.env.shared' } },
+  },
+}
+~~~
+
+`targets` belongs in the defaults entry and defines both the allowed selection and batch order.
+It resolves workspace aliases, package names, and directories. Without it, explicitly configured
+and discovered targets are available. `enabled: false` excludes a target. `suffixes` defines an
+allowed suffix list and batch order; omitted suffixes are discovered from builds and `files`.
+Unknown selections fail before any writes. CLI inputs `production`, `.production`, and
+`.env.production` select the same suffix.
+
+The `default` suffix selects `files.default` when configured, otherwise `file` (default `.env`).
+It never implicitly selects `.env.default`. The local build honors `dotenv.localOverrideFile`.
+
+Sort keeps a per-file template baseline in `.env-lane-cache/sort-sync-state.json` by default.
+`syncDir` config paths resolve from the project root; CLI `--sync-dir` and Node API `syncDir`
+resolve from invocation cwd. The directory can be shared with Vault, whose state file is separate.
+Keep the state directory out of Git. State stores template comment blocks and default-value
+fingerprints, never local env values or local-only comments.
+
+Default values, leading comments, inline comments, headers, and footers advance independently.
+A field that still matches the previous template follows template updates automatically. Locally
+changed fields remain intact; when both sides change differently, sort reports a persistent
+conflict. Matching the current template resolves the conflict. Duplicate definitions require
+manual reconciliation before template updates can be applied to them. The first run establishes
+ancestry conservatively; losing state reinitializes it without guessing prior ownership.
+Local notes may be interleaved with template comments. Sort replaces only an unambiguously
+matched managed sequence and preserves those notes; ambiguous ownership remains a conflict.
+Cached file headers stay before assignments when template ordering changes. Explicit recreation
+of a deleted file starts from the current template, including its header and footer, and does not
+inherit conflicts from the deleted file. `--create` also creates an empty file from an empty template.
+Default updates preserve whether an assignment is active or commented, along with BOM and EOL.
+Writers share a state lock; a busy lock fails without modifying dotenv files. Each successful file
+write is followed by an atomic baseline update, and rerunning recovers a missed baseline update.
+`--check` is fully read-only, including state, and exits 1 for content drift or pending conflicts.
+A missing file skipped by the creation policy is not drift.
 
 Build names from `selector.builds` are discovered through patterns in `dotenv.order` that
 contain `{build}`. Variables absent from the template remain appended; use

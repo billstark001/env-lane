@@ -109,6 +109,12 @@ pub enum Operation {
 
 #[derive(Debug, Args)]
 pub struct SortOptions {
+    #[arg(long, conflicts_with = "no_create")]
+    pub create: bool,
+    #[arg(long)]
+    pub no_create: bool,
+    #[arg(long)]
+    pub sync_dir: Option<PathBuf>,
     #[arg(long)]
     pub check: bool,
     #[arg(long)]

@@ -141,3 +141,11 @@ Rust authors use `env-lane-plugin-api`; Node authors use `@env-lane/plugin-sdk`.
 ## Published contract verification
 
 The build check imports every stable entry in ESM and CommonJS, verifies declarations and removed root exports, and exercises the native npm bin. Synthetic conformance covers a Rust Vault plugin and a JS plugin command/namespace. The frozen 0.4.2 oracle continues to guard stable Core and persisted Vault data behavior.
+
+## Sort template synchronization
+
+`sortEnvFile` and `sortEnvFilesFromConfig` accept `syncDir` alongside `create` (default false)
+and `check`. Results add `status` (`missing`, `unchanged`, `conflict`, `changed`, `applied`) and
+per-field `conflicts`. Configured results add `missingCount` and `unchangedCount`; `count` counts
+processed files (including explicit creation previews), excluding skipped missing jobs. Template operations include `default-updated`,
+`comment-updated`, and `conflict-kept-local`. `check` never writes sync state.

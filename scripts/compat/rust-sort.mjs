@@ -94,7 +94,12 @@ await withOracle(async ({ temporary, runtime }) => {
     oldResults.push({ ...result, filePath: newFile })
     if (check) assert.equal(readFileSync(oldFile, 'utf8'), before)
   }
-  assert.deepEqual(runRustExample('sort-protocol', operations), oldResults)
+  const nativeResults = runRustExample('sort-protocol', operations)
+  for (const [index, result] of nativeResults.entries()) {
+    assert.equal(result.status, ['changed', 'applied', 'unchanged'][index])
+    assert.deepEqual(result.conflicts, [])
+  }
+  assert.deepEqual(nativeResults.map(commonFileResult), oldResults)
   assert.equal(readFileSync(newFile, 'utf8'), readFileSync(oldFile, 'utf8'))
   await verifyConfiguredSort(legacy, temporary)
   process.stdout.write(
@@ -118,16 +123,16 @@ async function verifyConfiguredSort(legacy, temporary) {
           operation: 'configured',
           cwd: newRoot,
           key,
-          variant: 'all',
-          options: { check },
+          variant: 'production',
+          options: { check, create: true },
         })
         results.push(
           normalizeRoot(
             await legacy.sortEnvFilesFromConfig(
               path.join(oldRoot, 'env-lane.config.json'),
               key,
-              'all',
-              { cwd: oldRoot, check },
+              'production',
+              { cwd: oldRoot, check, create: true },
             ),
             oldRoot,
           ),
@@ -135,8 +140,36 @@ async function verifyConfiguredSort(legacy, temporary) {
       }
     }
     if (operations.length) {
-      assert.deepEqual(normalizeRoot(runRustExample('sort-protocol', operations), newRoot), results)
-      assert.deepEqual(snapshotTree(newRoot), snapshotTree(oldRoot))
+      const actual = runRustExample('sort-protocol', operations)
+      assert.deepEqual(
+        normalizeRoot(
+          actual.map(({ missingCount, unchangedCount, results, ...result }) => {
+            assert.equal(missingCount, 0)
+            assert.equal(
+              unchangedCount,
+              results.filter((file) => file.status === 'unchanged').length,
+            )
+            return { ...result, results: results.map(commonFileResult) }
+          }),
+          newRoot,
+        ),
+        results,
+      )
+      const bytes = snapshotTree(newRoot)
+      const state = '.env-lane-cache/sort-sync-state.json'
+      const lock = '.env-lane-cache/sort-sync-state.lock'
+      assert.equal(JSON.parse(Buffer.from(bytes[state], 'base64')).version, 1)
+      assert.equal(bytes[lock], '')
+      delete bytes[state]
+      delete bytes[lock]
+      assert.deepEqual(bytes, snapshotTree(oldRoot))
     }
   }
+}
+
+// New status/ancestry metadata is checked above; compare the existing public
+// fields and byte preservation against the frozen implementation separately.
+function commonFileResult({ status: _status, conflicts, ...result }) {
+  assert.deepEqual(conflicts, [])
+  return result
 }

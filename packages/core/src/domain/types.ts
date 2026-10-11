@@ -1,11 +1,18 @@
 export type EnvLaneOutputFormat = 'text' | 'json' | 'dotenv'
 
 export interface EnvSortTargetConfig {
+  enabled?: boolean
+  /** State directory relative to the project root; defaults to .env-lane-cache. */
+  syncDir?: string
+  /** Allowed targets and batch order (in the defaults entry). */
+  targets?: string[]
+  /** Allowed suffixes and batch order. default selects files.default or file. */
+  suffixes?: string[]
   baseDir?: string
   file?: string
   template?: string
   files?: Record<string, string>
-  /** Create a missing target env file from an existing template. Defaults to true. */
+  /** Create a missing target env file from an existing template. Defaults to false. */
   create?: boolean
   /** Comment shown before variables that are not present in the template. Defaults to empty. */
   unlistedVariablesComment?: string
@@ -65,6 +72,8 @@ export interface EnvLaneConfig {
   /** Other top-level fields register plugins by their package metadata ID. */
   [plugin: string]: unknown
   selector?: {
+    /** Name of the shared sort defaults entry. Defaults to default. */
+    sortDefaultsKey?: string
     /** Environment selector variable. Defaults to ENV_BUILD. */
     envKey?: string
     /** Default build name when no CLI/API build is supplied. Defaults to local. */

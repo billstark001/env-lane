@@ -19,11 +19,19 @@ pub struct Plan {
     pub summary: Summary,
 }
 pub fn build_plan(content: Option<&str>, template: &str, options: &SortOptions) -> Plan {
+    build_synced_plan(content, template, options, false)
+}
+pub(super) fn build_synced_plan(
+    content: Option<&str>,
+    template: &str,
+    options: &SortOptions,
+    preserve_preamble: bool,
+) -> Plan {
     let env = Document::parse(content.unwrap_or(""));
     let template = Document::parse(template);
     let mut env_layout = Layout::from_document(&env);
     let template_layout = Layout::from_document(&template);
-    if let Some(first) = env_layout.blocks.first_mut() {
+    if !preserve_preamble && let Some(first) = env_layout.blocks.first_mut() {
         let (matched, extras) = partition_preamble(&template_layout.preamble, &env_layout.preamble);
         env_layout.preamble = matched;
         if !extras.is_empty() {
@@ -59,7 +67,17 @@ pub fn build_plan(content: Option<&str>, template: &str, options: &SortOptions) 
             }
         } else {
             lines.extend(block.leading.clone());
-            lines.extend(block.lines.iter().map(|line| comment_out(line)));
+            if block.active {
+                lines.extend(block.lines.iter().enumerate().map(|(index, line)| {
+                    if index == 0 {
+                        comment_out(line)
+                    } else {
+                        format!("# {line}")
+                    }
+                }));
+            } else {
+                lines.extend(block.lines.clone());
+            }
             operations.push(Operation {
                 action: Action::InsertCommented,
                 key: block.key.clone(),

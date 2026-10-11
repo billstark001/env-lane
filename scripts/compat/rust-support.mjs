@@ -70,10 +70,11 @@ export function plainValue(value) {
 
 /** Compare the frozen Core config independently of 0.5 plugin registration. */
 export function coreConfig(value) {
+  const { sortDefaultsKey: _sortDefaultsKey, ...selector } = value.selector
   return Object.fromEntries(
     ['selector', 'workspace', 'dotenv', 'output', 'sort', 'checks', 'sync'].map((field) => [
       field,
-      value[field],
+      field === 'selector' ? selector : value[field],
     ]),
   )
 }

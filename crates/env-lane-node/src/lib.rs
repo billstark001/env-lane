@@ -308,9 +308,12 @@ fn core(operation: &str, value: &Value) -> Result<Value> {
         let cwd = PathBuf::from(required(value, "cwd")?);
         let file = resolve_path(&cwd, Path::new(required(value, "file")?));
         let template = resolve_path(&cwd, Path::new(required(value, "template")?));
-        let options: sort::SortOptions =
+        let mut options: sort::SortOptions =
             serde_json::from_value(value.get("options").cloned().unwrap_or_else(|| json!({})))
                 .map_err(|error| Error::new("INVALID_SORT_OPTIONS", error.to_string()))?;
+        options
+            .sync_dir
+            .get_or_insert_with(|| env_lane_core::paths::find_root(&cwd).join(".env-lane-cache"));
         return Ok(json!({"value":sort::sort_file(&file, &template, &options)?,"diagnostics":[]}));
     }
     let loaded = load_core(value)?;
@@ -420,6 +423,7 @@ fn core(operation: &str, value: &Value) -> Result<Value> {
             optional(value, "key"),
             optional(value, "envSuffix"),
             &sort::ConfiguredOptions {
+                sync_dir: optional(value, "syncDir").map(PathBuf::from),
                 create: value.get("create").and_then(Value::as_bool),
                 check: value.get("check").and_then(Value::as_bool).unwrap_or(false),
                 preserve_bom: value.get("preserveBOM").and_then(Value::as_bool),

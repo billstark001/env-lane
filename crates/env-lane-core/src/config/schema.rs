@@ -109,6 +109,7 @@ pub struct PluginGenerator {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Selector {
+    pub sort_defaults_key: String,
     pub env_key: String,
     pub default_build: String,
     pub builds: Vec<String>,
@@ -118,6 +119,7 @@ pub struct Selector {
 impl Default for Selector {
     fn default() -> Self {
         Self {
+            sort_defaults_key: "default".into(),
             env_key: "ENV_BUILD".into(),
             default_build: "local".into(),
             builds: vec![],
@@ -200,6 +202,30 @@ pub enum OutputFormat {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SortTarget {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub enabled: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub sync_dir: Option<PathBuf>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub targets: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub suffixes: Option<Vec<String>>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional",

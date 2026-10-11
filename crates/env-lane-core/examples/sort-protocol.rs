@@ -24,6 +24,7 @@ fn main() {
                 request["key"].as_str(),
                 request["variant"].as_str(),
                 &env_lane_core::sort::ConfiguredOptions {
+                    sync_dir: options.sync_dir.clone(),
                     check: options.check,
                     create: request["options"]["create"].as_bool(),
                     preserve_bom: request["options"]["preserveBOM"].as_bool(),

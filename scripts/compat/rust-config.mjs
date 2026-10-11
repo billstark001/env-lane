@@ -98,6 +98,7 @@ await withOracle(async ({ temporary, runtime }) => {
       assert.equal(response.error, 'CONFIG_LOAD_FAILED')
       continue
     }
+    if (!request.operation) assert.equal(response.selector.sortDefaultsKey, 'default')
     assert.deepEqual(
       normalizeRoot(request.operation ? response : coreConfig(response), temporary),
       normalizeRoot(request.operation ? expected[index] : coreConfig(expected[index]), temporary),

@@ -757,7 +757,7 @@ describe('@env-lane/core', () => {
     expect(drift).toMatchObject({ applied: false, changed: true })
     expect(readFileSync(envFile, 'utf8')).toBe('B=2\nA=1\n')
 
-    const missing = await sortEnvFile(missingEnvFile, templateFile, { check: true })
+    const missing = await sortEnvFile(missingEnvFile, templateFile, { check: true, create: true })
     expect(missing).toMatchObject({ applied: false, changed: true })
     expect(existsSync(missingEnvFile)).toBe(false)
 
@@ -1014,25 +1014,19 @@ describe('@env-lane/core', () => {
       )
     })
 
-    it('throws when sort files uses reserved word default', async () => {
-      const root = fixture()
-      const configFile = path.join(root, 'invalid-sort-config.json')
+    it('uses files.default to override the default suffix destination', async () => {
+      const root = testDirectory('env-lane-sort-default-variant')
+      const configFile = path.join(root, 'env-lane.config.json')
       writeFileSync(
         configFile,
-        JSON.stringify({
-          sort: {
-            custom: {
-              baseDir: root,
-              file: '.env',
-              template: '.env.example',
-              files: { default: '.env.prod' },
-            },
-          },
-        }),
+        JSON.stringify({ sort: { custom: { files: { default: '.env.prod' } } } }),
       )
-      await expect(sortEnvFilesFromConfig(configFile, 'custom', 'all')).rejects.toThrow(
-        /must not use reserved suffix "default"/,
-      )
+      writeFileSync(path.join(root, '.env.example'), 'A=\nB=\n')
+      writeFileSync(path.join(root, '.env.prod'), 'B=2\nA=1\n')
+      const result = await sortEnvFilesFromConfig(configFile, 'custom', 'default')
+      expect(result.results[0].filePath).toBe(path.join(root, '.env.prod'))
+      expect(readFileSync(path.join(root, '.env.prod'), 'utf8')).toBe('A=1\nB=2\n')
+      expect(existsSync(path.join(root, '.env.default'))).toBe(false)
     })
 
     it('throws on unknown env check or sync names', async () => {

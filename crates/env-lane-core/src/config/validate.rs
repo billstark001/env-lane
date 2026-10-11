@@ -24,7 +24,10 @@ impl Config {
             require_nonempty(&config.workspace.default_target, "workspace.defaultTarget")?;
         }
         if let Some(targets) = &config.sort {
-            for target in targets.values() {
+            for (name, target) in targets {
+                if name != &config.selector.sort_defaults_key && target.targets.is_some() {
+                    return Err(invalid("sort targets is only valid in the defaults entry"));
+                }
                 validate_sort_target(target)?;
             }
         }
@@ -48,6 +51,7 @@ impl Config {
 
     fn validate_selector_and_files(&self) -> Result<()> {
         for (value, field) in [
+            (&self.selector.sort_defaults_key, "selector.sortDefaultsKey"),
             (&self.selector.env_key, "selector.envKey"),
             (&self.selector.default_build, "selector.defaultBuild"),
             (&self.dotenv.local_build_name, "dotenv.localBuildName"),
@@ -122,6 +126,14 @@ fn validate_source(source: &ValueSource) -> Result<()> {
 }
 
 fn validate_sort_target(target: &SortTarget) -> Result<()> {
+    if let Some(directory) = &target.sync_dir {
+        require_nonempty(&directory.to_string_lossy(), "sort syncDir")?;
+    }
+    for values in [&target.targets, &target.suffixes].into_iter().flatten() {
+        for value in values {
+            require_nonempty(value, "sort selection")?;
+        }
+    }
     for file in [&target.file, &target.template].into_iter().flatten() {
         require_nonempty(file, "sort path")?;
     }
