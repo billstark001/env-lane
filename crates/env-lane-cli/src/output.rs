@@ -11,6 +11,40 @@ pub struct Output {
     pub prefix: bool,
 }
 impl Output {
+    pub fn variable_changes(
+        &self,
+        file: &std::path::Path,
+        root: &std::path::Path,
+        changes: &[(String, String)],
+    ) -> Result<()> {
+        use env_lane_core::presentation::{group_keys, inline};
+        if changes.is_empty() {
+            return Ok(());
+        }
+        self.line(format!(
+            "\n{}",
+            inline(&env_lane_core::paths::relative_path(root, file))
+        ))?;
+        let keys = changes
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for group in group_keys(&keys) {
+            if let Some(prefix) = &group.prefix {
+                self.line(format!("  {} ({})", inline(prefix), group.keys.len()))?;
+            }
+            for key in group.keys {
+                let mut actions = Vec::new();
+                for (_, action) in changes.iter().filter(|(name, _)| name == &key) {
+                    if !actions.contains(action) {
+                        actions.push(action.clone());
+                    }
+                }
+                self.line(format!("    {} [{}]", inline(&key), actions.join(", ")))?;
+            }
+        }
+        Ok(())
+    }
     pub fn is_json(&self) -> bool {
         matches!(self.format, OutputFormat::Json)
     }

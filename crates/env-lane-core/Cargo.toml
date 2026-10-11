@@ -22,6 +22,8 @@ url = "2.5"
 base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
+unicode-width = "0.2"
+unicode-segmentation = "1"
 
 [dev-dependencies]
 proptest.workspace = true

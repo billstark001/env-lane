@@ -6,6 +6,7 @@ pub mod document;
 pub mod error;
 pub mod paths;
 pub mod policy;
+pub mod presentation;
 pub mod redaction;
 pub mod resolve;
 pub mod run;

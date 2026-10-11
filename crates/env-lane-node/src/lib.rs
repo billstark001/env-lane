@@ -241,6 +241,13 @@ fn core_redaction(operation: &str, value: &Value) -> Result<Value> {
     Ok(result)
 }
 fn core(operation: &str, value: &Value) -> Result<Value> {
+    if operation == "core.groupVariableKeys" {
+        let keys: Vec<String> = serde_json::from_value(value["keys"].clone())
+            .map_err(|error| Error::new("INVALID_NATIVE_REQUEST", error.to_string()))?;
+        return Ok(
+            json!({"value":env_lane_core::presentation::group_keys(&keys),"diagnostics":[]}),
+        );
+    }
     if operation == "core.storage.writeFileAtomically" {
         storage::write_atomically(
             Path::new(required(value, "filePath")?),
