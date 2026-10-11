@@ -27,9 +27,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Unify workspace lint and format commands across JS/TS and Rust. Separate Rust tests into
+  `test:rust` and update CI and release verification to use the shared commands.
 - Added independent package patch versions, explicit selective release plans, and package-specific
   changelog checks. Trusted publishing retains the existing GitHub OIDC workflow identity and
   skips unselected packages; standalone releases wait for successful npm publishing.
+
+## env-lane [0.5.2] - 2026-10-11
+
+### Added
+
+- Shared sort defaults with configurable target/suffix selection, a renameable defaults key,
+  explicit `--create`, and `--sync-dir` for template ancestry.
+- Grouped sort variable reports with relative paths and full key names.
+
+### Fixed
+
+- Preserve local changes during template synchronization and fail read-only sort checks for
+  unresolved conflicts.
+
+### Migration
+
+- Missing sort destinations are skipped unless creation is enabled explicitly. The `default`
+  suffix selects `.env` or `files.default`. Keep the sort sync directory out of version control.
+- Require compatible Core/native versions starting at 0.5.2 for the new sort behavior.
+
+## @env-lane/native [0.5.2] - 2026-10-11
+
+### Added
+
+- Ship cached template synchronization, safe sort creation defaults, and shared greedy variable
+  grouping through the Node-API binding and all eight native platform packages.
+
+### Fixed
+
+- Correct multiline defaults and comments, cached header ordering, ambiguous comment ownership,
+  deleted-file recreation, and empty-template creation.
+
+## @env-lane/core [0.5.2] - 2026-10-11
+
+### Added
+
+- Expose sort sync directories, file statuses, per-field conflicts, and missing/unchanged counts.
+- Configure sort defaults, target and suffix allowlists, aliases, and the base-file mapping.
+
+### Fixed
+
+- Synchronize untouched template fields independently while preserving local values and notes;
+  keep conflicts visible until reconciled and keep `check` fully read-only.
+- Default to skipping missing files and deduplicate equivalent target aliases and destinations.
+
+### Changed
+
+- Require the native binding starting at 0.5.2. Remove the redundant package-local lint script.
+
+## @env-lane/vault [0.5.2] - 2026-10-11
+
+### Added
+
+- Report actual applied add/modify/delete changes separately from selected entries, including
+  conflict-resolution metadata. Post-write output lists keys and actions without values.
+- Group variables by file and longest shared word prefix with at least three distinct keys;
+  deeper groups and a remaining parent group can coexist.
+
+### Fixed
+
+- Correct raw-terminal rendering, resize handling, long keys and previews, and cancellation
+  cleanup. Improve grouped labels and focused descriptions in the embedded Commander adapter.
+
+### Changed
+
+- Require Core/native starting at 0.5.2. The Rust Vault engine moves to 0.5.1 and all eight Vault
+  platform packages follow the plugin package's 0.5.2 version. Persisted Vault formats are unchanged.
+- Remove the redundant package-local lint script.
+
+## @env-lane/config-compat [0.5.2] - 2026-10-11
+
+### Changed
+
+- Remove the redundant package-local lint script in favor of the workspace commands. Config
+  compilation behavior, cache format, and compatible native dependency floor are unchanged.
 
 ## env-lane [0.5.1] - 2026-10-08
 

@@ -30,19 +30,19 @@ importers:
   packages/cli:
     dependencies:
       '@env-lane/core':
-        specifier: workspace:^0.5.1
+        specifier: workspace:^0.5.2
         version: link:../core
       '@env-lane/native':
-        specifier: workspace:^0.5.1
+        specifier: workspace:^0.5.2
         version: link:../native
 
   packages/compat-test:
     dependencies:
       '@env-lane/core':
-        specifier: workspace:^0.5.1
+        specifier: workspace:^0.5.2
         version: link:../core
       '@env-lane/vault':
-        specifier: workspace:^0.5.1
+        specifier: workspace:^0.5.2
         version: link:../vault
       dotenv:
         specifier: 17.4.2
@@ -60,7 +60,7 @@ importers:
   packages/core:
     dependencies:
       '@env-lane/native':
-        specifier: workspace:^0.5.1
+        specifier: workspace:^0.5.2
         version: link:../native
       c12:
         specifier: ^3.3.4
@@ -87,10 +87,10 @@ importers:
   packages/vault:
     dependencies:
       '@env-lane/core':
-        specifier: workspace:^0.5.1
+        specifier: workspace:^0.5.2
         version: link:../core
       '@env-lane/native':
-        specifier: workspace:^0.5.1
+        specifier: workspace:^0.5.2
         version: link:../native
       '@inquirer/prompts':
         specifier: ^7.10.1
