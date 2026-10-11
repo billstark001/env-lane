@@ -75,6 +75,11 @@ package exports, the embedded Vault Commander adapter, streams, process argument
 Do not copy production wiring into tests. Avoid shared global state where possible; restore
 `process.cwd()`, TTY stubs, environment variables, and temporary files in cleanup hooks.
 
+After `pnpm test:build`, run `node scripts/compat/downstream-smoke.mjs` for a synthetic
+sort/cache/grouping and Vault round-trip check. Optional project directory arguments validate
+their real configuration and dotenv data in disposable copies. The runner checks that original
+files remain unchanged, never logs their values, and removes the copies when it finishes.
+
 Security-sensitive changes should test:
 
 - default redaction and explicit secret display;
