@@ -102,7 +102,7 @@ export function snapshotTree(root, relative = '') {
       const file = path.join(relative, entry.name)
       return entry.isDirectory()
         ? Object.entries(snapshotTree(root, file))
-        : [[file, readFileSync(path.join(root, file)).toString('base64')]]
+        : [[file.replaceAll(path.sep, '/'), readFileSync(path.join(root, file)).toString('base64')]]
     }),
   )
 }
@@ -119,5 +119,27 @@ export function normalizeCliObservation(observation, root) {
     ...observation,
     stdout: normalize(observation.stdout),
     stderr: normalize(observation.stderr),
+  }
+}
+
+// The frozen 0.4.2 fixtures predate the sort status and ancestry metadata.
+// Retain their operation and byte expectations while checking the added fields.
+export function expectedSortResult(result) {
+  if (Array.isArray(result.results)) {
+    const { results, ...summary } = result
+    return {
+      ...summary,
+      missingCount: 0,
+      unchangedCount: results.filter((file) => !file.changed).length,
+      results: results.map(expectedSortResult),
+    }
+  }
+  const { applied, changed, ...details } = result
+  return {
+    applied,
+    changed,
+    status: applied ? 'applied' : changed ? 'changed' : 'unchanged',
+    conflicts: [],
+    ...details,
   }
 }

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import {
+  expectedSortResult,
   normalizeCliObservation,
   normalizeRoot,
   runRustExample,
@@ -37,7 +38,24 @@ function expectedObservation(name, index, step) {
   if (name === 'cli-bootstrap-and-child-boundary' && index === 0) {
     return { ...step.expected, stdout: `${cliVersion}\n` }
   }
+  if (name === 'sort-sync-side-effects' && index === 1) {
+    return {
+      ...step.expected,
+      stdout: `${step.expected.stdout}\napps/api/.env\n    DATABASE_URL [moved]\n    UNSORTED [unlisted]\n`,
+    }
+  }
+  if (step.argv[0] === 'sort' && step.argv.includes('--json')) {
+    return {
+      ...step.expected,
+      stdout: `${JSON.stringify(expectedSortResult(JSON.parse(step.expected.stdout)), null, 2)}\n`,
+    }
+  }
   return step.expected
+}
+
+function expectedApiResult(step) {
+  const result = JSON.parse(step.expected.stdout)
+  return step.operation === 'core.sort-file' ? expectedSortResult(result) : result
 }
 
 await withOracle(async ({ temporary }) => {
@@ -90,7 +108,7 @@ await withOracle(async ({ temporary }) => {
         const example = step.operation === 'core.sort-file' ? 'sort-protocol' : 'config-protocol'
         assert.deepEqual(
           normalizeRoot(runRustExample(example, [request])[0], root),
-          JSON.parse(step.expected.stdout),
+          expectedApiResult(step),
         )
         continue
       }

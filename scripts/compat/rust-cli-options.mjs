@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { cpSync, realpathSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { normalizeCliObservation, withOracle, workspace } from './rust-support.mjs'
+import {
+  expectedSortResult,
+  normalizeCliObservation,
+  withOracle,
+  workspace,
+} from './rust-support.mjs'
 
 const build = spawnSync('cargo', ['build', '--locked', '--bin', 'env-lane'], {
   cwd: workspace,
@@ -75,6 +80,9 @@ await withOracle(async ({ temporary, runtime }) => {
   for (const args of cases) {
     const actual = observe(executable, [...common, ...args], root)
     const expected = observe(process.execPath, [oracle, ...common, ...args], root)
+    if (args[0] === 'sort-file' && expected.status === 0 && args.includes('--json')) {
+      expected.stdout = `${JSON.stringify(expectedSortResult(JSON.parse(expected.stdout)), null, 2)}\n`
+    }
     try {
       assert.deepEqual(actual, expected)
     } catch {
