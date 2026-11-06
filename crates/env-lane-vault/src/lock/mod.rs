@@ -5,11 +5,13 @@ use same_file::Handle;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{self, Write},
     path::{Path, PathBuf},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+const WINDOWS_ERROR_ACCESS_DENIED: i32 = 5;
 
 #[derive(PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,38 +50,50 @@ pub fn acquire(target: &Path, options: &Options) -> Result<Lock> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(io_error)?;
     }
+    create(path, options)
+}
+
+fn open_lock_file(path: &Path, options: &Options) -> Result<File> {
+    let mut open = OpenOptions::new();
+    open.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600);
+    }
     let started = Instant::now();
     loop {
-        match create(&path) {
-            Ok(lock) => return Ok(lock),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                remove_stale(&path, options.stale_after);
+        match open.open(path) {
+            Ok(file) => return Ok(file),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                remove_stale(path, options.stale_after);
                 if started.elapsed() >= options.timeout {
                     return Err(Error::new(
                         "VAULT_LOCK_TIMEOUT",
                         format!("Timed out waiting for Vault lock: {}", path.display()),
                     ));
                 }
-                thread::sleep(Duration::from_millis(10));
             }
+            // Windows also reports access denied while an old lock is pending deletion.
+            Err(error)
+                if cfg!(windows)
+                    && error.raw_os_error() == Some(WINDOWS_ERROR_ACCESS_DENIED)
+                    && started.elapsed() < options.timeout => {}
             Err(error) => return Err(io_error(error)),
         }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
-fn create(path: &Path) -> std::io::Result<Lock> {
+fn create(path: PathBuf, options: &Options) -> Result<Lock> {
     let mut random = [0; 16];
-    getrandom::fill(&mut random).map_err(|error| std::io::Error::other(error.to_string()))?;
+    getrandom::fill(&mut random).map_err(|error| io_error(io::Error::other(error.to_string())))?;
     let token = hex::encode(random);
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut handle = options.open(path)?;
-    let identity = Handle::from_file(handle.try_clone()?)?;
+    let mut handle = open_lock_file(&path, options)?;
+    let identity = handle
+        .try_clone()
+        .and_then(Handle::from_file)
+        .map_err(io_error)?;
     let metadata = Metadata {
         pid: i64::from(std::process::id()),
         created_at: SystemTime::now()
@@ -94,11 +108,11 @@ fn create(path: &Path) -> std::io::Result<Lock> {
         .and_then(|()| handle.write_all(b"\n"))
     {
         drop(handle);
-        remove_owned(path, &identity);
-        return Err(error);
+        remove_owned(&path, &identity);
+        return Err(io_error(error));
     }
     Ok(Lock {
-        path: path.to_owned(),
+        path,
         token,
         handle: Some(handle),
         identity,
@@ -157,6 +171,6 @@ impl Drop for Lock {
         }
     }
 }
-fn io_error(error: std::io::Error) -> Error {
+fn io_error(error: io::Error) -> Error {
     Error::new("VAULT_LOCK_FAILED", error.to_string())
 }

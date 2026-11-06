@@ -45,6 +45,60 @@ fn lock_serializes_updates_and_releases_on_unwind() {
     assert!(!target.with_extension("dat.lock").exists());
 }
 
+#[cfg(windows)]
+#[test]
+fn lock_retries_while_previous_file_is_pending_deletion() {
+    use std::{os::windows::fs::OpenOptionsExt, time::Instant};
+
+    const DELETE: u32 = 0x0001_0000;
+    const FILE_FLAG_DELETE_ON_CLOSE: u32 = 0x0400_0000;
+    const ERROR_ACCESS_DENIED: i32 = 5;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let target = temporary.path().join("store");
+    let path = temporary.path().join("store.lock");
+    let keeper = fs::File::create(&path).unwrap();
+    let deleting = fs::OpenOptions::new()
+        .access_mode(DELETE)
+        .custom_flags(FILE_FLAG_DELETE_ON_CLOSE)
+        .open(&path)
+        .unwrap();
+    // Closing the deleting handle marks the file, but the keeper holds it open.
+    drop(deleting);
+    let pending = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap_err();
+    assert_eq!(pending.raw_os_error(), Some(ERROR_ACCESS_DENIED));
+
+    let timeout = Duration::from_millis(100);
+    let started = Instant::now();
+    let error = lock::acquire(
+        &target,
+        &Options {
+            timeout,
+            ..Options::default()
+        },
+    )
+    .err()
+    .expect("the name is still pending deletion");
+    assert_eq!(error.code, "VAULT_LOCK_FAILED");
+    assert!(
+        started.elapsed() >= timeout,
+        "acquisition should retry until its deadline"
+    );
+
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            std::thread::sleep(timeout);
+            drop(keeper);
+        });
+        let _lock = lock::acquire(&target, &Options::default()).unwrap();
+    });
+    assert!(!path.exists());
+}
+
 #[test]
 fn stale_live_owner_is_retained_and_guard_cannot_remove_replacement() {
     let temporary = tempfile::tempdir().unwrap();
