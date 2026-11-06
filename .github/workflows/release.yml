@@ -83,7 +83,7 @@ jobs:
       - run: cargo build --release --locked --target ${{ matrix.target }} -p env-lane-plugin-vault
       - run: node scripts/native-release.mjs stage ${{ matrix.target }}
       - run: node scripts/verify-native-artifact.mjs ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.suffix }}
           path: native-artifacts/native-${{ matrix.suffix }}/
