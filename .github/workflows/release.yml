@@ -111,7 +111,7 @@ jobs:
           package-manager-cache: false
       - run: pnpm release:verify
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.verify.outputs.native == 'true'
         with:
           pattern: native-*
@@ -130,7 +130,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: native-*
           path: native-artifacts
